@@ -1,0 +1,96 @@
+🐸 HS-02 TOTAL SYSTEM AUDIT | Generated: 2026-05-28 23:52:55.131068
+
+============================================================
+HARDWARE & OS
+============================================================
+OS: Linux 7.0.10-arch1-1
+Kernel: #1 SMP PREEMPT_DYNAMIC Sat, 23 May 2026 14:21:20 +0000
+Machine: x86_64
+Processor: 
+
+============================================================
+RESOURCE PRESSURE
+============================================================
+MEM:
+total        used        free      shared  buff/cache   available
+Mem:            15Gi        10Gi       297Mi       1.6Gi       6.9Gi       5.2Gi
+Swap:          4.0Gi       547Mi       3.5Gi
+
+CPU:
+top - 23:52:55 up  9:06,  1 user,  load average: 6.76, 7.02, 4.66
+Tasks: 277 total, 1 running, 274 sleep, 1 d-sleep, 0 stopped, 1 zombie
+%Cpu(s): 45.8 us,  2.4 sy,  0.0 ni, 26.2 id, 24.4 wa,  0.6 hi,  0.6 si,  0.0 st 
+MiB Mem :  15658.3 total,    292.6 free,  10216.9 used,   7096.9 buff/cache     
+MiB Swap:   4096.0 total,   3548.1 free,    547.9 used.   5441.5 avail Mem
+
+DISK:
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/nvme0n1p2  390G  128G  242G  35% /
+
+============================================================
+TOP 10 RAM CONSUMING PROCESSES
+============================================================
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+sword      27592 14.8  8.4 1520910756 1361232 ?  Sl   17:12  59:17 /opt/brave-bin/brave --type=renderer --crashpad-handler-pid=1471 --enable-crash-reporter=aa4f552a-040e-4062-aab6-809b1eddade5, --enable-distillability-service --origin-trial-public-key=bYUKPJoPnCxeNvu72j4EmPuK7tr1PAC7SHh8ld9Mw3E=,fMS4mpO6buLQ/QMd+zJmxzty/VQ6B1EUZqoCU04zoRU= --change-stack-guard-on-fork=enable --ozone-platform=x11 --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=92 --time-ticks-at-unix-epoch=-1779958015065435 --launch-time-ticks=8728144473 --shared-files=v8_context_snapshot_data:100 --metrics-shmem-handle=4,i,3377467561041311289,11825130411712771663,2097152 --field-trial-handle=3,i,11923473607548109266,3343010829221603534,262144 --variations-seed-version=main@2ec966610bf1e90d254a1cf86150924bee248f27 --pseudonymization-salt-handle=7,i,14580455192814016633,14491002641684974382,4 --trace-process-track-uuid=3190709072519721602
+sword      91026  1.5  5.2 4786796 843628 pts/0  Sl+  23:43   0:08 /home/sword/Documents/xMarin/.venv/bin/python3 /home/sword/Documents/xMarin/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 5069
+sword      69216  1.6  4.6 3073692 744768 ?      Rl   22:12   1:38 blender
+ollama     80954  190  4.1 3011368 660220 ?      Sl   23:37  29:26 /usr/local/bin/ollama runner --model /usr/share/ollama/.ollama/models/blobs/sha256-c5396e06af294bd101b30dce59131a76d2b773e76950acc870eda801d3ab0515 --port 41959
+sword      91585  151  4.0 3100548 647392 ?      Sl   23:43  13:35 simplescreenrecorder --logfile
+sword       3656 12.3  3.9 12579180 639000 ?     Sl   15:12  63:58 /opt/zen-browser-bin/zen-bin http://0.0.0.0:5069
+sword       4033  1.5  3.9 3381868 632116 ?      Sl   15:12   7:49 /opt/zen-browser-bin/zen-bin -contentproc -isForBrowser -prefsHandle 0:43050 -prefMapHandle 1:292549 -jsInitHandle 2:156120 -parentBuildID 20260514074226 -sandboxReporter 3 -chrootClient 4 -ipcHandle 5 -initialChannelId {439ab7b1-79a6-4254-9291-59f76face1a3} -parentPid 3656 -greomni /opt/zen-browser-bin/omni.ja -appomni /opt/zen-browser-bin/browser/omni.ja -appDir /opt/zen-browser-bin/browser 12 tab
+sword      35181 20.5  3.7 75251400 595332 pts/4 Sl+  18:21  68:10 opencode
+sword       1465  1.6  2.6 51555992 423240 ?     Sl   14:51   8:49 /opt/brave-bin/brave --password-store=basic
+sword      79193  5.6  2.4 73939996 389780 pts/7 Sl+  23:09   2:26 claude
+
+============================================================
+NETWORK SOCKETS (OPEN PORTS)
+============================================================
+Netid State  Recv-Q Send-Q  Local Address:Port  Peer Address:PortProcess
+udp   UNCONN 0      0             0.0.0.0:45593      0.0.0.0:*    users:(("zen-bin",pid=3656,fd=152))
+udp   UNCONN 0      0         224.0.0.251:5353       0.0.0.0:*    users:(("brave",pid=1465,fd=96))
+udp   UNCONN 0      0         224.0.0.251:5353       0.0.0.0:*    users:(("brave",pid=1509,fd=51))
+udp   UNCONN 0      0         224.0.0.251:5353       0.0.0.0:*    users:(("brave",pid=1509,fd=33))
+udp   UNCONN 0      0       192.168.122.1:53         0.0.0.0:*   
+udp   UNCONN 0      0           127.0.0.1:53         0.0.0.0:*   
+udp   UNCONN 0      0      0.0.0.0%virbr0:67         0.0.0.0:*   
+tcp   LISTEN 0      2048          0.0.0.0:5069       0.0.0.0:*    users:(("uvicorn",pid=91026,fd=15))
+tcp   LISTEN 0      4096        127.0.0.1:11434      0.0.0.0:*   
+tcp   LISTEN 0      4096        127.0.0.1:41017      0.0.0.0:*   
+tcp   LISTEN 0      4096        127.0.0.1:53         0.0.0.0:*   
+tcp   LISTEN 0      32      192.168.122.1:53         0.0.0.0:*   
+tcp   LISTEN 0      4096        127.0.0.1:41959      0.0.0.0:*   
+tcp   LISTEN 0      2048        127.0.0.1:9191       0.0.0.0:*    users:(("blender-mcp",pid=72086,fd=7))
+tcp   LISTEN 0      5           127.0.0.1:9877       0.0.0.0:*    users:(("blender",pid=69216,fd=12))
+
+============================================================
+THERMAL STATUS
+============================================================
+hp-isa-0000
+Adapter: ISA adapter
+pwm1:             N/A
+
+BAT0-acpi-0
+Adapter: ACPI interface
+in0:          12.59 V  
+power1:           N/A  
+
+coretemp-isa-0000
+Adapter: ISA adapter
+Package id 0:  +79.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 0:        +78.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 4:        +79.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 8:        +73.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 9:        +73.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 10:       +73.0°C  (high = +100.0°C, crit = +100.0°C)
+Core 11:       +73.0°C  (high = +100.0°C, crit = +100.0°C)
+
+nvme-pci-0200
+Adapter: PCI adapter
+Composite:    +28.9°C  (low  =  -0.1°C, high = +82.8°C)
+                       (crit = +84.8°C)
+Sensor 1:     +36.9°C  (low  = -273.1°C, high = +65261.8°C)
+Sensor 2:     +28.9°C  (low  = -273.1°C, high = +65261.8°C)
+
+acpitz-acpi-0
+Adapter: ACPI interface
+temp1:        +78.0°C

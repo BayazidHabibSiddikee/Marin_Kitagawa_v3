@@ -1,0 +1,63 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ── Virtual Environment ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── User Uploads & Generated Files (NOT tracked) ─────────────────────────────
+static/uploads/
+static/generated/
+storage/*.db
+*.db
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+server.log
+server_output.log
+uvicorn.log
+
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ── OS Files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Environment / Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ── FAISS Index Cache (large, rebuildable) ───────────────────────────────────
+*.faiss
+*.pkl
+*.index
+
+# ── Temp / Misc ──────────────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.bak2
+.claude/
+
+# ── Personal Documents (too large for git, keep locally) ─────────────────────
+doc/
+busi_doc/
+*.pdf

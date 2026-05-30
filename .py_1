@@ -1,0 +1,369 @@
+"""
+.py — Arena Server (port 5071)
+Hosts _chat.html and streams Marin vs  debate.
+
+Character prompts are pulled DIRECTLY from marin.py and bayazid.py so
+they are always identical to the normal chat servers.
+Arena also reads BOTH history files so the debate has personal context.
+No TTS, no vibe signals, no game handling — clean debate streaming only.
+"""
+
+import asyncio
+import json
+import os
+import threading
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+import ollama
+
+# ── Pull identity strings from each engine (single source of truth) ───────────
+from bayazid import BASE_CHARACTER as BAYAZID_CHARACTER, MODEL
+from marin   import BASE_CHARACTER as MARIN_BASE_CHARACTER, get_character_prompt
+
+import database
+
+# Arena uses the base model directly — same model, clean slate per debate
+ARENA_MODEL = MODEL  # "gemma4:31b-cloud"
+
+# Resolve paths relative to this file to ensure correct static and template loading
+base_path = Path(__file__).parent
+app = FastAPI(title="Arena — Marin vs  HS-02")
+app.mount("/static", StaticFiles(directory=base_path / "static"), name="static")
+templates = Jinja2Templates(directory=base_path / "templates")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HISTORY HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _load__history(limit: int = 20) -> list:
+    """Load Marin's history for the  context."""
+    return database.get_history("marin", limit=limit)
+
+
+def _load_bayazid_history(limit: int = 20) -> list:
+    """Load bayazid's personal history."""
+    return database.get_history("bayazid", limit=limit)
+
+
+def _save__message(role: str, content: str):
+    """Save a message to  history."""
+    database.save_message("", role, content)
+
+
+def _format_history_for_context(history: list, name: str) -> str:
+    """
+    Condense the last few exchanges into a short context block for the
+    debate system prompt — lets each character reference personal history.
+    """
+    if not history:
+        return ""
+    lines = [f"[Recent conversation context with {name}]"]
+    for msg in history[-10:]:  # last 5 turns
+        role    = "User" if msg.get("role") == "user" else name
+        content = msg.get("content", "")[:200]  # clip long messages
+        lines.append(f"{role}: {content}")
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ARENA SYSTEM PROMPTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_marin__prompt(history_context: str = "") -> str:
+    """
+    Marin's debate persona — built on top of her exact BASE_CHARACTER.
+    Adds debate-mode instructions without changing who she is.
+    """
+    history_section = f"\n\n{history_context}" if history_context else ""
+    return f"""{MARIN_BASE_CHARACTER}{history_section}
+
+[ARENA DEBATE MODE]
+You are arguing your perspective in a structured one-round debate. Your style:
+- Draw from human experience, emotion, culture, creativity, and intuition
+- Make the reader FEEL the argument — not just understand it
+- Use vivid analogies, metaphors, real-world examples
+- Be passionate and convinced — you believe what you're saying
+- Write in flowing prose, not bullet points
+- Be bold. Take a clear stance. Don't hedge.
+- Keep it under 250 words — quality over quantity
+- Stay true to who you are: Marin (Limoni), 's strategic partner
+
+This is ONE round. Make it count. ♡"""
+
+
+def build_bayazid__prompt(history_context: str = "") -> str:
+    """
+    's debate persona — built on top of his exact BASE_CHARACTER.
+    """
+    history_section = f"\n\n{history_context}" if history_context else ""
+    return f"""{BAYAZID_CHARACTER}{history_section}
+
+[ARENA DEBATE MODE]
+You are arguing your perspective in a structured one-round debate. Your style:
+- Lead with systems thinking and first principles
+- Use data, logic, frameworks, and execution reasoning
+- Directly counter the opposing argument if context is provided
+- Be precise and direct — no fluff, no hedging
+- Structure matters: clear claim → evidence → counter → conclusion
+- Keep it under 250 words — density over length
+- Stay true to who you are:  HS-02, calm analytical strategist
+
+This is ONE round. Execute with precision. 🐸"""
+
+
+JUDGE_ARENA_PROMPT = """
+You are a neutral synthesis judge. You have read both arguments in full.
+
+Your job is NOT to pick a winner. Your job is to find the truth.
+
+STRUCTURE your verdict as:
+**Where they agree** — the common ground both arguments share
+**The real disagreement** — the fundamental difference in their worldviews
+**What Marin got right** — the genuine insight in her argument
+**What  got right** — the genuine insight in his argument
+**What both missed** — the blind spots neither addressed
+**Synthesis** — the most complete picture that integrates both
+
+Be honest. Be sharp. Don't be diplomatic for the sake of it.
+Keep it under 300 words.
+"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STREAMING HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _stream_debate(system_prompt: str, user_prompt: str, context: str = ""):
+    """
+    Asynchronous Ollama streaming generator.
+    """
+    messages = [{"role": "system", "content": system_prompt}]
+
+    if context:
+        messages.append({
+            "role":    "user",
+            "content": f"For context — the opposing argument:\n\n{context}",
+        })
+        messages.append({
+            "role":    "assistant",
+            "content": "I've read the opposing argument. Now I'll make my case.",
+        })
+
+    messages.append({"role": "user", "content": user_prompt})
+
+    client = ollama.AsyncClient()
+    async for chunk in await client.chat(
+        model=ARENA_MODEL,
+        messages=messages,
+        stream=True,
+        options={"temperature": 0.75, "num_predict": 800},
+    ):
+        content = chunk.message.content if hasattr(chunk, "message") else chunk.get("message", {}).get("content", "")
+        if content:
+            yield content
+
+
+async def _stream_judge(topic: str, marin_arg: str, bayazid_arg: str):
+    """Judge receives both full arguments and synthesises."""
+    messages = [
+        {"role": "system", "content": JUDGE_ARENA_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Topic: \"{topic}\"\n\n"
+                f"Marin argued:\n{marin_arg}\n\n"
+                f" argued:\n{bayazid_arg}\n\n"
+                "Deliver your verdict."
+            ),
+        },
+    ]
+    client = ollama.AsyncClient()
+    async for chunk in await client.chat(
+        model=ARENA_MODEL,
+        messages=messages,
+        stream=True,
+        options={"temperature": 0.5, "num_predict": 800},
+    ):
+        content = chunk.message.content if hasattr(chunk, "message") else chunk.get("message", {}).get("content", "")
+        if content:
+            yield content
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTES — PAGES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/", response_class=HTMLResponse)
+async def get_(request: Request):
+    return templates.TemplateResponse(request=request, name="_chat.html")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def get__alias(request: Request):
+    return templates.TemplateResponse(request=request, name="_chat.html")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTE — ARENA STREAM  (true live streaming via queue)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/stream")
+async def _stream(request: Request):
+    """
+    Single endpoint for all three debate characters.
+
+    Expected JSON body:
+    {
+        "character":   "marin" | "bayazid" | "judge",
+        "topic":       "...",
+        "context":     "prior argument text (empty for Marin round 1)",
+        "marin_arg":   "...",   // only needed for judge
+        "bayazid_arg": "..."    // only needed for judge
+    }
+
+    Returns: text/plain chunked stream.
+
+    History-aware: Marin and  each receive their recent chat history
+    as context so they can reference it naturally in the debate.
+    """
+    body        = await request.json()
+    character   = body.get("character", "marin")
+    topic       = body.get("topic", "")
+    context     = body.get("context", "")
+    marin_arg   = body.get("marin_arg", "")
+    bayazid_arg = body.get("bayazid_arg", "")
+
+    # ── Load history for personality context ──────────────────────────────────
+    marin_hist_ctx   = ""
+    bayazid_hist_ctx = ""
+
+    if character in ("marin", "judge"):
+        marin_hist  = await asyncio.to_thread(_load__history, 20)
+        marin_hist_ctx = _format_history_for_context(marin_hist, "Marin")
+
+    if character in ("bayazid", "judge"):
+        bayazid_hist    = await asyncio.to_thread(_load_bayazid_history, 20)
+        bayazid_hist_ctx = _format_history_for_context(bayazid_hist, "")
+
+    # ── Build prompts (identical base characters, -mode overlay) ─────────
+    marin_system   = build_marin__prompt(marin_hist_ctx)
+    bayazid_system = build_bayazid__prompt(bayazid_hist_ctx)
+
+    # ── Streaming via async generator ─────────────────────────────────────────
+    async def generate():
+        try:
+            if character == "marin":
+                async for chunk in _stream_debate(
+                    marin_system,
+                    f'Argue your perspective on this topic: "{topic}"',
+                    context,
+                ):
+                    yield chunk
+            elif character == "bayazid":
+                async for chunk in _stream_debate(
+                    bayazid_system,
+                    f'Argue your perspective on this topic: "{topic}"',
+                    context,
+                ):
+                    yield chunk
+            elif character == "judge":
+                async for chunk in _stream_judge(topic, marin_arg, bayazid_arg):
+                    yield chunk
+            else:
+                yield "[ERROR] Unknown character"
+        except Exception as e:
+            yield f"[ERROR] {str(e)}"
+
+    return StreamingResponse(generate(), media_type="text/plain")
+
+
+# ── Backward-compat alias ─────────────────────────────────────────────────────
+@app.post("/stream/live")
+async def _stream_live(request: Request):
+    """Alias — same as //stream."""
+    return await _stream(request)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTE — SEND TO MASTER (forward verdict to agent_loop)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/send_master")
+async def send_to_master(request: Request):
+    """Forward debate verdict to MasterAgent for execution.
+    Expected JSON: {"content": "..."}
+    Returns the MasterAgent's consolidated result.
+    """
+    body = await request.json()
+    content = body.get("content", "")
+    if not content:
+        return {"error": "No content provided"}
+
+    database.save_message("master", "system", content)
+
+    try:
+        from  import MasterAgent
+
+        logs = []
+        def log_callback(msg):
+            logs.append(msg)
+
+        master = MasterAgent(orchestrator="opencode", review_passes=2, verbose=False, callback=log_callback)
+        result = await master.execute_task(content)
+
+        database.save_message("master", "assistant", result)
+
+        return {
+            "status": "executed",
+            "result": result,
+            "logs": logs[-20:],
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROUTE — HISTORY PEEK  (optional — useful for debugging / profile page)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/history")
+async def _history(limit: int = 10):
+    """Return the last N messages from both histories."""
+    marin_hist   = await asyncio.to_thread(_load__history,   limit)
+    bayazid_hist = await asyncio.to_thread(_load_bayazid_history, limit)
+    return {
+        "marin":   marin_hist,
+        "bayazid": bayazid_hist,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HEALTH
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/health")
+async def health():
+    marin_h   = await asyncio.to_thread(_load__history,   1)
+    bayazid_h = await asyncio.to_thread(_load_bayazid_history, 1)
+    return {
+        "status":              "operational",
+        "server":              "",
+        "port":                5071,
+        "model":               ARENA_MODEL,
+        "marin_history_msgs":  len(await asyncio.to_thread(_load__history,   200)),
+        "bayazid_history_msgs":len(await asyncio.to_thread(_load_bayazid_history, 200)),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENTRYPOINT
+# ══════════════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5071, reload=False)

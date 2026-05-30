@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Vault Explorer — Private Playgrounds</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --panel: #12121e;
+            --border: #1e1e35;
+            --bayazid-accent: #8b5cf6;
+            --marin-accent: #e91e8c;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: 300px;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .vault-header {
+            padding: 1.5rem;
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .bayazid-header { color: var(--bayazid-accent); }
+        .marin-header { color: var(--marin-accent); }
+
+        .file-list {
+            padding: 1rem;
+        }
+
+        .category-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .category-name {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            display: block;
+            text-transform: uppercase;
+        }
+
+        .file-item {
+            padding: 0.5rem 0.8rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .file-item.active {
+            background: rgba(139, 92, 246, 0.15);
+            color: white;
+        }
+
+        /* ── Viewer ── */
+        .viewer {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0f0f1a;
+        }
+
+        .viewer-header {
+            padding: 1rem 2rem;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .viewer-content {
+            flex: 1;
+            padding: 2rem;
+            overflow-y: auto;
+            font-family: 'Share Tech Mono', monospace;
+            line-height: 1.6;
+            color: #d1d5db;
+            white-space: pre-wrap;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        .btn-delete {
+            background: rgba(220, 38, 38, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(220, 38, 38, 0.2);
+            padding: 0.4rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .btn-delete:hover { background: #dc2626; color: white; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="vault-header bayazid-header">
+            <i class="fas fa-shield-halved"></i> 's Vault
+        </div>
+        <div class="file-list" id="bayazid-files">
+            <!-- Dynamically loaded -->
+        </div>
+
+        <div class="vault-header marin-header">
+            <i class="fas fa-heart"></i> Marin's Vault
+        </div>
+        <div class="file-list" id="marin-files">
+            <!-- Dynamically loaded -->
+        </div>
+    </div>
+
+    <div class="viewer">
+        <div class="viewer-header">
+            <div id="active-filename">Select a file to view</div>
+            <button class="btn-delete" id="delete-btn" style="display: none;" onclick="deleteFile()">Delete File</button>
+        </div>
+        <div class="viewer-content" id="content">
+            <div class="empty-state">
+                <i class="fas fa-folder-open"></i>
+                <p>No file selected</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAgent = '';
+        let currentCategory = '';
+        let currentFile = '';
+
+        async function loadVaults() {
+            const agents = ['bayazid', 'marin'];
+            for (const agent of agents) {
+                const res = await fetch(`/api/vault/list/${agent}`);
+                const data = await res.json();
+                const container = document.getElementById(`${agent}-files`);
+                container.innerHTML = '';
+
+                for (const [cat, files] of Object.entries(data)) {
+                    const group = document.createElement('div');
+                    group.className = 'category-group';
+                    group.innerHTML = `<span class="category-name">${cat}</span>`;
+                    
+                    files.forEach(file => {
+                        const item = document.createElement('div');
+                        item.className = 'file-item';
+                        item.innerHTML = `<i class="far fa-file-alt"></i> ${file}`;
+                        item.onclick = () => viewFile(agent, cat, file);
+                        group.appendChild(item);
+                    });
+                    container.appendChild(group);
+                }
+            }
+        }
+
+        async function viewFile(agent, category, filename) {
+            currentAgent = agent;
+            currentCategory = category;
+            currentFile = filename;
+
+            document.getElementById('active-filename').innerText = `${agent}/${category}/${filename}`;
+            document.getElementById('delete-btn').style.display = 'block';
+            
+            const res = await fetch(`/api/vault/read`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({agent, category, filename})
+            });
+            const data = await res.json();
+            document.getElementById('content').innerText = data.content || data.error;
+            
+            // Highlight active
+            document.querySelectorAll('.file-item').forEach(i => i.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        async function deleteFile() {
+            if (!confirm('Are you sure you want to delete this file?')) return;
+            const res = await fetch(`/api/vault/delete`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({agent: currentAgent, category: currentCategory, filename: currentFile})
+            });
+            const data = await res.json();
+            if (data.status === 'deleted') {
+                document.getElementById('content').innerHTML = '<div class="empty-state"><i class="fas fa-folder-open"></i><p>File deleted</p></div>';
+                document.getElementById('active-filename').innerText = 'Select a file to view';
+                document.getElementById('delete-btn').style.display = 'none';
+                loadVaults();
+            }
+        }
+
+        window.onload = loadVaults;
+    </script>
+</body>
+</html>

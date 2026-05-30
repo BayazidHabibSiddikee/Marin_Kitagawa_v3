@@ -1,0 +1,1 @@
+Apple: y = 1.5x + 200 | Tesla: y = 2.2x - 50 | Logic: Golden Growth Spiral

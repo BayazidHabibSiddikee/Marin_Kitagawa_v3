@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> HS-02 — Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet">
+    <!-- KaTeX for LaTeX formula rendering -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg2: #0f0f1a;
+            --panel: #12121e;
+            --border: #1e1e35;
+            --purple: #8b5cf6;
+            --violet: #a78bfa;
+            --text: #d1d5db;
+            --dim: #6b7280;
+            --muted: #3f3f5a;
+            --danger: #dc2626;
+            --gold: #fbbf24;
+            --success: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Rajdhani', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Animated background grid */
+        .grid-bg {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(139, 92, 246, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(139, 92, 246, 0.04) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            animation: gridScroll 40s linear infinite;
+        }
+
+        @keyframes gridScroll {
+            from {
+                background-position: 0 0;
+            }
+
+            to {
+                background-position: 50px 50px;
+            }
+        }
+
+        /* Glow orbs */
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            pointer-events: none;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: rgba(139, 92, 246, 0.12);
+            top: -100px;
+            right: -100px;
+        }
+
+        .orb-2 {
+            width: 300px;
+            height: 300px;
+            background: rgba(76, 29, 149, 0.1);
+            bottom: -80px;
+            left: -80px;
+        }
+
+        /* Scan lines */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px,
+                    rgba(139, 92, 246, 0.025) 2px, rgba(139, 92, 246, 0.025) 4px);
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* ── NAV ────────────────────────────────────────────────────── */
+        nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 40px;
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 200;
+        }
+
+        nav::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--purple), transparent);
+        }
+
+        .nav-brand {
+            font-family: 'Cinzel', serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: .15em;
+            color: var(--violet);
+            text-shadow: 0 0 24px rgba(167, 139, 250, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-brand .hs {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .65rem;
+            background: linear-gradient(135deg, var(--purple), var(--violet));
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 2px;
+            letter-spacing: .1em;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 6px;
+        }
+
+        .nav-links a {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .72rem;
+            color: var(--dim);
+            text-decoration: none;
+            padding: 5px 14px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            letter-spacing: .06em;
+            transition: all .2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--violet);
+            border-color: var(--purple);
+            background: rgba(139, 92, 246, 0.06);
+            box-shadow: 0 0 16px rgba(139, 92, 246, 0.12);
+        }
+
+        .nav-links a.cta {
+            background: linear-gradient(135deg, var(--purple), #4c1d95);
+            color: #fff;
+            border-color: var(--purple);
+        }
+
+        .nav-links a.cta:hover {
+            box-shadow: 0 0 24px rgba(139, 92, 246, 0.4);
+        }
+
+        /* ── HERO ───────────────────────────────────────────────────── */
+        .hero {
+            min-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 60px 20px;
+            position: relative;
+        }
+
+        .hero-badge {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .72rem;
+            color: var(--violet);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            padding: 5px 16px;
+            border-radius: 20px;
+            margin-bottom: 28px;
+            letter-spacing: .15em;
+            background: rgba(139, 92, 246, 0.06);
+            animation: fadeDown .6s ease;
+        }
+
+        .hero h1 {
+            font-family: 'Cinzel', serif;
+            font-size: clamp(2.5rem, 8vw, 5.5rem);
+            font-weight: 700;
+            letter-spacing: .1em;
+            line-height: 1.1;
+            margin-bottom: 12px;
+            animation: fadeDown .7s ease;
+        }
+
+        .hero h1 .glow {
+            color: var(--violet);
+            text-shadow: 0 0 40px rgba(167, 139, 250, 0.5), 0 0 80px rgba(139, 92, 246, 0.3);
+        }
+
+        .hero-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .8rem;
+            color: var(--dim);
+            letter-spacing: .2em;
+            margin-bottom: 20px;
+            animation: fadeDown .75s ease;
+        }
+
+        .hero-desc {
+            font-size: 1.1rem;
+            color: var(--dim);
+            max-width: 560px;
+            line-height: 1.7;
+            margin-bottom: 40px;
+            font-weight: 500;
+            animation: fadeDown .85s ease;
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: center;
+            animation: fadeDown .9s ease;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, var(--purple), #4c1d95);
+            color: #fff;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 5px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            transition: all .25s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            color: var(--text);
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 5px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: .08em;
+            border: 1px solid var(--border);
+            transition: all .25s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--purple);
+            color: var(--violet);
+            transform: translateY(-2px);
+        }
+
+        /* Sword divider */
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 40px;
+            margin: 20px 0;
+        }
+
+        .divider-line {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--border));
+        }
+
+        .divider-line.right {
+            background: linear-gradient(90deg, var(--border), transparent);
+        }
+
+        .divider-icon {
+            font-size: 1.2rem;
+            color: var(--muted);
+        }
+
+        /* ── STATS ROW ──────────────────────────────────────────────── */
+        .stats-row {
+            display: flex;
+            justify-content: center;
+            gap: 0;
+            margin: 0 40px 60px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            z-index: 10;
+        }
+
+        .stat-box {
+            flex: 1;
+            padding: 20px 24px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+            background: var(--panel);
+            transition: background .2s;
+        }
+
+        .stat-box:last-child {
+            border-right: none;
+        }
+
+        .stat-box:hover {
+            background: rgba(139, 92, 246, 0.06);
+        }
+
+        .stat-num {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 1.8rem;
+            color: var(--violet);
+            display: block;
+        }
+
+        .stat-label {
+            font-size: .8rem;
+            color: var(--dim);
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        /* ── FEATURE GRID ───────────────────────────────────────────── */
+        .section {
+            padding: 60px 40px;
+            max-width: 1100px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .section-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.6rem;
+            font-weight: 600;
+            letter-spacing: .12em;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .section-sub {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .72rem;
+            color: var(--muted);
+            letter-spacing: .15em;
+            margin-bottom: 36px;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .feature-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all .25s;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(139, 92, 246, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 32px rgba(139, 92, 246, 0.1);
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--purple), transparent);
+            opacity: 0;
+            transition: opacity .25s;
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            font-size: 1.8rem;
+            margin-bottom: 14px;
+            display: block;
+        }
+
+        .feature-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+            letter-spacing: .04em;
+        }
+
+        .feature-desc {
+            font-size: .9rem;
+            color: var(--dim);
+            line-height: 1.6;
+            font-weight: 500;
+        }
+
+        .feature-tag {
+            display: inline-block;
+            margin-top: 12px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .62rem;
+            color: var(--purple);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            padding: 2px 8px;
+            border-radius: 2px;
+            letter-spacing: .08em;
+        }
+
+        /* ── COMMANDS SECTION ───────────────────────────────────────── */
+        .cmd-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+
+        .cmd-item {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .cmd-code {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .8rem;
+            color: var(--violet);
+        }
+
+        .cmd-desc {
+            font-size: .85rem;
+            color: var(--dim);
+            font-weight: 500;
+        }
+
+        /* ── FOOTER ─────────────────────────────────────────────────── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 20px 40px;
+            text-align: center;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .65rem;
+            color: var(--muted);
+            letter-spacing: .12em;
+            position: relative;
+            z-index: 10;
+        }
+
+        @keyframes fadeDown {
+            from {
+                opacity: 0;
+                transform: translateY(-16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="grid-bg"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <!-- NAV -->
+    <nav>
+        <div class="nav-brand">
+            MARIN
+            <span class="hs">HS-02</span>
+        </div>
+        <div class="nav-links">
+            <a href="/">HOME</a>
+            <a href="/knowledge-hub?tab=research">📚 RESEARCH</a>
+            <a href="/knowledge-hub">🌐 HUB</a>
+            <a href="/vault">📁 VAULT</a>
+            <a href="/profile">PROFILE</a>
+            <a href="/chat?agent=marin" style="color:#ff6b9d88;border-color:#ff6b9d33" onmouseover="this.style.color='#ffb7c5';this.style.borderColor='#ff6b9d'" onmouseout="this.style.color='#ff6b9d88';this.style.borderColor='#ff6b9d33'">🌸 MARIN</a>
+            <a href="/" style="color:#fbbf2488;border-color:#fbbf2433" onmouseover="this.style.color='#fbbf24';this.style.borderColor='#fbbf24'" onmouseout="this.style.color='#fbbf2488';this.style.borderColor='#fbbf2433'">⚡ ARENA</a>
+            <a href="/codeflow" style="color:#22d3ee88;border-color:#22d3ee33" onmouseover="this.style.color='#22d3ee';this.style.borderColor='#22d3ee'" onmouseout="this.style.color='#22d3ee88';this.style.borderColor='#22d3ee33'">🌊 CODEFLOW</a>
+            <a href="/chat" class="cta">⚔ ENTER COMMAND CENTER</a>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+        <div class="hero-badge">COGNITIVE WARFARE SYSTEM · OPERATIONAL</div>
+        <h1>
+            <span class="glow">MARIN</span><br>
+            HS-02
+        </h1>
+        <p class="hero-sub">EXECUTION OVER ILLUSION · SYSTEMS OVER CHAOS</p>
+        <p class="hero-desc">
+            A productivity-grade AI partner built for embedded systems, IoT, and engineering students who build things
+            instead of just reading about them.
+        </p>
+        <div class="hero-cta">
+            <a href="/chat" class="btn-primary">⚔ ENTER COMMAND CENTER</a>
+            <a href="/knowledge-hub?tab=research" class="btn-secondary">📚 RESEARCH HUB</a>
+            <a href="/knowledge-hub" class="btn-secondary">🌐 KNOWLEDGE HUB</a>
+            <a href="/chat?agent=marin" class="btn-secondary">🌸 CHAT WITH MARIN</a>
+            <a href="/" class="btn-secondary">⚡ ARENA</a>
+            <a href="/codeflow" class="btn-secondary">🌊 CODEFLOW MAP</a>
+        </div>
+    </section>
+
+    <!-- STATS ROW -->
+    <div class="stats-row">
+        <div class="stat-box">
+            <span class="stat-num" id="s-sessions">—</span>
+            <span class="stat-label">Sessions Today</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-num" id="s-time">—</span>
+            <span class="stat-label">Focus Time</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-num" id="s-total">—</span>
+            <span class="stat-label">Total Sessions</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-num" id="s-status">⚫</span>
+            <span class="stat-label">System Status</span>
+        </div>
+    </div>
+
+    <!-- FEATURES -->
+    <section class="section">
+        <h2 class="section-title">CAPABILITY MANIFEST</h2>
+        <p class="section-sub">WHAT HS-02 CAN EXECUTE FOR YOU</p>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <span class="feature-icon">💬</span>
+                <div class="feature-title">Deep Chat</div>
+                <p class="feature-desc">Direct, no-fluff technical conversation. Engineering, systems, strategy — goes
+                    deep when you need it, stays concise when you don't.</p>
+                <span class="feature-tag">ALWAYS ON</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">📡</span>
+                <div class="feature-title">Teacher Mode</div>
+                <p class="feature-desc">Structured explanations: concept → mechanism → working code → next step. Three
+                    depths: Quick, Standard, Deep.</p>
+                <span class="feature-tag">FIRST PRINCIPLES</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">⚔️</span>
+                <div class="feature-title">Quiz Engine</div>
+                <p class="feature-desc">AI-generated MCQ quizzes on any technical topic. Easy / Medium / Hard. Instant
+                    feedback with explanations.</p>
+                <span class="feature-tag">ADAPTIVE</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">⚙️</span>
+                <div class="feature-title">Code Review</div>
+                <p class="feature-desc">Paste code for a structured review: bugs → efficiency → style → improved
+                    version. Honest scoring.</p>
+                <span class="feature-tag">PRODUCTION GRADE</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🗺️</span>
+                <div class="feature-title">Study Plans</div>
+                <p class="feature-desc">Week-by-week learning plans tied to your actual projects. No fluff roadmaps —
+                    just what to build and when.</p>
+                <span class="feature-tag">PROJECT-DRIVEN</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">⏱</span>
+                <div class="feature-title">Focus Timer</div>
+                <p class="feature-desc">Session tracker with live elapsed time, daily totals, and full stats. Timer
+                    context injected into AI responses.</p>
+                <span class="feature-tag">INTEGRATED</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🔍</span>
+                <div class="feature-title">Error Diagnosis</div>
+                <p class="feature-desc">Paste any traceback or error message. Gets you root cause and exact fix — not
+                    generic advice.</p>
+                <span class="feature-tag">ZERO HEDGING</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🖼</span>
+                <div class="feature-title">Vision Input</div>
+                <p class="feature-desc">Upload circuit diagrams, schematics, code screenshots, or any image. 
+                    analyzes and explains.</p>
+                <span class="feature-tag">MULTIMODAL</span>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🌊</span>
+                <div class="feature-title">CodeFlow</div>
+                <p class="feature-desc">Interactive architecture map of the entire codebase. Visualize dependencies, analyze flow, and understand system structure instantly.</p>
+                <span class="feature-tag">VISUALIZER</span>
+            </div>
+        </div>
+    </section>
+
+    <div class="divider">
+        <div class="divider-line"></div>
+        <div class="divider-icon">⚔</div>
+        <div class="divider-line right"></div>
+    </div>
+
+    <!-- COMMANDS -->
+    <section class="section">
+        <h2 class="section-title">COMMAND REFERENCE</h2>
+        <p class="section-sub">SLASH COMMANDS AVAILABLE IN CHAT</p>
+        <div class="cmd-grid">
+            <div class="cmd-item">
+                <span class="cmd-code">/timer start [task]</span>
+                <span class="cmd-desc">Begin a named focus session</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">/timer stop</span>
+                <span class="cmd-desc">End current focus session</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">/timer status</span>
+                <span class="cmd-desc">Check active session elapsed time</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">/timer stats</span>
+                <span class="cmd-desc">View today's productivity stats</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">teach [topic]</span>
+                <span class="cmd-desc">Trigger structured teaching mode</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">quiz me on [topic]</span>
+                <span class="cmd-desc">Generate a quiz on any subject</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">review my code: [paste]</span>
+                <span class="cmd-desc">Code review with scored output</span>
+            </div>
+            <div class="cmd-item">
+                <span class="cmd-code">study plan for [subject]</span>
+                <span class="cmd-desc">Generate a week-by-week plan</span>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        MARIN HS-02 · COGNITIVE WARFARE SYSTEM · BOGURA, BANGLADESH<br>
+        EXECUTION OVER ILLUSION · SYSTEMS OVER CHAOS · GROWTH OVER DEPENDENCY 🐸
+    </footer>
+
+    <script>
+        // ── LATEX / MARKDOWN RENDERING ─────────────────────────────────────────────
+        // Mirrors the same function used in chat.html so any dynamic content
+        // rendered on this page supports LaTeX math and markdown formatting.
+        function renderMarkdown(text) {
+            const latexBlocks = [];
+
+            // Stash display math $$...$$ and inline math $...$
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+                latexBlocks.push({ math, display: true });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+            text = text.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
+                latexBlocks.push({ math, display: false });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+
+            // Markdown processing
+            let html = text
+                .replace(/```([\w]*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+                .replace(/^#{1,3}\s+(.+)/gm, '<strong style="color:var(--violet)">$1</strong>')
+                .replace(/\n\n/g, '<br><br>')
+                .replace(/\n/g, '<br>');
+
+            // Restore LaTeX placeholders as rendered KaTeX HTML
+            html = html.replace(/%%LATEX(\d+)%%/g, (_, idx) => {
+                const { math, display } = latexBlocks[parseInt(idx)];
+                try {
+                    return katex.renderToString(math, { displayMode: display, throwOnError: false });
+                } catch (e) {
+                    return display ? `$$${math}$$` : `$${math}$`;
+                }
+            });
+
+            return html;
+        }
+
+        // ── KaTeX AUTO-RENDER on static page content ───────────────────────────────
+        // Scans the whole page for $...$ and $$...$$ delimiters and renders them.
+        document.addEventListener('DOMContentLoaded', () => {
+            renderMathInElement(document.body, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                ],
+                throwOnError: false,
+                // Ignore script/style tags and code blocks
+                ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+            });
+        });
+
+        // ── STATS LOADER ───────────────────────────────────────────────────────────
+        async function loadStats() {
+            try {
+                const r = await fetch('/timer/stats');
+                const d = await r.json();
+                document.getElementById('s-sessions').textContent = d.sessions_today ?? 0;
+                document.getElementById('s-total').textContent = d.total_sessions ?? 0;
+                const secs = d.today_total_seconds || 0;
+                const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+                document.getElementById('s-time').textContent = h ? `${h}h ${m}m` : `${m}m`;
+                document.getElementById('s-status').textContent = d.active_session ? '🟢' : '⚫';
+            } catch (e) {
+                document.getElementById('s-status').textContent = '🔴';
+            }
+        }
+        loadStats();
+    </script>
+</body>
+
+</html>
