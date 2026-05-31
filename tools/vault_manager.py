@@ -52,5 +52,5 @@ def manage_vault(agent, action, filename=None, content=None, category="misc"):
 
 if __name__ == "__main__":
     # Test
-    print(manage_vault("bayazid", "write", "test.txt", "Hello Vault", "technical_logs"))
-    print(manage_vault("bayazid", "list"))
+    print(manage_vault("marin", "write", "test.txt", "Hello Vault", "technical_logs"))
+    print(manage_vault("marin", "list"))

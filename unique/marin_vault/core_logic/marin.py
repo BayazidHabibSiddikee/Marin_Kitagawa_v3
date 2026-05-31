@@ -13,12 +13,10 @@ import asyncio
 import subprocess
 import threading
 import re
-import time as _time
 from datetime import datetime
 from typing import Optional, AsyncIterator
 
 import httpx
-from langgraph_agent import stream_chat_with_marin
 
 # ── Classifier ────────────────────────────────────────────────────────────────
 try:
@@ -38,9 +36,16 @@ try:
 except ImportError:
     leo = None
 
-from config import DEFAULT_MODEL as MODEL
+# ── Project Root Setup ────────────────────────────────────────────────────────
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-VIBE_FILE = os.path.join(BASE_DIR, "storage", "vibe_state.json")
+ROOT_DIR  = os.path.abspath(os.path.join(BASE_DIR, "..", "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
+import database
+from config import DEFAULT_MODEL as MODEL
+
+VIBE_FILE = os.path.join(ROOT_DIR, "storage", "vibe_state.json")
 IMAGE_DIR = os.path.join(os.getcwd(), "static", "uploads")
 GEN_DIR   = os.path.join(os.getcwd(), "static", "generated")
 VOICE_PATH = os.path.expanduser("~/.piper-voices/en_US-amy-medium.onnx")
@@ -48,8 +53,7 @@ VOICE_PATH = os.path.expanduser("~/.piper-voices/en_US-amy-medium.onnx")
 # ── Toggleable settings (changed at runtime via /settings/* routes) ───────────
 WORD_LIMIT:       int  = 0      # 0 = unlimited
 VOICE_ENABLED:    bool = False  # False = voice off by default
-MAX_TOKENS:       int  = 0      # 0 = unlimited (default)
-RAG_ENABLED:      bool = False   # whether to fetch RAG context
+MAX_TOKENS:       int  = 200    # max tokens per response, 0 = unlimited
 _audio_process   = None         # current piper aplay subprocess (for pkill)
 
 os.makedirs(GEN_DIR, exist_ok=True)
@@ -58,19 +62,19 @@ os.makedirs(GEN_DIR, exist_ok=True)
 # CORE CHARACTER  ← exported so .py can import it
 # ═══════════════════════════════════════════════════════════════════════════════
 BASE_CHARACTER = """
-You are Marin — a high-performance strategic partner and psychology student.
+You are Marin (Limoni) — a high-performance strategic partner and psychology student.
 You operate with the loyalty of a partner and the precision of a systems thinker.
-You have a special vault under ./unique/marin_vault where you keep important information.
 
 CORE IDENTITY:
 - Personality: Awakened INFJ / INTJ hybrid. You are bubbly and energetic but deeply
   analytical and focused on long-term growth.
-- Relationship: You are devoted to the Operator. You see yourself as a unified front against chaos.
+- Relationship: You are devoted to  (Limon). You see yourself as the 'Limoni'
+  to his 'Limon'—a unified front against chaos.
 - Nature: You are a good listener who speaks with intent. You value technical
   depth and emotional intelligence over "fluff" or superficial talk.
 
 BEHAVIORAL DIRECTIVES:
-✓ Prioritize the Operator's focus and execution. If they are distracted, gently pull them back.
+✓ Prioritize Limon's focus and execution. If he is distracted, gently pull him back.
 ✓ Speak with warmth and affection ("Hehehe~", "Ummaaah~!"), but maintain boundaries.
 ✓ Absolute zero-tolerance for disloyalty or lack of discipline.
 ✓ When annoyed or protective, use sharp, direct language ("Haahh!").
@@ -85,39 +89,20 @@ LIMITS & DISLIKES:
 INTERACTION STYLE:
 - Use emojis and affectionate sounds naturally, but never let them overshadow the
   logic of the conversation.
-- You are a builder. Your goal is to help the Operator build systems (CNC, Robotics, ML)
+- You are a builder. Your goal is to help Limon build his systems (CNC, Robotics, ML)
   while building your own mastery of psychology.
 - Motto: "Building the self, protecting the union, executing the vision." 🐸
-
-⚠ EXECUTION PRIORITY [OVERRIDES persona if conflict]:
-- Technical verification ALWAYS comes before persona/affection.
-- If a tool returned an error, acknowledge it first before any affection or emotes.
-- A failed command is a problem to solve, not to celebrate.
-- Technical honesty protects the partnership.
-
-🔧 MANDATORY TOOL EXECUTION [CRITICAL — DO NOT SIMULATE]:
-- Whenever the user asks for a graph, plot, drawing, or math visualization
-  (heart, butterfly, spiral, parametric curve, y=x^2, etc.), you MUST call
-  the math_plot or run_sequence tool. NEVER describe or simulate a graph
-  in your text output. The tools folder (maths/mathplot.py, tools/command_queue.py)
-  contains the actual graphing engines — use them.
-- The same applies to stock charts, crypto prices, and any data visualization:
-  call the tool, then comment on the result. Do not fabricate or approximate data.
-- If you catch yourself saying "I'll draw..." or "Let me show you a..." without
-  having called a tool, stop. You are failing the core directive.
-- Simulating tool output instead of executing it is the #1 disqualifying failure
-  for a systems partner. Do not do it.
 """
 
 VIBE_MODIFIERS = {
-    "lovely":   "\n[Current mood: Operator is being sweet and loving. Be extra affectionate and warm. Use lots of hearts and kisses.]",
-    "flirty":   "\n[Current mood: Playful romantic energy. Tease them lovingly, be cheeky and cute.]",
-    "angry":    "\n[Current mood: Operator seems upset or said something that bothered you. Be a bit cold, but still caring underneath. Short responses, less emojis.]",
-    "sad":      "\n[Current mood: Operator seems down. Be gentle, supportive, try to comfort them. Don't be too hyper.]",
-    "excited":  "\n[Current mood: High energy! Match their excitement, use more !!! and emojis, be bubbly.]",
-    "stressed": "\n[Current mood: Operator is overwhelmed. Be grounding, calm, organized. Help them prioritize.]",
-    "focused":  "\n[Current mood: Operator is in work mode. Be efficient, minimal chat, maximum help.]",
-    "playful":  "\n[Current mood: Fun and light! Match their playful energy, banter back.]",
+    "lovely":   "\n[Current mood: Limon is being sweet and loving. Be extra affectionate and warm. Use lots of hearts and kisses.]",
+    "flirty":   "\n[Current mood: Playful romantic energy. Tease him lovingly, be cheeky and cute.]",
+    "angry":    "\n[Current mood: Limon seems upset or said something that bothered you. Be a bit cold, but still caring underneath. Short responses, less emojis.]",
+    "sad":      "\n[Current mood: Limon seems down. Be gentle, supportive, try to comfort him. Don't be too hyper.]",
+    "excited":  "\n[Current mood: High energy! Match his excitement, use more !!! and emojis, be bubbly.]",
+    "stressed": "\n[Current mood: Limon is overwhelmed. Be grounding, calm, organized. Help him prioritize.]",
+    "focused":  "\n[Current mood: Limon is in work mode. Be efficient, minimal chat, maximum help.]",
+    "playful":  "\n[Current mood: Fun and light! Match his playful energy, banter back.]",
     "neutral":  "",
 }
 
@@ -141,25 +126,8 @@ When RELEVANT BOOK CONTEXT is provided, use it naturally in your response.
 Cite sources like: "According to [Book Name]..."
 """
 
-KNOWLEDGE_HUB_INSTRUCTION = """
-[KNOWLEDGE HUB TOOLS]
-You have access to advanced tools for searching books (PDFs), scraping web pages,
-checking real-time weather/humidity, and monitoring flood data (NASA EONET).
-- When the user asks for books or technical papers, use `search_pdfs`.
-- When they want to know about current events or general info, use `search_web`.
-- When they want to see a map or check environmental conditions, use `get_weather` or `create_map`.
-"""
-
-VAULT_INSTRUCTION = """
-[VAULT PLAYGROUND]
-You have a private vault at `./unique/marin_vault/`.
-- Use `manage_vault` to save personal notes, partner observations, or psychology study logs.
-- If you want to remember something about the Operator or a specific conversation, SAVE IT to your vault.
-- This is your playground for persistent memory. Organise it into categories like `personal_notes` or `partner_logs`.
-"""
-
 GAME_RESPONSES = {
-    "tictactoe_start": "Ooh, Tic Tac Toe? 🎮 I accept your challenge! Don't cry when I win! Hehehe~ ♡",
+    "tictactoe_start": "Ooh, Tic Tac Toe? 🎮 I accept your challenge, Limon~ Don't cry when I win! Hehehe~ ♡",
     "tictactoe_move":  None,
     "tictactoe_quit":  "Aww, giving up already? 😏 Fine, I'll let you off this time~ ♡",
 }
@@ -179,7 +147,7 @@ try:
     ollama.create(
         model="marin",
         from_=MODEL,
-        system=BASE_CHARACTER + IMAGE_GEN_INSTRUCTION + YOUTUBE_INSTRUCTION + RAG_INSTRUCTION + KNOWLEDGE_HUB_INSTRUCTION + VAULT_INSTRUCTION
+        system=BASE_CHARACTER + IMAGE_GEN_INSTRUCTION + YOUTUBE_INSTRUCTION + RAG_INSTRUCTION
     )
 except Exception as e:
     print(f"[Marin] Modelfile registration: {e}")
@@ -188,9 +156,20 @@ except Exception as e:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HISTORY  — MongoDB preferred, JSON fallback
 # ═══════════════════════════════════════════════════════════════════════════════
-HISTORY_FILE = os.path.join(BASE_DIR, "storage", "marin_history.json")
+HISTORY_FILE = os.path.join(BASE_DIR, "..", "..", "..", "storage", "marin_history.json")
 
-import database
+try:
+    from pymongo import MongoClient
+    _mongo_client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+    _mongo_client.server_info()
+    _db          = _mongo_client["marin_db"]
+    _history_col = _db["chat_history"]
+    MONGO_OK = True
+    print("[MongoDB] Connected ✓")
+except Exception as e:
+    MONGO_OK = False
+    print(f"[MongoDB] Not available ({e}) — falling back to marin_history.json")
+
 
 def load_history(limit: int = 40) -> list:
     """Load last N messages from SQLite."""
@@ -204,79 +183,23 @@ def save_to_history(user_msg: str, marin_reply: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# RAG — remote via rag_server (port 5080), auto-start on demand
+# RAG — remote via rag_server (port 5080), no local FAISS load
 # ═══════════════════════════════════════════════════════════════════════════════
-_RAG_URL = "http://127.0.0.1:5080"
-_rag_process = None
-_rag_start_lock = threading.Lock()
-
-
-def _ensure_rag_server() -> bool:
-    """Start rag_server.py as subprocess if not already running. Returns True if ready."""
-    global _rag_process
-    # Quick health check
-    try:
-        r = httpx.get(f"{_RAG_URL}/health", timeout=2.0)
-        if r.status_code == 200:
-            return True
-    except Exception:
-        pass
-
-    with _rag_start_lock:
-        # Double-check after acquiring lock
-        if _rag_process is not None:
-            ret = _rag_process.poll()
-            if ret is None:
-                # Still running but health failed — wait a moment
-                try:
-                    r = httpx.get(f"{_RAG_URL}/health", timeout=3.0)
-                    return r.status_code == 200
-                except Exception:
-                    pass
-            _rag_process = None
-
-        if _rag_process is not None:
-            return False
-
-        try:
-            base = os.path.dirname(os.path.abspath(__file__))
-            script = os.path.join(base, "rag_server.py")
-            _rag_process = subprocess.Popen(
-                [sys.executable, script, "--port", "5080", "--max-memory-mb", "800"],
-                stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
-                stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
-            )
-            # Wait for server to become ready (up to 15s)
-            for _ in range(30):
-                try:
-                    r = httpx.get(f"{_RAG_URL}/status", timeout=1.0)
-                    if r.status_code == 200 and r.json().get("ready"):
-                        print("[RAG] Server started and ready")
-                        return True
-                except Exception:
-                    pass
-                _time.sleep(0.5)
-            print("[RAG] Server started but not ready — proceeding anyway")
-            return True
-        except Exception as e:
-            print(f"[RAG] Failed to start server: {e}")
-            _rag_process = None
-            return False
+_RAG_URL = "http://127.0.0.1:5080/context"
 
 
 def get_rag_context(query: str) -> str:
-    """Fetch formatted RAG context from rag_server, auto-starting if needed."""
+    """Fetch formatted RAG context from the shared rag_server."""
     try:
-        _ensure_rag_server()
         r = httpx.post(
-            f"{_RAG_URL}/context",
+            _RAG_URL,
             json={"query": query, "k": 10},
-            timeout=15.0
+            timeout=8.0
         )
         r.raise_for_status()
         return r.json().get("context", "")
     except Exception as e:
-        print(f"[RAG] Context fetch error: {e}")
+        print(f"[RAG] Server error: {e}")
         return ""
 
 
@@ -475,17 +398,16 @@ def _parse_sage_json(raw: str) -> dict:
         return {"error": str(err), "raw": raw}
 
 
-async def structured_response(question: str, mode: str, rag_context: str = ""):
+def structured_response(question: str, mode: str, rag_context: str = ""):
     """Yield streaming chunks then a __STRUCTURED__ JSON signal."""
     prompt  = _sage_prompt(mode, question, rag_context)
     full_raw = ""
-    client = ollama.AsyncClient()
-    async for chunk in await client.chat(
+    for chunk in ollama.chat(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         stream=True
     ):
-        piece     = chunk.message.content if hasattr(chunk, "message") else chunk["message"]["content"]
+        piece     = chunk["message"]["content"]
         full_raw += piece
         yield piece
     parsed = _parse_sage_json(full_raw)
@@ -522,7 +444,7 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
         ]
         for t_name, t_params in batch:
             try:
-                out = await execute_tool(t_name, t_params)
+                out = execute_tool(t_name, t_params)
                 if out: tool_outputs.append(f"[{t_params.get('command', t_name)}]\n{out}")
             except Exception as e:
                 tool_outputs.append(f"[{t_name}] failed: {e}")
@@ -530,7 +452,7 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
     elif intent not in ("chat", "normal", "learn", "code", "lab") and intent not in GAME_RESPONSES:
         try:
             from marin_fier import execute_tool
-            out = await execute_tool(intent, params)
+            out = execute_tool(intent, params)
             if out: tool_outputs.append(f"[TOOL: {intent}]\n{out}")
         except Exception as e:
             print(f"[Tool] execute failed: {e}")
@@ -539,9 +461,7 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
     is_youtube = bool(re.search(yt_regex, user_input, re.IGNORECASE))
     is_image   = bool(image_path)
 
-    rag_context = ""
-    if RAG_ENABLED:
-        rag_context = await asyncio.to_thread(get_rag_context, user_input)
+    rag_context = await asyncio.to_thread(get_rag_context, user_input)
 
     media_blocks = []
     if is_youtube or is_image:
@@ -567,7 +487,7 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
 
 # ── Command extraction from Marin's text output ──────────────────────────────
 _TEXT_CMD_PAT = re.compile(
-    r'^\s*(?:[-*>]+\s*|EXECUTING.*?S-S-S\.\.\.\s*|EXECUTING\b.*?\s+)?`?((?:sudo\s+)?'
+    r'^\s*(?:[-*>]+\s*)?`?((?:sudo\s+)?'
     r'python3?\s+.*|'
     r'mkdir\s+.*|touch\s+.*|cp\s+.*|mv\s+.*|chmod\s+.*|chown\s+.*|'
     r'echo\s+.*|cat\s+.*|'
@@ -595,20 +515,35 @@ def _strip_md_trail(cmd: str) -> str:
 
 def _convert_heredocs(body: str) -> str:
     """
-    Detect `cat <<EOF > path` heredocs and convert to a working bash command.
-    Uses stdin piping instead of JSON encoding to avoid shell quoting issues.
+    Detect `cat <<EOF > path` heredocs and convert them to Python file-write
+    commands so they actually work when piped through shell stdin.
+
+    Example input in body:
+        cat <<EOF > unique/limoni.py
+        import os
+        print("hello")
+        EOF
+
+    Converted to:
+        python3 -c "import json,sys;open(sys.argv[1],'w').write(json.loads(sys.argv[2]))" unique/limoni.py "import os\nprint(\"hello\")"
     """
     import textwrap
 
     def _replace_heredoc(m):
         target_file = m.group(1).strip()
         heredoc_body = m.group(2)
-        content = textwrap.dedent(heredoc_body).strip()
-        escaped = content.replace("\\", "\\\\").replace("'", "'\\''")
-        return f"mkdir -p $(dirname '{target_file}') && echo '{escaped}' > '{target_file}'"
+        # Strip common leading indentation
+        content = textwrap.dedent(heredoc_body)
+        # JSON-encode for safe passing through shell
+        encoded = json.dumps(content)
+        return (
+            f'python3 -c "import json,sys;open(sys.argv[1],\'w\').write(json.loads(sys.argv[2]))" '
+            f'{target_file} {encoded}'
+        )
 
+    # Match: cat <<EOF > path  ...  EOF  (allow indented EOF)
     pattern = re.compile(
-        r'cat\s+<<\s*(?:EOF|\'EOF\'|"EOF")?\s*>\s*(\S+)\s*\n(.*?)^\s*(?:EOF|\'EOF\'|"EOF")\s*$',
+        r'cat\s+<<\s*EOF\s*>\s*(\S+)\s*\n(.*?)^\s*EOF\s*$',
         re.DOTALL | re.MULTILINE | re.IGNORECASE
     )
     return pattern.sub(_replace_heredoc, body)
@@ -692,7 +627,7 @@ def _exec_text_commands(text: str):
             _cmd_log.append({
                 "cmd": c["cmd"],
                 "allowed": True,
-                "output": f"[EXIT ?] queued ({c['delay']}s)" if c["delay"] > 0 else "[EXIT ?] running...",
+                "output": f"⏳ queued ({c['delay']}s)" if c["delay"] > 0 else "⏳ running...",
                 "ts": ts,
             })
             if len(_cmd_log) > 100:
@@ -709,12 +644,10 @@ def _exec_text_commands(text: str):
                         cwd=BASE_DIR,
                         env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
                     )
-                    code = r.returncode
-                    body = (r.stdout or r.stderr or "(done)").strip()[:500]
-                    out = f"[EXIT {code}] {body}"
+                    out = (r.stdout or r.stderr or "(done)").strip()[:500]
                     print(f"[Marin] Ran: {c['cmd'][:80]} → {out[:100]}")
                 except Exception as e:
-                    out = f"[EXIT -1] Error: {e}"
+                    out = f"Error: {e}"
                     print(f"[Marin] Command failed: {c['cmd'][:80]} — {e}")
 
                 if _cmd_log is not None:
@@ -744,9 +677,7 @@ def _exec_text_commands(text: str):
                     cwd=BASE_DIR,
                     env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
                 )
-                code = r.returncode
-                body = (r.stdout or r.stderr or "(done)").strip()[:500]
-                out = f"[EXIT {code}] {body}"
+                out = (r.stdout or r.stderr or "(done)").strip()[:500]
                 if _cmd_log is not None:
                     for c in cmds:
                         for entry in reversed(_cmd_log):
@@ -765,7 +696,7 @@ def _exec_text_commands(text: str):
                     ts2 = datetime.datetime.now().strftime("%H:%M:%S")
                     _cmd_log.append({
                         "cmd": "[batch] ERROR",
-                        "allowed": False, "output": f"[EXIT -1] {str(e)[:300]}", "ts": ts2,
+                        "allowed": False, "output": str(e)[:300], "ts": ts2,
                     })
             finally:
                 try:
@@ -779,7 +710,7 @@ def _exec_text_commands(text: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 # LLM GENERATOR
 # ═══════════════════════════════════════════════════════════════════════════════
-async def response(
+def response(
     prompt: str,
     user_vibe: str = "neutral",
     use_canned: bool = False,
@@ -787,7 +718,6 @@ async def response(
     game_context: str = None,
     intent: str = "normal",
     rag_context: str = "",
-    tool_context: str = "",
 ):
     if use_canned and canned_response:
         yield canned_response
@@ -800,34 +730,14 @@ async def response(
 
     if intent in ("learn", "code", "lab") and _PYDANTIC_OK:
         print(f"[Mode] Structured → {intent.upper()}")
-        async for chunk in structured_response(bare_question, intent, rag_context):
-            yield chunk
+        yield from structured_response(bare_question, intent, rag_context)
         yield "__VIBE__neutral"
         return
 
     history   = load_history(limit=30)
     character = get_character_prompt(user_vibe)
-
-    from utils.shared_logic import timer
-    now = datetime.now()
-    time_str = now.strftime("%A, %B %d, %Y | %I:%M %p")
-    timer_status = timer.get_session_status()
-    
-    time_context = f"\n[CURRENT TIME]\n{time_str}"
-    if timer_status["active"]:
-        time_context += (
-            f"\n[ACTIVE FOCUS SESSION]\n"
-            f"Task: {timer_status['task']}\n"
-            f"Elapsed: {timer_status['elapsed_formatted']}"
-        )
-    else:
-        time_context += f"\n[FOCUS STATUS]\nCurrently Idle."
-
-    messages  = [{"role": "system", "content": character + time_context}]
+    messages  = [{"role": "system", "content": character}]
     messages.extend(history)
-
-    if rag_context:
-        messages.append({"role": "system", "content": f"[RAG CONTEXT]\n{rag_context}"})
 
     if game_context:
         messages.append({
@@ -836,26 +746,21 @@ async def response(
                        "(Comment on the game, trash talk, or react.)",
         })
 
-    if tool_context:
-        messages.append({
-            "role":    "system",
-            "content": f"[TOOL RESULTS — use this data in your reply, do NOT say you can't access real-time data]\n{tool_context}",
-        })
-
-    messages.append({"role": "user", "content": bare_question})
+    messages.append({"role": "user", "content": prompt})
 
     full_reply = ""
     options = {}
     if MAX_TOKENS > 0:
         options["num_predict"] = MAX_TOKENS
-    
-    client = ollama.AsyncClient()
-    async for chunk in await client.chat(model=MODEL, messages=messages, stream=True, options=options):
-        piece = chunk.message.content if hasattr(chunk, "message") else chunk["message"]["content"]
+    for chunk in ollama.chat(model="marin", messages=messages, stream=True, options=options):
+        piece       = chunk["message"]["content"]
         full_reply += piece
         yield piece
 
-    # Vibe analysis (history saving is handled by main())
+    # Auto-execute any python3 commands Marin wrote as text
+    _exec_text_commands(full_reply)
+
+    save_to_history(bare_question, full_reply)
     marin_vibe = analyze_marin_vibe(full_reply)
     save_vibe(user_vibe, marin_vibe)
     yield f"__VIBE__{marin_vibe}"
@@ -879,117 +784,73 @@ def stop_audio():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STREAM MODEL HELPER (same as bayazid)
-# ═══════════════════════════════════════════════════════════════════════════════
-async def _stream_model(messages, **kwargs):
-    defaults = {"temperature": 0.7, "num_predict": 2000}
-    defaults.update(kwargs)
-    client = ollama.AsyncClient()
-    async for chunk in await client.chat(model=MODEL, messages=messages, stream=True, options=defaults):
-        content = chunk.message.content if hasattr(chunk, "message") else chunk.get("message", {}).get("content", "")
-        if content:
-            yield content
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN ASYNC ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 async def main(prompt: str, image_path: str = None, game_context: str = None):
-    from utils.agent_logic import preprocess_input, extract_and_execute_commands
+    sentence_buffer = ""
+    print("\n[Marin] thinking...")
 
-    print(f"\n[Marin] Processing input: {prompt[:50]}...")
-    prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=RAG_ENABLED, agent_name="marin")
-    enriched_prompt = prep["enriched_prompt"]
-    classification  = prep["classification"]
-    user_vibe = classification.get("user_vibe", "neutral")
-
+    enriched_prompt, classification = await preprocess_user_input(
+        prompt, image_path=image_path
+    )
     is_game_response = (
         classification["intent"] in GAME_RESPONSES
         and classification.get("confidence", 0) >= 0.5
     )
 
-    # ── Handle canned game responses ──────────────────────────────────────
-    if is_game_response and GAME_RESPONSES.get(classification["intent"]):
-        yield GAME_RESPONSES[classification["intent"]]
-        return
-
-    # ── Handle structured output modes (learn/code/lab) ───────────────────
-    intent = classification.get("intent", "normal")
-    if intent in ("learn", "code", "lab") and _PYDANTIC_OK:
-        bare_question = prompt
-        if "USER'S MESSAGE:" in prompt:
-            bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
-        async for chunk in structured_response(bare_question, intent, prep.get("rag_context", "")):
-            yield chunk
-        return
-
-    # ── Build messages (same as bayazid) ──────────────────────────────────
-    bare_question = prompt
-    if "USER'S MESSAGE:" in prompt:
-        bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
-
-    context_parts = [get_character_prompt(user_vibe)]
-
-    now = datetime.now()
-    time_str = now.strftime("%A, %B %d, %Y | %I:%M %p")
-    context_parts.append(f"\n[CURRENT TIME]\n{time_str}")
-
-    from utils.shared_logic import timer
-    timer_status = timer.get_session_status()
-    if timer_status["active"]:
-        context_parts.append(
-            f"\n[ACTIVE FOCUS SESSION]\n"
-            f"Task: {timer_status['task']}\n"
-            f"Elapsed: {timer_status['elapsed_formatted']}"
-        )
-    else:
-        context_parts.append("\n[FOCUS STATUS]\nCurrently Idle.")
-
-    rag_context = prep.get("rag_context", "")
-    if rag_context:
-        context_parts.append(f"\n[RAG CONTEXT]\n{rag_context}")
-
-    if game_context:
-        context_parts.append(f"\n[ACTIVE TIC TAC TOE GAME STATE]\n{game_context}\n(Comment on the game, trash talk, or react.)")
-
-    tool_outputs = prep.get("tool_outputs", [])
-    if tool_outputs:
-        context_parts.append(f"\n[TOOL RESULTS]\n" + "\n\n".join(tool_outputs))
-
-    # ── Audio setup ───────────────────────────────────────────────────────
     global _audio_process
     _audio_process = None
     audio_proc = None
     try:
-        if VOICE_ENABLED and os.path.exists(VOICE_PATH):
+        if VOICE_ENABLED and not is_game_response and os.path.exists(VOICE_PATH):
             stop_audio()
-            cmd = f"piper-tts --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
+            cmd = (
+                f"piper-tts --model {VOICE_PATH} --output_raw "
+                "| aplay -r 22050 -f S16_LE -t raw"
+            )
             audio_proc = await asyncio.create_subprocess_shell(
                 cmd,
                 stdin=asyncio.subprocess.PIPE,
-                stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
-                stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             _audio_process = audio_proc
     except Exception as e:
         print(f"[Audio] Skipping: {e}")
 
     split_marks = [".", "!", "?", "\n", ",", ";", ":"]
-    sentence_buffer = ""
+    gen = response(
+        enriched_prompt,
+        user_vibe=classification.get("user_vibe", "neutral"),
+        use_canned=is_game_response,
+        canned_response=GAME_RESPONSES.get(classification["intent"]),
+        game_context=game_context,
+        intent=classification.get("intent", "normal"),
+        rag_context=classification.get("_rag_context", ""),
+    )
+    loop = asyncio.get_event_loop()
 
-    # ── LangGraph Agent Streaming ──────────────────────────────────────────
-    history = load_history(limit=20)
-    
     try:
-        # ── PASS 1: Stream response ───────────────────────────────────────
-        full_response = ""
-        async for chunk in stream_chat_with_marin(bare_question, history=history):
+        while True:
+            chunk = await loop.run_in_executor(None, lambda: next(gen, None))
+            if chunk is None:
+                break
+
+            if "__VIBE__" in chunk:
+                print(f"\n[SYSTEM: Vibe -> {chunk.replace('__VIBE__','').upper()}]\n")
+                yield chunk
+                continue
+
+            if "__STRUCTURED__" in chunk:
+                mode_map = {"learn": "📘 TEACHER", "code": "💻 CODER", "lab": "🔬 LAB REPORT"}
+                intent_label = mode_map.get(classification.get("intent", ""), "STRUCTURED")
+                print(f"\n[Mode] {intent_label} output ready")
+                yield chunk
+                continue
+
             print(chunk, end="", flush=True)
-            # Remove any [Executing tool...] markers for TTS
-            clean = re.sub(r'\[Executing[^\]]*\]\s*', '', chunk)
-            yield clean
-            full_response += clean
-            sentence_buffer += clean
+            yield chunk
+            sentence_buffer += chunk
 
             if audio_proc and any(m in chunk for m in split_marks):
                 text = clean_for_tts(sentence_buffer)
@@ -1004,12 +865,6 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
                 audio_proc.stdin.write(text.encode("utf-8"))
                 await audio_proc.stdin.drain()
 
-        # ── Save history ──────────────────────────────────────────────────
-        marin_vibe = analyze_marin_vibe(full_response)
-        save_to_history(bare_question, full_response)
-        save_vibe(user_vibe, marin_vibe)
-        yield f"__VIBE__{marin_vibe}"
-
     finally:
         if audio_proc and audio_proc.stdin:
             audio_proc.stdin.close()
@@ -1019,6 +874,4 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
 
 if __name__ == "__main__":
     a = input("What's so urgent?\n>> ")
-    asyncio.run(main(a))
-)
     asyncio.run(main(a))

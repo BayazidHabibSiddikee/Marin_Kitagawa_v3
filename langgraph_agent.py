@@ -9,30 +9,103 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+import subprocess
+import signal
 
 # Add the marin project root to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import DEFAULT_MODEL, OLLAMA_BASE_URL
+from config import DEFAULT_MODEL, OLLAMA_BASE_URL, PORT
 from utils.shared_logic import USER_CONTEXT
+
+# ── Helper for background tools ──────────────────────────────────────────────
+
+def _popen(script: str, args: List[str] = [], timeout: int = None):
+    """Helper to launch background scripts consistently."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, script)
+    if not os.path.exists(path):
+        return f"Script not found: {script}"
+    
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":0")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, path] + args,
+            start_new_session=True,
+            cwd=base_dir,
+            env=env,
+        )
+        return None
+    except Exception as e:
+        return f"Failed to launch {script}: {e}"
 
 # ── Tool Definitions ──────────────────────────────────────────────────────────
 
 @tool
-def knowledge_hub_tool(location: str = "Dhaka", query: str = "tourist attraction", limit: int = 5) -> str:
-    """Search for location information, tourist attractions, or points of interest.
-    
-    Args:
-        location: The city or area to search in.
-        query: What to look for (e.g., 'museums', 'restaurants').
-        limit: Number of results to return.
+def alarm_tool(time: str) -> str:
+    """Set an alarm for a specific time (e.g., '07:30', '14:00')."""
+    err = _popen("tools/alarm.py", [time])
+    if err: return err
+    return f"Alarm set for {time}. It will beep when it fires."
+
+@tool
+def timer_tool(duration: str) -> str:
+    """Start a countdown timer (e.g., '10m', '1h', '30s')."""
+    err = _popen("tools/timer.py", [duration])
+    if err: return err
+    return f"Timer started for {duration}."
+
+@tool
+def math_plot_tool(expression: str) -> str:
+    """Launch the math equation plotter to draw parametric curves or functions.
+    Examples: 'heart', 'infinity', 'sin(t)*exp(t)', 'x=cos(t), y=sin(t)'.
     """
+    err = _popen("maths/mathplot.py", [expression])
+    if err: return err
+    return f"Math plotter launched for: '{expression}'."
+
+@tool
+def map_tool(city: str = "Dhaka", destination: str = None) -> str:
+    """Create and open an interactive map of a city, optionally with a route to a destination."""
     try:
         from tools.knowledge_hub import create_integrated_hub_map
-        result = create_integrated_hub_map(location, query=query, limit=limit)
-        return json.dumps(result)
+        res = create_integrated_hub_map(city, destination)
+        map_url = res.get("map_url", "/static/generated/knowledge_hub_map.html")
+        full_url = f"http://localhost:{PORT}{map_url}"
+        subprocess.Popen(["xdg-open", full_url])
+        return f"Map for {city} opened in browser."
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error creating map: {e}"
+
+@tool
+def news_tool() -> str:
+    """Fetch and display the latest news or open the news harvester."""
+    try:
+        from database import get_latest_news
+        items = get_latest_news(limit=5)
+        if items:
+            lines = ["📰 **LATEST NEWS**\n"]
+            for i, item in enumerate(items, 1):
+                lines.append(f"**{i}. {item['title']}**")
+                analysis = (item.get("analysis") or "").split("\n")[0]
+                if analysis: lines.append(f"   _{analysis}_")
+            return "\n".join(lines)
+    except Exception:
+        pass
+    _popen("tools/news.py")
+    return "Opening news harvester..."
+
+@tool
+def weather_tool(city: str = "Dhaka") -> str:
+    """Get the current weather for a city."""
+    try:
+        from tools.knowledge_hub import get_weather_data
+        data = get_weather_data(city)
+        if "error" in data: return data["error"]
+        return f"Weather in {data['city']}: {data['temperature']}°C, {data['humidity']}% humidity."
+    except Exception as e:
+        return f"Error getting weather: {e}"
 
 @tool
 def stock_tool(symbol: str) -> str:
@@ -41,11 +114,11 @@ def stock_tool(symbol: str) -> str:
     Args:
         symbol: The stock ticker (e.g., 'AAPL', 'TSLA').
     """
-    import subprocess
-    script = os.path.join(os.path.dirname(__file__), "tools", "stock.py")
+    from tools.stock_data import fetch_stock_price
     try:
-        r = subprocess.run([sys.executable, script, "--ticker", symbol], capture_output=True, text=True, timeout=20)
-        return r.stdout if r.returncode == 0 else r.stderr
+        data = fetch_stock_price(symbol)
+        _popen("tools/stock.py", ["--ticker", symbol.upper()])
+        return data
     except Exception as e:
         return f"Error: {e}"
 
@@ -56,34 +129,40 @@ def crypto_tool(coin: str) -> str:
     Args:
         coin: The coin name (e.g., 'bitcoin', 'ethereum').
     """
-    import subprocess
-    script = os.path.join(os.path.dirname(__file__), "tools", "crypto.py")
+    from tools.crypto_data import fetch_crypto_price
     try:
-        r = subprocess.run([sys.executable, script, "--coin", coin], capture_output=True, text=True, timeout=20)
-        return r.stdout if r.returncode == 0 else r.stderr
+        data = fetch_crypto_price(coin)
+        _popen("tools/crypto.py", ["--coin", coin.lower()])
+        return data
     except Exception as e:
         return f"Error: {e}"
 
 @tool
+def screenshot_tool() -> str:
+    """Capture a screenshot of the current screen."""
+    err = _popen("tools/image.py")
+    if err: return err
+    return "Screenshot captured."
+
+@tool
 def terminal_tool(command: str) -> str:
-    """Execute a safe shell command on the local system.
-    
-    Args:
-        command: The bash command to run.
-    """
+    """Execute a safe shell command on the local system."""
     from marin_fier import is_cmd_allowed
     allowed, reason = is_cmd_allowed(command)
     if not allowed:
         return f"Blocked: {reason}"
     
-    import subprocess
     try:
         r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
         return f"STDOUT: {r.stdout}\nSTDERR: {r.stderr}"
     except Exception as e:
         return f"Error: {e}"
 
-tools = [knowledge_hub_tool, stock_tool, crypto_tool, terminal_tool]
+tools = [
+    alarm_tool, timer_tool, math_plot_tool, map_tool, 
+    news_tool, weather_tool, stock_tool, crypto_tool, 
+    screenshot_tool, terminal_tool
+]
 tool_executor = ToolExecutor(tools)
 
 # ── Agent Logic ──────────────────────────────────────────────────────────────

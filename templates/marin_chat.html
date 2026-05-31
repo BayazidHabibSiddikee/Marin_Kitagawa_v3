@@ -1269,8 +1269,7 @@
             const msgs = document.getElementById('messages');
             const div = document.createElement('div');
             div.className = `msg ${role}`;
-            let initials = role === 'ai' ? '⚔' : 'B';
-            if (role === 'ai' && currentAgent === 'marin') initials = '🌸';
+            let initials = role === 'ai' ? '🌸' : 'U';
             div.innerHTML = `
     <div class="avatar ${role === 'ai' ? 'ai' : 'user-av'}">${initials}</div>
     <div class="bubble">${content ? renderMarkdown(content) : ''}</div>`;

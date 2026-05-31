@@ -5,7 +5,7 @@ import json
 
 # Configuration
 CAMOFOX_URL = "http://localhost:9377"
-USER_ID = "bayazid_agent"
+USER_ID = "marin_agent"
 
 def stealth_search(query):
     """

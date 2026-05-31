@@ -743,15 +743,13 @@
 <body>
 
     <nav>
-        <div class="nav-brand">BAYAZID <span class="hs">HS-02</span></div>
+        <div class="nav-brand">MARIN <span class="hs">HS-02</span></div>
         <div class="nav-links">
             <a href="/">HOME</a>
-            <a href="/research-hub">RESEARCH</a>
+            <a href="/knowledge-hub?tab=research">RESEARCH</a>
             <a href="/knowledge-hub">HUB</a>
             <a href="/chat">CHAT</a>
             <a href="/profile" class="active">PROFILE</a>
-            <a href="/chat?agent=marin" style="color:#ff6b9d88;border-color:#ff6b9d33" onmouseover="this.style.color='#ffb7c5';this.style.borderColor='#ff6b9d'" onmouseout="this.style.color='#ff6b9d88';this.style.borderColor='#ff6b9d33'">🌸 MARIN</a>
-            <a href="/" style="color:#fbbf2488;border-color:#fbbf2433" onmouseover="this.style.color='#fbbf24';this.style.borderColor='#fbbf24'" onmouseout="this.style.color='#fbbf2488';this.style.borderColor='#fbbf2433'">⚡ ARENA</a>
             <a href="/codeflow" style="color:#22d3ee88;border-color:#22d3ee33" onmouseover="this.style.color='#22d3ee';this.style.borderColor='#22d3ee'" onmouseout="this.style.color='#22d3ee88';this.style.borderColor='#22d3ee33'">🌊 CODEFLOW</a>
         </div>
     </nav>
@@ -760,16 +758,16 @@
         <div class="page-header">
             <div>
                 <h1 class="page-title">OPERATOR PROFILE</h1>
-                <p class="page-sub">BAYAZID · RUET MECHATRONICS · RAJSHAHI, BANGLADESH</p>
+                <p class="page-sub">SYSTEM OPERATOR · RAJSHAHI, BANGLADESH</p>
             </div>
             <button class="refresh-btn" onclick="loadAll()">↻ REFRESH</button>
         </div>
 
         <!-- IDENTITY -->
         <div class="identity-card">
-            <div class="identity-avatar">⚔</div>
+            <div class="identity-avatar">🌸</div>
             <div class="identity-info">
-                <div class="identity-name">BAYAZID HABIB SIDDIKEE</div>
+                <div class="identity-name">OPERATOR</div>
                 <div class="identity-role">CONTROL SYSTEMS · EMBEDDED · IOT · ML · ROBOTICS</div>
                 <div class="identity-tags">
                     <span class="tag active">ESP32 / AVR</span>
@@ -1019,7 +1017,7 @@
             try {
                 // GitHub's public API — no auth needed for public repos
                 const res = await fetch(
-                    'https://api.github.com/users/HabibSiddikee/repos?per_page=100&sort=updated',
+                    'https://api.github.com/users/',
                     { headers: { 'Accept': 'application/vnd.github.v3+json' } }
                 );
 
@@ -1093,6 +1091,10 @@
         loadAll();
         loadRepos();
         setInterval(loadAll, 30000);
+    </script>
+</body>
+
+</html>;
     </script>
 </body>
 

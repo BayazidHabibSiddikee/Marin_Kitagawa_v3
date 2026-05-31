@@ -178,16 +178,9 @@ _cmd_log: list[dict] = []   # in-memory log (last 100), served at /cmd/log
 
 # ── KNOWN SCRIPTS — alias → full command; auto-resolved when mentioned in chat ──
 _KNOWN_SCRIPTS: dict[str, str] = {
-    "execute_limoni": "python3 unique/execute_limoni.py",
-    "limoni":         "python3 unique/execute_limoni.py",
-    "unique":         "python3 unique/execute_limoni.py",
     "marin":          "python3 marin.py",
-    "bayazid":        "python3 bayazid.py",
-    "":          "python3 .py",
     "rag_server":     "python3 rag_server.py",
     "run_marin":      "bash run_marin.sh",
-    "run_bayazid":    "bash run_bayazid.sh",
-    "run_":      "bash run_.sh",
     "run_all":        "bash run_all.sh",
     "mathplot":       "python3 maths/mathplot.py",
     "stock":          "python3 tools/stock.py",
@@ -258,8 +251,8 @@ def _popen(script: str, args: list[str] = [], timeout: float | None = None):
     try:
         proc = subprocess.Popen(
             [sys.executable, str(path)] + args,
-            stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
-            stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
+            stdout=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'),
+            stderr=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'),
             start_new_session=True,
             cwd=str(BASE_DIR),
             env=env,
@@ -539,7 +532,7 @@ def tool_create_map(city: str = "Dhaka", destination: str = None, custom_pins: l
     # Open map directly in browser
     map_url = res.get("map_url", "/static/generated/knowledge_hub_map.html")
     full_url = f"http://localhost:{PORT}{map_url}"
-    subprocess.Popen(["xdg-open", full_url], stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'), stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'))
+    subprocess.Popen(["xdg-open", full_url], stdout=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'), stderr=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'))
     
     pin_count = len(res.get("custom_pins", [])) + len(res.get("pins", []))
     msg = f"Map created for {city} with {pin_count} pins."
@@ -586,7 +579,7 @@ def tool_pin_places(city: str = "Dhaka", query: str = "tourist attraction") -> s
     res = create_integrated_hub_map(city, pins=pins)
     # Launch Knowledge Hub dashboard in browser
     url = f"http://localhost:{PORT}/knowledge-hub"
-    subprocess.Popen(["xdg-open", url], stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'), stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'))
+    subprocess.Popen(["xdg-open", url], stdout=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'), stderr=open('/home/sword/Documents/marin/logs/tool_execution.log', 'a'))
     
     msg = f"Pinned {len(pins)} '{query}' in {city} on the map."
     return msg
@@ -610,19 +603,19 @@ def tool_manage_vault(action: str, filename: str = None, content: str = None, ca
 # ──  Intents ──────────────────────────────────────────────────────────
 
 def tool_teach_topic(topic: str, sub_intent: str = "standard") -> str:
-    return f"BAYAZID_INTENT:teach:{topic}:{sub_intent}"
+    return f"MARIN_INTENT:teach:{topic}:{sub_intent}"
 
 def tool_generate_quiz(topic: str, difficulty: str = "medium", num_questions: int = 5) -> str:
-    return f"BAYAZID_INTENT:quiz:{topic}:{difficulty}:{num_questions}"
+    return f"MARIN_INTENT:quiz:{topic}:{difficulty}:{num_questions}"
 
 def tool_create_study_plan(topic: str) -> str:
-    return f"BAYAZID_INTENT:study_plan:{topic}"
+    return f"MARIN_INTENT:study_plan:{topic}"
 
 def tool_review_code(code: str) -> str:
-    return f"BAYAZID_INTENT:code_review:{code}"
+    return f"MARIN_INTENT:code_review:{code}"
 
 def tool_explain_error(error: str, code: str = "") -> str:
-    return f"BAYAZID_INTENT:debug:{error}"
+    return f"MARIN_INTENT:debug:{error}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STRUCTURED TOOLS — bind schemas to callables
@@ -687,7 +680,7 @@ TOOLS = [
     StructuredTool.from_function(
         func=tool_run_command, name="run_command",
         description=(
-            "Execute an allowlisted shell/terminal command on Limon's machine. "
+            "Execute an allowlisted shell/terminal command on the operator's machine. "
             "Use when asked to run ls, git status, python scripts, check system info, etc."
         ),
         args_schema=CmdInput,

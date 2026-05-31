@@ -159,7 +159,7 @@ def launch_app(name: str) -> str:
         except Exception as e:
             return f"Tried to open {name} but got: {e}"
 
-    return f"I don't know how to open '{name}' yet, Limon. Add it to config.py!"
+    return f"I don't know how to open '{name}' yet. Add it to config.py!"
 
 
 def _open_url(url: str, label: str) -> str:

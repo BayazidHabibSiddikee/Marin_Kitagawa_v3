@@ -33,7 +33,7 @@ import httpx
 
 # ── Geocoder singleton with 1-second delay (Nominatim usage policy) ───────────
 _geolocator = Nominatim(
-    user_agent="marin-bayazid-assistant/1.0",
+    user_agent="marin-assistant/1.0",
 )
 _last_geocode_call = 0.0
 

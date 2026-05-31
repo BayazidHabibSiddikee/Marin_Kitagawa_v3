@@ -333,14 +333,12 @@ body::after{
 <header class="topbar">
   <div class="logo">
     <i class="fas fa-satellite-dish" style="color:var(--purple);font-size:1rem;"></i>
-    BAYAZID
+    MARIN
     <span class="badge">HS-02 HUB</span>
   </div>
 
   <div class="topbar-center">
-    <button class="agent-btn active" onclick="switchAgent('bayazid')" id="btn-bayazid">⚡ BAYAZID</button>
-    <button class="agent-btn marin-btn" onclick="switchAgent('marin')" id="btn-marin">🌸 MARIN</button>
-    <button class="agent-btn" onclick="switchAgent('')" id="btn-">⚔ ARENA</button>
+    <button class="agent-btn active marin-btn" id="btn-marin">🌸 MARIN</button>
     <button class="agent-btn" onclick="openTab('chat')" id="btn-chat">💬 CHAT</button>
     <button class="agent-btn" onclick="openTab('research')" id="btn-research">📚 RESEARCH</button>
     <button class="agent-btn" onclick="openTab('terminal')" id="btn-terminal">💻 TERMINAL</button>
@@ -614,21 +612,6 @@ function openTab(t){
   el.textContent = now.toTimeString().slice(0,8);
   setTimeout(clockTick, 1000);
 })();
-
-// ── AGENT SWITCH ───────────────────────────────────────────────────────────
-function switchAgent(a){
-  document.body.classList.toggle('marin-mode', a === 'marin');
-  
-  if(a === '') {
-    window.location.href = '/';
-    return;
-  }
-  
-  if(a === 'bayazid' || a === 'marin') {
-    window.location.href = '/chat?agent=' + a;
-    return;
-  }
-}
 
 // ── TOAST ──────────────────────────────────────────────────────────────────
 function toast(msg, dur=2500){
@@ -1059,6 +1042,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 
 // ── KEYBOARD SHORTCUTS ─────────────────────────────────────────────────────
+document.querySelector('.ctrl-strip').addEventListener('keydown', e=>{
+  if(e.key === 'Enter') updateHub();
+});
+
+document.getElementById('res-search-query').addEventListener('keydown', e=>{
+  if(e.key === 'Enter') performResearchSearch();
+});
+</script>
+</body>
+</html>
+�─ KEYBOARD SHORTCUTS ─────────────────────────────────────────────────────
 document.querySelector('.ctrl-strip').addEventListener('keydown', e=>{
   if(e.key === 'Enter') updateHub();
 });

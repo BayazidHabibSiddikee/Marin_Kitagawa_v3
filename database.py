@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "storage", "bayazid_marin.db")
+DB_PATH = os.path.join(BASE_DIR, "storage", "marin.db")
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)

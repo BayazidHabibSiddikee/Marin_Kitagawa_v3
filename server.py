@@ -17,7 +17,7 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 
 # Base directory for Marin project - hardcoded for reliability
-BASE_DIR = Path("/home/sword/Documents/BayazidxMarin")
+BASE_DIR = Path("/home/sword/Documents/marin")
 TOOLS_DIR = BASE_DIR / "tools"
 
 def run_marin_tool(tool_name, args):

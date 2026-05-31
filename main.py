@@ -180,9 +180,7 @@ async def get_index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request, agent: str = "marin"):
-    global ACTIVE_AGENT
-    ACTIVE_AGENT = "marin"
+async def chat_page(request: Request):
     # SIGNATURE FIX: Use request=request keyword to avoid interpretation as context
     return templates.TemplateResponse(request=request, name="marin_chat.html", context={"agent": "marin"})
 
@@ -340,4 +338,6 @@ if __name__ == "__main__":
     import uvicorn
     init_db()
     migrate_from_json()
+    uvicorn.run(app, host=HOST, port=PORT)
+e_from_json()
     uvicorn.run(app, host=HOST, port=PORT)

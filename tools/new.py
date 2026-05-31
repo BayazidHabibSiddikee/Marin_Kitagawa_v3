@@ -243,4 +243,4 @@ if __name__=="__main__":
 
 
     a = Draw(0,0,5)
-    a.draw_image(r"/home/bayazid/Pictures/Screenshots/moustache.png")
+    # a.draw_image(r"static/uploads/moustache.png")

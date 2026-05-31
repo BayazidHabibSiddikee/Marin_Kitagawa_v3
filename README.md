@@ -134,7 +134,7 @@ Open **http://localhost:5069** in your browser.
 ## Project Structure
 
 ```
-Marin_Kitagawa-v3/
+marin/
 ├── main.py                 # FastAPI host — routes, streaming, dashboard
 ├── marin.py                # Marin AI Engine — character, chat, RAG
 ├── marin_fier.py           # Two-stage intent classifier (regex + LLM)
@@ -239,3 +239,4 @@ MIT License — do whatever you want with it.
 *No API keys. No cloud. No compromise.*
 
 </div>
+>
