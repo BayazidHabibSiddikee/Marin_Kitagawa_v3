@@ -1,46 +1,65 @@
+#!/usr/bin/env python3
+"""
+langgraph_agent.py — Marin Cognitive Architecture (LangGraph)
+4-node cyclic graph: Strategist → Executor → Auditor (fail loop) → Persona → output
+"""
+
 import os
 import sys
 import json
 import asyncio
-from typing import TypedDict, Annotated, List, Union, Sequence
+from typing import TypedDict, Annotated, Sequence, Optional, List
+from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolExecutor, ToolInvocation
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import (
+    BaseMessage, HumanMessage, AIMessage, ToolMessage, SystemMessage
+)
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import subprocess
-import signal
 
-# Add the marin project root to the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import DEFAULT_MODEL, OLLAMA_BASE_URL, PORT
 from utils.shared_logic import USER_CONTEXT
 
+
+def _infer_emotional_state(history: list) -> str:
+    """
+    Marin's 5-7 day cycle mapped to tone.
+    In practice, read from vault or a simple day-of-week heuristic.
+    """
+    try:
+        from tools.vault_manager import read_vault_key
+        state = read_vault_key("emotional_state")
+        if state in ("neutral", "energetic", "focused", "low"):
+            return state
+    except Exception:
+        pass
+    # Fallback: derive from conversation energy
+    if len(history) > 10:
+        return "focused"
+    return "neutral"
+
 # ── Helper for background tools ──────────────────────────────────────────────
 
 def _popen(script: str, args: List[str] = [], timeout: int = None):
-    """Helper to launch background scripts consistently."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(base_dir, script)
     if not os.path.exists(path):
         return f"Script not found: {script}"
-    
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0")
     try:
-        proc = subprocess.Popen(
+        subprocess.Popen(
             [sys.executable, path] + args,
-            start_new_session=True,
-            cwd=base_dir,
-            env=env,
+            start_new_session=True, cwd=base_dir, env=env,
         )
         return None
     except Exception as e:
         return f"Failed to launch {script}: {e}"
 
-# ── Tool Definitions ──────────────────────────────────────────────────────────
+# ── Tool Definitions ─────────────────────────────────────────────────────────
 
 @tool
 def alarm_tool(time: str) -> str:
@@ -109,11 +128,7 @@ def weather_tool(city: str = "Dhaka") -> str:
 
 @tool
 def stock_tool(symbol: str) -> str:
-    """Get real-time stock price and info for a given ticker symbol.
-    
-    Args:
-        symbol: The stock ticker (e.g., 'AAPL', 'TSLA').
-    """
+    """Get real-time stock price and info for a given ticker symbol (e.g., 'AAPL', 'TSLA')."""
     from tools.stock_data import fetch_stock_price
     try:
         data = fetch_stock_price(symbol)
@@ -124,11 +139,7 @@ def stock_tool(symbol: str) -> str:
 
 @tool
 def crypto_tool(coin: str) -> str:
-    """Get current price for a cryptocurrency.
-    
-    Args:
-        coin: The coin name (e.g., 'bitcoin', 'ethereum').
-    """
+    """Get current price for a cryptocurrency (e.g., 'bitcoin', 'ethereum')."""
     from tools.crypto_data import fetch_crypto_price
     try:
         data = fetch_crypto_price(coin)
@@ -151,131 +162,537 @@ def terminal_tool(command: str) -> str:
     allowed, reason = is_cmd_allowed(command)
     if not allowed:
         return f"Blocked: {reason}"
-    
     try:
         r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
         return f"STDOUT: {r.stdout}\nSTDERR: {r.stderr}"
     except Exception as e:
         return f"Error: {e}"
 
-tools = [
-    alarm_tool, timer_tool, math_plot_tool, map_tool, 
-    news_tool, weather_tool, stock_tool, crypto_tool, 
-    screenshot_tool, terminal_tool
-]
-tool_executor = ToolExecutor(tools)
+@tool
+def pdf_download_tool(query: str) -> str:
+    """Search for and download a PDF book or document. Saves to unique/download/ vault.
+    
+    Args:
+        query: What to search for (e.g., 'machine learning basics', 'calculus textbook', 'python programming pdf').
+    """
+    from tools.pdf_downloader import search_pdfs, download_pdf, validate_pdf
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    download_dir = os.path.join(base_dir, "unique", "download")
+    os.makedirs(download_dir, exist_ok=True)
 
-# ── Agent Logic ──────────────────────────────────────────────────────────────
+    pdf_query = f"{query} filetype:pdf"
+    search_results = search_pdfs(pdf_query)
+    if not search_results:
+        return f"No PDF results found for '{query}'."
+
+    for i, r in enumerate(search_results[:5], 1):
+        url = r.get("url", "")
+        title = r.get("title", query)
+        if not url:
+            continue
+        path = download_pdf(url, title, download_dir)
+        if path:
+            return f"PDF downloaded successfully: {path}"
+
+    return f"Could not download a valid PDF for '{query}' after trying {min(len(search_results), 5)} sources."
+
+@tool
+def vault_access(category: str = "misc", query: str = "") -> str:
+    """Search or read from Marin's persistent vault storage. Use category and query to find stored notes, memories, or data."""
+    from tools.vault_manager import manage_vault
+    try:
+        result = manage_vault("marin", "list", category=category)
+        if query:
+            filtered = [r for r in result if query.lower() in str(r).lower()]
+            return json.dumps(filtered[:10]) if filtered else f"No vault entries matching '{query}'"
+        return json.dumps(result[:10]) if result else "Vault is empty for this category."
+    except Exception as e:
+        return f"Vault error: {e}"
+
+@tool
+def rag_search(query: str) -> str:
+    """Search the RAG knowledge base for context related to the query."""
+    import asyncio as _aio
+    from utils.agent_logic import get_rag_context
+    try:
+        loop = _aio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                result = pool.submit(_aio.run, get_rag_context(query, enabled=True)).result()
+        else:
+            result = _aio.run(get_rag_context(query, enabled=True))
+        return result or "No relevant context found in knowledge base."
+    except Exception as e:
+        return f"RAG search error: {e}"
+
+# ── Tool registry (kept for reference; Node B uses tools_by_name) ────────────
+
+ALL_TOOLS = [
+    alarm_tool, timer_tool, math_plot_tool, map_tool,
+    news_tool, weather_tool, stock_tool, crypto_tool,
+    screenshot_tool, terminal_tool, vault_access, rag_search,
+    pdf_download_tool,
+]
+tools_by_name = {t.name: t for t in ALL_TOOLS}
+
+# Planner tools: Node A can call vault/rag to gather info before making a plan
+PLANNER_TOOLS = [vault_access, rag_search]
+
+# Executor tools: Node B has full tool access
+EXECUTOR_TOOLS = ALL_TOOLS
+
+# ── State Schema ─────────────────────────────────────────────────────────────
 
 class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], lambda x, y: x + y]
+    messages:              Annotated[Sequence[BaseMessage], lambda x, y: x + y]
+    plan:                  List[dict]           # [{"step": 1, "action": "...", "tool": "..."}]
+    tool_outputs:          dict                 # {"raw": "...", "rejection_reason": "..."}
+    technical_verification: bool               # set by Node C
+    emotional_state:       str                 # "neutral" | "energetic" | "focused" | "low"
 
-model = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL).bind_tools(tools)
+# ── LLM instances ────────────────────────────────────────────────────────────
 
-def call_model(state):
-    messages = state['messages']
-    response = model.invoke(messages)
-    return {"messages": [response]}
+# Node A (Strategist): bound to planner tools
+llm_planner = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL).bind_tools(PLANNER_TOOLS)
 
-def call_tool(state):
-    messages = state['messages']
-    last_message = messages[-1]
-    
-    tool_invocations = []
-    for tool_call in last_message.tool_calls:
-        action = ToolInvocation(
-            tool=tool_call["name"],
-            tool_input=tool_call["args"],
+# Node B (Executor): bound to all execution tools
+llm_executor = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL).bind_tools(EXECUTOR_TOOLS)
+
+# Node C (Auditor): no tools bound — pure reasoning
+llm_auditor = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL)
+
+# ── Node A: The Strategist ──────────────────────────────────────────────────
+
+AVAILABLE_TOOLS_DESC = """
+AVAILABLE TOOLS (Executor can call these — plan steps using their names):
+- alarm_tool(time: str) — Set alarm. Args: {"time": "HH:MM"}
+- timer_tool(duration: str) — Start countdown. Args: {"duration": "5m", "1h", "30s"}
+- math_plot_tool(expression: str) — Plot math curves. Args: {"expression": "heart", "sin(t)"}
+- map_tool(city: str, destination: str) — Open map. Args: {"city": "Dhaka"}
+- news_tool() — Get latest news. Args: {}
+- weather_tool(city: str) — Get weather. Args: {"city": "Dhaka"}
+- stock_tool(symbol: str) — Stock price. Args: {"symbol": "AAPL"}
+- crypto_tool(coin: str) — Crypto price. Args: {"coin": "bitcoin"}
+- screenshot_tool() — Capture screen. Args: {}
+- terminal_tool(command: str) — Run shell command. Args: {"command": "ls"}
+- vault_access(category: str, query: str) — Search vault storage. Args: {"category": "misc", "query": "notes"}
+- rag_search(query: str) — Search knowledge base. Args: {"query": "search terms"}
+- pdf_download_tool(query: str) — Search & download PDF to unique/download vault. Args: {"query": "book name or topic"}
+"""
+
+STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
+
+{AVAILABLE_TOOLS_DESC}
+
+RULES:
+1. Read the user message and determine what actions are needed.
+2. If you need context from vault or knowledge base, call vault_access or rag_search as a tool call.
+3. Output a structured plan as a JSON array of steps. Each step is a dict:
+   {{"action": "<tool_name or 'respond'>", "args": {{...}}, "rationale": "..."}}
+4. If the task is simple (pure conversation, no tool needed), output a single step:
+   [{{"action": "respond", "args": {{}}, "rationale": "Direct conversational response"}}]
+5. For multi-step tasks, plan multiple steps. Example for "what's bitcoin price and weather":
+   [{{"action": "crypto_tool", "args": {{"coin": "bitcoin"}}, "rationale": "Get crypto price"}},
+    {{"action": "weather_tool", "args": {{"city": "Dhaka"}}, "rationale": "Get weather"}},
+    {{"action": "respond", "args": {{}}, "rationale": "Combine results into response"}}]
+6. Do NOT execute tools yourself — only plan.
+
+Output ONLY the plan JSON. No extra text."""
+
+def node_strategist(state: AgentState) -> dict:
+    """Node A — Builds the execution plan. Owns state.plan."""
+    messages = state["messages"]
+    system = SystemMessage(content=STRATEGIST_SYSTEM)
+    response = llm_planner.invoke([system] + list(messages))
+
+    plan = []
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        # LLM wants to gather info first — execute planner tools, then re-plan
+        tool_msgs = []
+        for tc in response.tool_calls:
+            fn = tools_by_name.get(tc["name"])
+            if fn:
+                result = fn.invoke(tc["args"])
+                tool_msgs.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+
+        # Second pass: now that we have info, build the actual plan
+        followup = llm_planner.invoke(
+            [system] + list(messages) +
+            [response] + tool_msgs +
+            [SystemMessage(content="Now output the final plan as a JSON array of steps. No more tool calls.")]
         )
-        tool_invocations.append(action)
-    
-    responses = tool_executor.batch(tool_invocations)
-    
-    tool_messages = []
-    for i, response in enumerate(responses):
-        tool_messages.append(ToolMessage(
-            content=str(response),
-            tool_call_id=last_message.tool_calls[i]["id"]
-        ))
-    
-    return {"messages": tool_messages}
+        content = followup.content if followup.content else ""
+    else:
+        content = response.content if response.content else ""
 
-def should_continue(state):
-    last_message = state['messages'][-1]
-    if last_message.tool_calls:
-        return "continue"
-    return "end"
+    # Parse plan from LLM output
+    try:
+        # Strip markdown code fences if present
+        clean = content.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[1]
+            if clean.endswith("```"):
+                clean = clean[:-3]
+            clean = clean.strip()
+        plan = json.loads(clean)
+        if not isinstance(plan, list):
+            plan = [{"action": "respond", "args": {}, "rationale": str(plan)}]
+    except (json.JSONDecodeError, TypeError):
+        plan = [{"action": "respond", "args": {}, "rationale": content or "Direct response"}]
 
-# ── Graph Construction ────────────────────────────────────────────────────────
+    return {
+        "plan": plan,
+        "tool_outputs": {},
+        "technical_verification": False,
+    }
+
+# ── Node B: The Executor ────────────────────────────────────────────────────
+
+EXECUTOR_SYSTEM = """You are Marin's Executor. You receive a step-by-step plan and must execute ONE step at a time.
+
+RULES:
+1. Look at state.plan — the first item is your current step.
+2. If the step's action is 'respond', generate a helpful, accurate response to the user.
+3. If the step's action is a tool name, call that tool with the given args.
+4. After executing, the tool result goes into state.tool_outputs.
+5. Be precise. Don't hallucinate tool results — actually call the tool.
+6. If the step action is unknown, respond with an explanation of what you can do."""
+
+def node_executor(state: AgentState) -> dict:
+    """Node B — Executes one plan step. Owns state.tool_outputs."""
+    messages = state["messages"]
+    plan = state.get("plan", [])
+    tool_outputs = dict(state.get("tool_outputs", {}))
+    correction = tool_outputs.get("__correction_hint__", "")
+
+    # Determine current step
+    completed_steps = len(tool_outputs)
+    current_step = plan[completed_steps] if completed_steps < len(plan) else None
+
+    if current_step is None:
+        # All steps done — generate final response
+        executor_msgs = [
+            SystemMessage(content="All plan steps are complete. Generate a comprehensive, helpful response to the user based on the collected information."),
+        ] + list(messages)
+        response = llm_executor.invoke(executor_msgs)
+        # Store the final response content in tool_outputs under a sentinel key
+        tool_outputs["__final_response__"] = response.content or ""
+        return {"tool_outputs": tool_outputs}
+
+    action = current_step.get("action", "respond")
+    args = current_step.get("args", {})
+
+    if action == "respond":
+        # Generate a direct response
+        context_parts = []
+        for k, v in tool_outputs.items():
+            if not k.startswith("__"):
+                context_parts.append(f"[{k}]: {v}")
+        context_str = "\n".join(context_parts) if context_parts else "No prior tool outputs."
+
+        prompt = (
+            f"User asked: {messages[-1].content}\n"
+            f"Collected info:\n{context_str}\n"
+            f"Rationale: {current_step.get('rationale', '')}\n\n"
+            f"Generate a clear, helpful response."
+        )
+        response = llm_executor.invoke([SystemMessage(content=prompt)])
+        tool_outputs["__final_response__"] = response.content or ""
+        return {"tool_outputs": tool_outputs}
+
+    elif action in tools_by_name:
+        # Execute the tool
+        tool_fn = tools_by_name[action]
+        try:
+            result = tool_fn.invoke(args)
+            step_key = f"step_{completed_steps}_{action}"
+            tool_outputs[step_key] = str(result)
+        except Exception as e:
+            step_key = f"step_{completed_steps}_{action}"
+            tool_outputs[step_key] = f"Error: {e}"
+
+        # If correction hint exists from fail loop, append it as context
+        if correction:
+            tool_outputs["correction_context"] = correction
+
+        return {"tool_outputs": tool_outputs}
+
+    else:
+        # Unknown action — treat as respond
+        tool_outputs[f"step_{completed_steps}_unknown"] = f"Unknown action '{action}', proceeding with direct response."
+        return {"tool_outputs": tool_outputs}
+
+# ── Node C: The Auditor (Marin Filter) ──────────────────────────────────────
+
+AUDITOR_SYSTEM = """You are Marin's Auditor — a strict quality gate. You review tool outputs and verify accuracy.
+
+YOUR JOB:
+1. Read the tool outputs and the original user question.
+2. Check for: factual errors, math mistakes, hallucinated data, incomplete answers, fluff.
+3. Set technical_verification to True ONLY if the output is accurate and complete.
+4. If there are errors, explain what's wrong in detail so the Executor can fix it.
+
+OUTPUT FORMAT — respond with ONLY a JSON object:
+{
+  "technical_verification": true or false,
+  "issues": ["list of issues found, empty if all good"],
+  "correction_hint": "detailed instruction for what to fix, empty if passed"
+}
+
+Be strict but fair. Minor stylistic issues pass. Factual errors fail."""
+
+def node_auditor(state: AgentState) -> dict:
+    """Node C — Verifies tool_outputs. Owns state.technical_verification."""
+    messages = state["messages"]
+    tool_outputs = state.get("tool_outputs", {})
+    plan = state.get("plan", [])
+
+    # Build context for auditor
+    output_summary = json.dumps(tool_outputs, indent=2, default=str)[:4000]
+    plan_summary = json.dumps(plan, indent=2, default=str)[:2000]
+    user_msg = ""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            user_msg = msg.content
+            break
+
+    auditor_prompt = (
+        f"User question: {user_msg}\n\n"
+        f"Execution plan:\n{plan_summary}\n\n"
+        f"Tool outputs collected:\n{output_summary}\n\n"
+        f"Review all outputs above. Are they accurate, complete, and relevant to the user's question? "
+        f"Output your verification as JSON."
+    )
+
+    response = llm_auditor.invoke([SystemMessage(content=AUDITOR_SYSTEM), HumanMessage(content=auditor_prompt)])
+
+    # Parse auditor response
+    verified = False
+    issues = []
+    correction_hint = ""
+
+    try:
+        clean = response.content.strip()
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[1]
+            if clean.endswith("```"):
+                clean = clean[:-3]
+            clean = clean.strip()
+        parsed = json.loads(clean)
+        verified = bool(parsed.get("technical_verification", False))
+        issues = parsed.get("issues", [])
+        correction_hint = parsed.get("correction_hint", "")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        # Fallback: if auditor can't parse, assume pass with a warning
+        verified = True
+        issues = ["Auditor output could not be parsed — auto-passed with caveat"]
+        correction_hint = ""
+
+    # Format correction hint with issues
+    if issues:
+        full_hint = f"Issues found: {'; '.join(issues)}. Correction: {correction_hint}"
+    else:
+        full_hint = correction_hint
+
+    return {
+        "technical_verification": verified,
+        "tool_outputs": {**tool_outputs, "__correction_hint__": full_hint if not verified else ""},
+    }
+
+# ── Node D: The Persona Layer ───────────────────────────────────────────────
+
+# Shared LLM for persona (no tools bound)
+llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL)
+
+
+async def persona_node(state: AgentState) -> AgentState:
+    """
+    Node D — The Persona Layer.
+    Runs ONLY after technical_verification = True.
+    Wraps the verified tool output in Marin's personality.
+    Never calls tools. Never modifies the technical content.
+    """
+    # Safety guard — should never reach here if auditor failed,
+    # but defend anyway
+    if not state.get("technical_verification", False):
+        return {
+            "messages": state["messages"],
+            "tool_outputs": state["tool_outputs"],
+        }
+
+    emotional_state = state.get("emotional_state", "neutral")
+    tool_outputs    = state.get("tool_outputs", {})
+    # Read from __final_response__ (written by Executor) or "raw" or synthesize
+    raw_content = (
+        tool_outputs.get("__final_response__", "")
+        or tool_outputs.get("raw", "")
+    )
+    if not raw_content:
+        parts = [str(v) for k, v in sorted(tool_outputs.items()) if not k.startswith("__")]
+        raw_content = "\n".join(parts) if parts else "No output to present."
+
+    # Pull the character prompt from marin.py — this is where
+    # Hehehe~~ and Ummaaah~~! live
+    from marin import get_character_prompt
+    persona_prompt = get_character_prompt(emotional_state)
+
+    # Build the wrapping instruction
+    wrap_instruction = f"""
+You are Marin. The following is a technically verified answer from your reasoning engine.
+Your job is ONLY to reformat the delivery — the facts must not change.
+
+Emotional state today: {emotional_state}
+Persona rules: {persona_prompt}
+
+Verified technical content:
+{raw_content}
+
+Deliver this to the operator in your voice. Keep all numbers, units, and logic
+exactly as given. Add warmth, your signature expressions, and natural phrasing.
+Do NOT add new claims, hedge the facts, or soften technical conclusions.
+""".strip()
+
+    response = await llm.ainvoke([SystemMessage(content=wrap_instruction)])
+
+    final_text = response.content
+
+    return {
+        "messages": state["messages"] + [AIMessage(content=final_text)],
+        "tool_outputs": {**tool_outputs, "persona_wrapped": final_text},
+    }
+
+# ── Routing Logic ────────────────────────────────────────────────────────────
+
+def route_after_executor(state: AgentState) -> str:
+    """After Executor: all plan steps complete → Auditor, otherwise → Executor again."""
+    plan = state.get("plan", [])
+    tool_outputs = state.get("tool_outputs", {})
+    completed = len([k for k in tool_outputs if k.startswith("step_") or k == "__final_response__"])
+
+    if "__final_response__" in tool_outputs:
+        return "auditor"
+    if completed >= len(plan):
+        return "auditor"
+    return "executor"
+
+def route_after_auditor(state: AgentState) -> str:
+    """After Auditor: verified → Persona, not verified → Executor (fail loop)."""
+    if state.get("technical_verification", False):
+        return "persona"
+    return "executor"
+
+# ── Build the Graph ──────────────────────────────────────────────────────────
 
 workflow = StateGraph(AgentState)
-workflow.add_node("agent", call_model)
-workflow.add_node("action", call_tool)
-workflow.set_entry_point("agent")
-workflow.add_conditional_edges("agent", should_continue, {"continue": "action", "end": END})
-workflow.add_edge("action", "agent")
 
-graph = workflow.compile()
+# Add nodes
+workflow.add_node("strategist", node_strategist)
+workflow.add_node("executor", node_executor)
+workflow.add_node("auditor", node_auditor)
+workflow.add_node("persona", persona_node)
 
-# ── API Wrapper ───────────────────────────────────────────────────────────────
+# Entry: Strategist
+workflow.set_entry_point("strategist")
 
-async def chat_with_marin(message: str, history: List[dict] = None):
-    """Entry point for main.py to use LangGraph."""
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-    
-    # Load character from marin.py to keep persona consistent
+# Strategist → Executor (always)
+workflow.add_edge("strategist", "executor")
+
+# Executor → conditional: if more steps, loop back; if done, Auditor
+workflow.add_conditional_edges(
+    "executor",
+    route_after_executor,
+    {
+        "executor": "executor",
+        "auditor": "auditor",
+    }
+)
+
+# Auditor → conditional: pass → Persona, fail → Executor (fail loop)
+workflow.add_conditional_edges(
+    "auditor",
+    route_after_auditor,
+    {
+        "persona": "persona",
+        "executor": "executor",
+    }
+)
+
+# Persona → END
+workflow.add_edge("persona", END)
+
+# Compile
+agent = workflow.compile()
+
+# ── API Wrappers ─────────────────────────────────────────────────────────────
+
+async def chat_with_marin(message: str, history: list = None):
+    """Non-streaming entry point for main.py."""
     from marin import get_character_prompt
-    system_prompt = get_character_prompt("neutral") + "\n" + USER_CONTEXT
-    
-    msgs = [SystemMessage(content=system_prompt)]
-    
-    if history:
-        for m in history:
-            if m["role"] == "user":
-                msgs.append(HumanMessage(content=m["content"]))
-            else:
-                msgs.append(AIMessage(content=m["content"]))
-    
-    msgs.append(HumanMessage(content=message))
-    
-    # Run the graph
-    final_state = await graph.ainvoke({"messages": msgs})
-    
-    # Get the last AI message
-    for msg in reversed(final_state["messages"]):
-        if isinstance(msg, AIMessage) and msg.content:
-            return msg.content
-    
-    return "I'm sorry, I couldn't process that request."
-
-async def stream_chat_with_marin(message: str, history: List[dict] = None):
-    """Streaming version for FastAPI."""
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-    from marin import get_character_prompt
-    
-    system_prompt = get_character_prompt("neutral") + "\n" + USER_CONTEXT
-    msgs = [SystemMessage(content=system_prompt)]
-    
+    msgs = [SystemMessage(content=get_character_prompt("neutral") + "\n" + USER_CONTEXT)]
     if history:
         for m in history:
             if m["role"] == "user":
                 msgs.append(HumanMessage(content=m["content"]))
             elif m["role"] == "assistant":
                 msgs.append(AIMessage(content=m["content"]))
-    
     msgs.append(HumanMessage(content=message))
-    
-    async for event in graph.astream_events({"messages": msgs}, version="v1"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            content = event["data"]["chunk"].content
-            if content:
-                yield content
-        elif kind == "on_tool_start":
-            yield f"\n[Executing {event['name']}...]\n"
-        elif kind == "on_tool_end":
-            # You might want to show tool results or just a confirmation
-            pass
+
+    initial_state = {
+        "messages":               msgs,
+        "plan":                   [],
+        "tool_outputs":           {},
+        "technical_verification": False,
+        "emotional_state":        _infer_emotional_state(history or []),
+    }
+
+    result = await agent.ainvoke(initial_state)
+
+    for msg in reversed(result["messages"]):
+        if isinstance(msg, AIMessage) and msg.content:
+            return msg.content
+    return "I'm sorry, I couldn't process that request."
+
+async def stream_chat_with_marin(message: str, history: list = None):
+    from marin import get_character_prompt
+    msgs = [SystemMessage(content=get_character_prompt("neutral") + "\n" + USER_CONTEXT)]
+    if history:
+        for m in history:
+            msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user"
+                        else AIMessage(content=m["content"]))
+    msgs.append(HumanMessage(content=message))
+
+    initial_state = {
+        "messages":               msgs,
+        "plan":                   [],
+        "tool_outputs":           {},
+        "technical_verification": False,
+        "emotional_state":        _infer_emotional_state(history or []),
+    }
+
+    # astream_events v2 — only yield tokens from the persona node's LLM call
+    persona_token_yielded = False
+    try:
+        async for event in agent.astream_events(initial_state, version="v2"):
+            if (
+                event["event"] == "on_chat_model_stream"
+                and event.get("metadata", {}).get("langgraph_node") == "persona"
+            ):
+                chunk = event["data"]["chunk"].content
+                if chunk:
+                    persona_token_yielded = True
+                    yield chunk
+    except Exception as e:
+        print(f"[Streaming] astream_events error: {e}")
+
+    # Fallback: if streaming didn't yield anything, do a full invoke
+    if not persona_token_yielded:
+        result = await agent.ainvoke(initial_state)
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, AIMessage) and msg.content:
+                yield msg.content
+                break
+
 
 if __name__ == "__main__":
     async def test():

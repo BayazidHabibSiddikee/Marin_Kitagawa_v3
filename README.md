@@ -180,7 +180,7 @@ marin/
 ├── static/                 # Static assets
 │   └── generated/          # AI-generated images
 │
-├── codeflow/               # Code flow visualization
+├── moduleflow/             # Marin Universe - Module dependency graph
 ├── doc/                    # Document corpus for RAG
 ├── code/                   # Source code corpus for RAG
 ├── storage/                # Runtime data (DB, vibe state)

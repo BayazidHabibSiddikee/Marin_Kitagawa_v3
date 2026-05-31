@@ -17,7 +17,6 @@ import httpx
 from config import DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL
 from database import init_db, migrate_from_json
 import database
-import database
 from utils.shared_logic import (
     timer, handle_timer_command, USER_CONTEXT
 )
@@ -28,10 +27,8 @@ from config import UPLOAD_FOLDER, HOST, PORT
 
 app = FastAPI(title="Marin HS-02")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/codeflow", StaticFiles(directory="codeflow", html=True), name="codeflow")
+app.mount("/moduleflow", StaticFiles(directory="moduleflow", html=True), name="moduleflow")
 
-from  import app as _app
-app.mount("/", _app, name="")
 templates = Jinja2Templates(directory="templates")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -333,11 +330,11 @@ async def memory_clear_endpoint(agent: str = Form(None)):
 async def health():
     return {"status": "operational", "codename": "Marin HS-02"}
 
+from unique.marin_vault.core_dna.main import app as _app
+app.mount("/vault/bayazid", _app, name="bayazid_vault")
 
 if __name__ == "__main__":
     import uvicorn
     init_db()
     migrate_from_json()
-    uvicorn.run(app, host=HOST, port=PORT)
-e_from_json()
     uvicorn.run(app, host=HOST, port=PORT)

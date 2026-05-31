@@ -991,6 +991,11 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
             full_response += clean
             sentence_buffer += clean
 
+            # Slow down news-like responses for readability
+            if any(marker in full_response for marker in ["LATEST NEWS", "📰", "[BBC]", "[Reuters]", "[AP]"]):
+                if clean.strip().endswith(("\n", "•")) or (len(clean.strip()) > 10 and "\n" in clean):
+                    await asyncio.sleep(0.4)
+
             if audio_proc and any(m in chunk for m in split_marks):
                 text = clean_for_tts(sentence_buffer)
                 if len(text) > 3:
@@ -1019,6 +1024,4 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
 
 if __name__ == "__main__":
     a = input("What's so urgent?\n>> ")
-    asyncio.run(main(a))
-)
     asyncio.run(main(a))

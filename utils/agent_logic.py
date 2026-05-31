@@ -9,8 +9,10 @@ from typing import Optional, List, Dict, Any, Tuple
 
 import httpx
 
+from config import RAG_PORT
+
 # ── RAG configuration ──────────────────────────────────────────────────────────
-RAG_URL = "http://127.0.0.1:5080"
+RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
 
 async def get_rag_context(query: str, enabled: bool = True) -> str:
     if not enabled:

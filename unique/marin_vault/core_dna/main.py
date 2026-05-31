@@ -7,6 +7,9 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../../../BayazidxMarin'))
+
 from bayazid import (
     main as bayazid_main,
     teach_topic, generate_quiz, create_study_plan,
@@ -35,10 +38,13 @@ async def get_index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/chat", response_class=HTMLResponse)
-async def get_chat(request: Request, agent: str = "bayazid"):
+async def get_chat(request: Request, agent: str = "marin"):
     global ACTIVE_AGENT
     ACTIVE_AGENT = agent
-    return templates.TemplateResponse(request=request, name="bayazid_chat.html", context={"agent": agent})
+    try:
+        return templates.TemplateResponse(request=request, name="marin_chat.html", context={"agent": agent})
+    except:
+        return templates.TemplateResponse(request=request, name="index.html")
 
 @app.get("/profile", response_class=HTMLResponse)
 async def get_profile(request: Request):

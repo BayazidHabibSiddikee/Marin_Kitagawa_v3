@@ -213,6 +213,9 @@ MEMORY_MAX_MESSAGES    = 50
 # ── SERVER ─────────────────────────────────────────────────────────────────────
 HOST            = _settings.get("server", {}).get("host", "0.0.0.0")
 PORT            = _settings.get("server", {}).get("port", 5069)
+RAG_PORT        = _settings.get("server", {}).get("rag_port", 5080)
+MODULEFLOW_PORT = 5070
+TODO_PORT       = 5000
 OLLAMA_BASE_URL = _settings.get("server", {}).get("ollama_base_url", "http://localhost:11434")
 OPENAI_BASE_URL = _settings.get("server", {}).get("openai_base_url", "https://api.openai.com/v1")
 UPLOAD_FOLDER   = "static/uploads"
