@@ -25,7 +25,45 @@ from marin import main as marin_main, format_game_context_for_marin
 from marin_fier import classify, extract_timer_task, extract_topic, extract_quiz_params # Use unified classifier
 from config import UPLOAD_FOLDER, HOST, PORT
 
-app = FastAPI(title="Marin HS-02")
+from contextlib import asynccontextmanager
+import asyncio
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    migrate_from_json()
+    print("[Database] Initialized and migrated.")
+
+    async def _hourly_news_telegram():
+        import asyncio as _aio
+        while True:
+            try:
+                await _aio.sleep(3600)
+                from tools.news_harvester import main as harvest_news
+                await harvest_news()
+            except Exception:
+                await _aio.sleep(60)
+
+    async def _daily_habit_reminder():
+        import asyncio as _aio
+        import datetime
+        while True:
+            try:
+                now = datetime.datetime.now()
+                if now.hour == 9 and now.minute == 0:
+                    from tools.habit import main as check_habits
+                    check_habits()
+                    await _aio.sleep(61)
+                else:
+                    await _aio.sleep(30)
+            except Exception:
+                await _aio.sleep(60)
+
+    asyncio.create_task(_hourly_news_telegram())
+    asyncio.create_task(_daily_habit_reminder())
+    yield
+
+app = FastAPI(title="Marin HS-02", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/moduleflow", StaticFiles(directory="moduleflow", html=True), name="moduleflow")
 
@@ -33,69 +71,6 @@ templates = Jinja2Templates(directory="templates")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs("static/generated", exist_ok=True)
-
-@app.on_event("startup")
-async def startup_event():
-    init_db()
-    migrate_from_json()
-    print("[Database] Initialized and migrated.")
-
-    # ── Hourly Telegram news scheduler ────────────────────────────────────
-    async def _hourly_news_telegram():
-        """Background task: harvest news + send to Telegram every hour."""
-        import asyncio as _aio
-        while True:
-            try:
-                await _aio.sleep(3600)  # wait 1 hour
-                print("[Scheduler] Running hourly news harvest + Telegram push...")
-                from tools.news_harvester import main as harvest_news
-                await harvest_news()
-                print("[Scheduler] News harvest + Telegram push complete.")
-            except Exception as e:
-                print(f"[Scheduler] Error: {e}")
-                await _aio.sleep(60)  # retry in 1 min on error
-
-    # ── Daily habit reminder (9 AM) ──────────────────────────────────────
-    async def _daily_habit_reminder():
-        """Background task: send daily habit reminders via Telegram at 9 AM."""
-        import asyncio as _aio
-        from datetime import datetime as _dt
-        while True:
-            try:
-                now = _dt.now()
-                # Calculate seconds until next 9:00 AM
-                target = now.replace(hour=9, minute=0, second=0, microsecond=0)
-                if now >= target:
-                    # Already past 9 AM today, schedule for tomorrow
-                    from datetime import timedelta
-                    target += timedelta(days=1)
-                wait_secs = (target - now).total_seconds()
-                print(f"[Scheduler] Habit reminder waiting {wait_secs/3600:.1f}h until {target}")
-                await _aio.sleep(wait_secs)
-
-                # Get tasks that need reminders
-                from tools.habit_store import get_reminders_for_today, log_daily
-                from tools.msg_telegram import send
-                reminders = get_reminders_for_today()
-                if reminders:
-                    header = "🔔 **DAILY TASK REMINDER**\n\n"
-                    lines = []
-                    for t in reminders:
-                        pri_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
-                        lines.append(f"• {pri_icon} #{t['id']} {t['title']} [{t['category']}]")
-                    msg = header + "\n".join(lines) + "\n\nTell me when you've done these! I can mark them complete."
-                    send(msg)
-                    print(f"[Scheduler] Sent {len(reminders)} habit reminders.")
-                else:
-                    print("[Scheduler] No pending daily reminders today.")
-            except Exception as e:
-                print(f"[Scheduler] Habit reminder error: {e}")
-                await _aio.sleep(60)
-
-    import asyncio
-    asyncio.create_task(_hourly_news_telegram())
-    asyncio.create_task(_daily_habit_reminder())
-    print("[Scheduler] Hourly news + daily habit reminders started.")
 
 ACTIVE_AGENT = "marin"
 
@@ -135,6 +110,44 @@ async def research_search_api(request: Request):
     mode = data.get("mode", "pdf")  # "pdf" or "web"
     results = search_web(query, max_results=10) if mode == "web" else search_pdfs(query)
     return JSONResponse({"results": results})
+
+
+
+@app.post("/api/research/download")
+async def research_download_api(request: Request):
+    data = await request.json()
+    url = data.get("url")
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return JSONResponse({"error": "Valid HTTP/HTTPS URL required"})
+
+    import subprocess
+    import time
+    os.makedirs("static/downloads", exist_ok=True)
+
+    try:
+        if url.lower().endswith(".pdf"):
+            filename = f"static/downloads/document_{int(time.time())}.pdf"
+            subprocess.run(["curl", "-s", "-L", "-o", filename, "--", url], check=True, timeout=30)
+            return JSONResponse({"status": "Success", "file": f"/{filename}"})
+        else:
+            filename = f"static/downloads/media_{int(time.time())}.%(ext)s"
+            subprocess.run(["yt-dlp", "-o", filename, "--", url], check=True, timeout=60)
+            return JSONResponse({"status": "Success", "msg": "Downloaded via yt-dlp to static/downloads/"})
+    except Exception as e:
+        return JSONResponse({"error": str(e)})
+
+@app.post("/api/research/browse")
+async def research_browse_api(request: Request):
+    from tools.knowledge_hub import scrape_content
+    data = await request.json()
+    url = data.get("url")
+    if not url: return JSONResponse({"error": "No URL provided"})
+
+    try:
+        content = scrape_content(url)
+        return JSONResponse({"text": content})
+    except Exception as e:
+        return JSONResponse({"error": str(e)})
 
 @app.get("/api/market/quotes")
 async def market_quotes_api(symbols: str = "AAPL,TSLA,META"):
@@ -203,6 +216,170 @@ async def cmd_run_api(request: Request):
     command = data.get("command", "")
     output = tool_run_command(command)
     return JSONResponse({"output": output})
+
+
+# ── TODO API (Integrated) ──────────────────────────────────────────────────
+import sqlite3
+from datetime import date
+
+DB_TODO = "storage/todos.db"
+
+def get_todo_db():
+    conn = sqlite3.connect(DB_TODO)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_todo_db():
+    db = get_todo_db()
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
+        CREATE TABLE IF NOT EXISTS todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            category_id INTEGER,
+            status TEXT DEFAULT 'todo',
+            priority TEXT DEFAULT 'medium',
+            created_at TEXT DEFAULT (date('now')),
+            completed_at TEXT,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+        );
+    ''')
+    db.commit()
+    db.close()
+
+init_todo_db()
+
+@app.get("/todo", response_class=HTMLResponse)
+async def get_todo_page(request: Request):
+    return templates.TemplateResponse(request=request, name="todo.html")
+
+@app.get("/api/todos")
+async def list_todos():
+    db = get_todo_db()
+    todos = db.execute(
+        "SELECT t.*, c.name as category_name FROM todos t "
+        "LEFT JOIN categories c ON t.category_id = c.id ORDER BY t.id DESC"
+    ).fetchall()
+    db.close()
+    return JSONResponse([dict(r) for r in todos])
+
+@app.post("/api/todos")
+async def create_todo(request: Request):
+    data = await request.json()
+    db = get_todo_db()
+    category_id = data.get("category_id")
+    db.execute(
+        "INSERT INTO todos (title, category_id, priority) VALUES (?, ?, ?)",
+        (data["title"], category_id or None, data.get("priority", "medium")),
+    )
+    db.commit()
+    todo_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    todo = db.execute(
+        "SELECT t.*, c.name as category_name FROM todos t "
+        "LEFT JOIN categories c ON t.category_id = c.id WHERE t.id = ?",
+        (todo_id,),
+    ).fetchone()
+    db.close()
+    return JSONResponse(dict(todo), status_code=201)
+
+@app.patch("/api/todos/{id}")
+async def update_todo(id: int, request: Request):
+    data = await request.json()
+    db = get_todo_db()
+    fields = []
+    values = []
+    for key in ("title", "status", "priority", "category_id"):
+        if key in data:
+            fields.append(f"{key} = ?")
+            values.append(data[key])
+    if "status" in data and data["status"] == "done":
+        fields.append("completed_at = ?")
+        values.append(date.today().isoformat())
+    if "status" in data and data["status"] != "done":
+        fields.append("completed_at = NULL")
+    values.append(id)
+    db.execute(f"UPDATE todos SET {', '.join(fields)} WHERE id = ?", values)
+    db.commit()
+    todo = db.execute(
+        "SELECT t.*, c.name as category_name FROM todos t "
+        "LEFT JOIN categories c ON t.category_id = c.id WHERE t.id = ?",
+        (id,),
+    ).fetchone()
+    db.close()
+    return JSONResponse(dict(todo))
+
+@app.delete("/api/todos/{id}")
+async def delete_todo(id: int):
+    db = get_todo_db()
+    db.execute("DELETE FROM todos WHERE id = ?", (id,))
+    db.commit()
+    db.close()
+    return JSONResponse({"ok": True})
+
+@app.get("/api/categories")
+async def list_categories():
+    db = get_todo_db()
+    cats = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    db.close()
+    return JSONResponse([dict(c) for c in cats])
+
+@app.post("/api/categories")
+async def create_category(request: Request):
+    data = await request.json()
+    db = get_todo_db()
+    try:
+        db.execute("INSERT INTO categories (name) VALUES (?)", (data["name"],))
+        db.commit()
+        cat_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+    except sqlite3.IntegrityError:
+        existing = db.execute(
+            "SELECT * FROM categories WHERE name = ?", (data["name"],)
+        ).fetchone()
+        db.close()
+        return JSONResponse(dict(existing))
+    cat = db.execute("SELECT * FROM categories WHERE id = ?", (cat_id,)).fetchone()
+    db.close()
+    return JSONResponse(dict(cat), status_code=201)
+
+@app.get("/api/stats")
+async def stats():
+    db = get_todo_db()
+
+    status_data = db.execute(
+        "SELECT status, COUNT(*) as count FROM todos GROUP BY status"
+    ).fetchall()
+
+    cat_data = db.execute(
+        "SELECT c.name, "
+        "  COUNT(t.id) as total, "
+        "  SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) as done, "
+        "  SUM(CASE WHEN t.status='in-progress' THEN 1 ELSE 0 END) as in_progress, "
+        "  SUM(CASE WHEN t.status='todo' THEN 1 ELSE 0 END) as todo "
+        "FROM categories c "
+        "LEFT JOIN todos t ON c.id = t.category_id "
+        "GROUP BY c.id ORDER BY c.name"
+    ).fetchall()
+
+    daily = db.execute(
+        "SELECT completed_at, COUNT(*) as count FROM todos "
+        "WHERE status = 'done' AND completed_at IS NOT NULL "
+        "GROUP BY completed_at ORDER BY completed_at DESC LIMIT 7"
+    ).fetchall()
+
+    priority = db.execute(
+        "SELECT priority, COUNT(*) as count FROM todos GROUP BY priority"
+    ).fetchall()
+
+    db.close()
+    return JSONResponse({
+        "status": {r["status"]: r["count"] for r in status_data},
+        "categories": [dict(c) for c in cat_data],
+        "daily_completion": [dict(d) for d in daily],
+        "priority": {r["priority"]: r["count"] for r in priority},
+    })
 
 # ── VAULT API ─────────────────────────────────────────────────────────────
 
@@ -387,8 +564,7 @@ async def memory_clear_endpoint(agent: str = Form(None)):
 async def health():
     return {"status": "operational", "codename": "Marin HS-02"}
 
-from unique.marin_vault.core_dna.main import app as _app
-app.mount("/vault/bayazid", _app, name="bayazid_vault")
+
 
 if __name__ == "__main__":
     import uvicorn

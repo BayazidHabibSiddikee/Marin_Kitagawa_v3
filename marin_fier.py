@@ -602,6 +602,42 @@ def tool_manage_vault(action: str, filename: str = None, content: str = None, ca
 
 # ──  Intents ──────────────────────────────────────────────────────────
 
+
+def tool_manage_todo(action: str, title: str = None, priority: str = "medium", todo_id: int = None) -> str:
+    """Manage Marin's interactive Todo dashboard. Actions: list, add, complete, delete."""
+    import sqlite3
+    from datetime import date
+    try:
+        conn = sqlite3.connect("storage/todos.db")
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        if action == "list":
+            rows = cur.execute("SELECT * FROM todos WHERE status != 'done' ORDER BY id DESC LIMIT 10").fetchall()
+            if not rows: return "You have no pending tasks! Great job!"
+            return "Pending tasks:\n" + "\n".join(f"{r['id']}. {r['title']} [{r['priority']}]" for r in rows)
+
+        elif action == "add" and title:
+            cur.execute("INSERT INTO todos (title, priority) VALUES (?, ?)", (title, priority))
+            conn.commit()
+            return f"Added task: '{title}'"
+
+        elif action == "complete" and todo_id:
+            cur.execute("UPDATE todos SET status='done', completed_at=? WHERE id=?", (date.today().isoformat(), todo_id))
+            conn.commit()
+            return f"Marked task {todo_id} as complete!"
+
+        elif action == "delete" and todo_id:
+            cur.execute("DELETE FROM todos WHERE id=?", (todo_id,))
+            conn.commit()
+            return f"Deleted task {todo_id}."
+
+        return "Invalid action or missing parameters for Todo tool."
+    except Exception as e:
+        return f"Todo error: {e}"
+    finally:
+        conn.close()
+
 def tool_teach_topic(topic: str, sub_intent: str = "standard") -> str:
     return f"MARIN_INTENT:teach:{topic}:{sub_intent}"
 
