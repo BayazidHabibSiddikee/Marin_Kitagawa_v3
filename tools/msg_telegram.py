@@ -18,7 +18,7 @@ import json
 
 # ── Default credentials (set these once, never pass args again) ──
 DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "8641837647:AAFXxREVUrgK6j6NlycAsZLabC8rXkeZ1jg")
-DEFAULT_CHAT_ID = os.getenv("TELEGRAM_USER_ID",   "8058658801")
+DEFAULT_CHAT_ID = os.getenv("TELEGRAM_USER_ID",   "")
 
 
 def send(message: str, token: str = DEFAULT_TOKEN, chat_id: str = DEFAULT_CHAT_ID) -> bool:
