@@ -5,6 +5,8 @@ import asyncio
 import subprocess
 import signal
 import sys
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -216,6 +218,12 @@ async def cmd_run_api(request: Request):
     command = data.get("command", "")
     output = tool_run_command(command)
     return JSONResponse({"output": output})
+
+@app.get("/api/logs")
+async def get_api_logs(limit: int = 200):
+    from marin_fier import _cmd_log
+    logs = _cmd_log[-limit:] if _cmd_log else []
+    return JSONResponse({"logs": logs, "total": len(_cmd_log) if _cmd_log else 0})
 
 
 # ── TODO API (Integrated) ──────────────────────────────────────────────────
