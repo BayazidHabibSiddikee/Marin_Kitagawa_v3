@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
 Simple Telegram Message Sender
+Usage:
+  python send_tg.py "Your message here"
+  python send_tg.py "Hello!" --token YOUR_TOKEN --chat YOUR_CHAT_ID
+Or import and use as a function:
+  from send_tg import send
+  send("Hello from Python!")
 """
 
-import os
 import sys
+import os
 import argparse
 import urllib.request
 import urllib.parse
 import json
 
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"))
-
-# ── Credentials from .env ──
-DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "")
-DEFAULT_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# ── Default credentials (set these once, never pass args again) ──
+DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "8641837647:AAFXxREVUrgK6j6NlycAsZLabC8rXkeZ1jg")
+DEFAULT_CHAT_ID = os.getenv("TELEGRAM_USER_ID",   "8058658801")
 
 
 def send(message: str, token: str = DEFAULT_TOKEN, chat_id: str = DEFAULT_CHAT_ID) -> bool:
