@@ -17,7 +17,7 @@ import urllib.parse
 import json
 
 # ── Default credentials (set these once, never pass args again) ──
-DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "8641837647:AAFXxREVUrgK6j6NlycAsZLabC8rXkeZ1jg")
+DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "")
 DEFAULT_CHAT_ID = os.getenv("TELEGRAM_USER_ID",   "")
 
 

@@ -235,8 +235,8 @@ def email():
         'apurbo': '2208027@student.ruet.ac.bd'
     }
 
-    sender = "pythonlusty@gmail.com"
-    password = os.getenv("EMAIL_PASSWORD", "ypsazczivgabqsyd")  # safer fallback
+    sender = os.getenv("EMAIL_SENDER", "")
+    password = os.getenv("EMAIL_PASSWORD", "")
 
     # Ask for recipient
     talk1("Whom do you want to send the mail?")
