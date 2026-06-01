@@ -35,15 +35,6 @@ async def lifespan(app: FastAPI):
     print("[Database] Initialized and migrated.")
 
     async def _hourly_news_telegram():
-<<<<<<< jules-18396265177757718316-26a03eda
-        import asyncio as _aio
-        while True:
-            try:
-                await _aio.sleep(3600)
-                from tools.news_harvester import main as harvest_news
-                await harvest_news()
-            except Exception:
-=======
         """Background task: harvest news + send top 10 headlines to Telegram every hour."""
         import asyncio as _aio
         while True:
@@ -77,7 +68,6 @@ async def lifespan(app: FastAPI):
 
             except Exception as e:
                 print(f"[Scheduler] Error: {e}")
->>>>>>> main
                 await _aio.sleep(60)
 
     async def _daily_habit_reminder():
@@ -602,9 +592,6 @@ async def memory_clear_endpoint(agent: str = Form(None)):
 async def health():
     return {"status": "operational", "codename": "Marin HS-02"}
 
-<<<<<<< jules-18396265177757718316-26a03eda
-
-=======
 # ── AGENT LOGS ───────────────────────────────────────────────────────────
 
 @app.get("/logs", response_class=HTMLResponse)
@@ -632,7 +619,6 @@ async def proactive_sse(agent: str = "marin"):
 
 from unique.marin_vault.core_dna.main import app as _app
 app.mount("/vault/bayazid", _app, name="bayazid_vault")
->>>>>>> main
 
 if __name__ == "__main__":
     import uvicorn
