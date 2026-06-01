@@ -24,8 +24,8 @@ from telegram.ext import (
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN", "8641837647:AAFXxREVUrgK6j6NlycAsZLabC8rXkeZ1jg")
-TELEGRAM_USER_ID        = int(os.getenv("TELEGRAM_USER_ID", "8058658801"))
+TELEGRAM_BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_USER_ID        = int(os.getenv("TELEGRAM_USER_ID", "0"))
 BINANCE_API_KEY         = os.getenv("BINANCE_API_KEY", "YOUR_API_KEY")
 BINANCE_API_SECRET      = os.getenv("BINANCE_API_SECRET", "YOUR_API_SECRET")
 USE_TESTNET             = os.getenv("USE_TESTNET", "false").lower() == "true"

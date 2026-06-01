@@ -12,8 +12,8 @@ NEWS_FILE   = os.path.join(STORAGE_DIR, "latest_news.json")
 MODEL       = "qwen2.5:0.5b"
 
 # Telegram Config
-TELEGRAM_TOKEN   = "8527078131:AAGnYETRQNlrpBtFEGEQtXypmFjbLok4xIQ"
-TELEGRAM_CHAT_ID = "8058658801"
+TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── RSS Sources ────────────────────────────────────────────────────────────────
 # Add or remove feeds here. Key = display name, value = RSS URL.
