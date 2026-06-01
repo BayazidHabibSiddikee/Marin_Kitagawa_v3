@@ -402,6 +402,29 @@ def habit_stats() -> str:
     return "\n".join(lines)
 
 @tool
+def habit_today() -> str:
+    """Get today's pending daily reminders — tasks you set to remind every day."""
+    from tools.habit_store import get_reminders_for_today
+    tasks = get_reminders_for_today()
+    if not tasks:
+        return "No pending daily reminders today. You're all caught up!"
+    lines = ["🔔 Today's reminders:"]
+    for t in tasks:
+        pri = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
+        lines.append(f"  {pri} #{t['id']} {t['title']} ({t['category']})")
+    return "\n".join(lines)
+
+@tool
+def habit_delete(task_id: int) -> str:
+    """Delete a task permanently.
+    
+    Args:
+        task_id: The task number to delete.
+    """
+    from tools.habit_store import delete_task
+    return delete_task(task_id)
+
+@tool
 def vault_access(category: str = "misc", query: str = "") -> str:
     """Search or read from Marin's persistent vault storage. Use category and query to find stored notes, memories, or data."""
     from tools.vault_manager import manage_vault
@@ -439,7 +462,7 @@ ALL_TOOLS = [
     screenshot_tool, terminal_tool, vault_access, rag_search,
     pdf_download_tool, msg_telegram, email_send, app_launch, app_list,
     swordwatch_inspect, swordwatch_kill,
-    habit_add, habit_complete, habit_list, habit_stats,
+    habit_add, habit_complete, habit_list, habit_stats, habit_today, habit_delete,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -492,6 +515,8 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - habit_complete(task_id) — Mark task done. Args: {"task_id": 1}
 - habit_list(status, category) — List tasks. Args: {"status": "todo", "category": "study"}
 - habit_stats() — Get overview. Args: {}
+- habit_today() — Show pending daily reminders. Args: {}
+- habit_delete(task_id) — Delete a task permanently. Args: {"task_id": 1}
 - app_launch(app_name: str) — Open an app by name. Args: {"app_name": "code|brave|obsidian|mpv|..."}
 - app_list() — List all available apps. Args: {}
 - swordwatch_inspect(target) — Deep inspect a process (CPU, mem, threads, files, network). Args: {"target": "name or pid"}
