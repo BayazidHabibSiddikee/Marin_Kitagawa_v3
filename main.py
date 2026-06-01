@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     print("[Database] Initialized and migrated.")
 
     async def _hourly_news_telegram():
+<<<<<<< jules-18396265177757718316-26a03eda
         import asyncio as _aio
         while True:
             try:
@@ -42,6 +43,41 @@ async def lifespan(app: FastAPI):
                 from tools.news_harvester import main as harvest_news
                 await harvest_news()
             except Exception:
+=======
+        """Background task: harvest news + send top 10 headlines to Telegram every hour."""
+        import asyncio as _aio
+        while True:
+            try:
+                await _aio.sleep(3600)  # wait 1 hour
+                print("[Scheduler] Running hourly news harvest...")
+                from tools.news_harvester import fetch_all_news
+                from tools.msg_telegram import send
+                from database import init_db, save_news
+
+                news = await fetch_all_news()
+                if not news:
+                    print("[Scheduler] No news found.")
+                    continue
+
+                # Save to DB
+                try:
+                    init_db()
+                    save_news(news)
+                except Exception:
+                    pass
+
+                # Send top 10 headlines to Telegram
+                top = news[:10]
+                msg = "🌍 **NEWS UPDATE**\n\n"
+                for i, item in enumerate(top, 1):
+                    src = item.get("source", "")
+                    msg += f"{i}. [{src}] {item['title']}\n"
+                send(msg)
+                print(f"[Scheduler] Sent {len(top)} headlines to Telegram.")
+
+            except Exception as e:
+                print(f"[Scheduler] Error: {e}")
+>>>>>>> main
                 await _aio.sleep(60)
 
     async def _daily_habit_reminder():
@@ -456,6 +492,8 @@ async def handle_message(
         image_path = os.path.abspath(image_path)
 
     print(f"[Routing] -> Marin Engine (LangGraph)")
+    from proactive_engine import record_user_message
+    record_user_message(agent)
     from games.tiktaktoe import get_game
     game = get_game()
     state = game.get_board_state() if game else None
@@ -564,7 +602,37 @@ async def memory_clear_endpoint(agent: str = Form(None)):
 async def health():
     return {"status": "operational", "codename": "Marin HS-02"}
 
+<<<<<<< jules-18396265177757718316-26a03eda
 
+=======
+# ── AGENT LOGS ───────────────────────────────────────────────────────────
+
+@app.get("/logs", response_class=HTMLResponse)
+async def agent_logs_page(request: Request):
+    return templates.TemplateResponse(request=request, name="agent_logs.html")
+
+@app.get("/api/logs")
+async def agent_logs_api(limit: int = 100):
+    from tools.agent_log import get_entries
+    return JSONResponse(get_entries(limit))
+
+# ── PROACTIVE ENGINE ─────────────────────────────────────────────────────
+
+@app.get("/proactive/stream")
+async def proactive_sse(agent: str = "marin"):
+    from proactive_engine import proactive_stream
+    return StreamingResponse(
+        proactive_stream(agent),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+from unique.marin_vault.core_dna.main import app as _app
+app.mount("/vault/bayazid", _app, name="bayazid_vault")
+>>>>>>> main
 
 if __name__ == "__main__":
     import uvicorn

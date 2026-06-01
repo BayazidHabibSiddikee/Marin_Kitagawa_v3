@@ -149,7 +149,8 @@ class DebugInput(BaseModel):
 # ── COMMAND ALLOWLIST ─────────────────────────────────────────────────────────
 _CMD_ALLOW = re.compile(
     r'^(ls|cat|pwd|echo|whoami|date|uptime|df|du|free|uname|hostname|'
-    r'ps|git|python3?|pip3?|mkdir|touch|cp|mv|ln|rmdir|chmod|chown|'
+    r'ps|git|python3?|pip3?|pipx|mkdir|touch|cp|mv|ln|rmdir|chmod|chown|'
+    r'sudo|apt|apt-get|snap|flatpak|pacman|dnf|yum|'
     r'find|grep|rg|head|tail|wc|sort|uniq|cut|awk|sed|tr|'
     r'curl|wget|make|gcc|g\+\+|avr-gcc|avrdude|cargo|rustc|'
     r'tree|which|type|env|printenv|lsusb|lsblk|ip|ping|'
