@@ -40,6 +40,63 @@ async def startup_event():
     migrate_from_json()
     print("[Database] Initialized and migrated.")
 
+    # ── Hourly Telegram news scheduler ────────────────────────────────────
+    async def _hourly_news_telegram():
+        """Background task: harvest news + send to Telegram every hour."""
+        import asyncio as _aio
+        while True:
+            try:
+                await _aio.sleep(3600)  # wait 1 hour
+                print("[Scheduler] Running hourly news harvest + Telegram push...")
+                from tools.news_harvester import main as harvest_news
+                await harvest_news()
+                print("[Scheduler] News harvest + Telegram push complete.")
+            except Exception as e:
+                print(f"[Scheduler] Error: {e}")
+                await _aio.sleep(60)  # retry in 1 min on error
+
+    # ── Daily habit reminder (9 AM) ──────────────────────────────────────
+    async def _daily_habit_reminder():
+        """Background task: send daily habit reminders via Telegram at 9 AM."""
+        import asyncio as _aio
+        from datetime import datetime as _dt
+        while True:
+            try:
+                now = _dt.now()
+                # Calculate seconds until next 9:00 AM
+                target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+                if now >= target:
+                    # Already past 9 AM today, schedule for tomorrow
+                    from datetime import timedelta
+                    target += timedelta(days=1)
+                wait_secs = (target - now).total_seconds()
+                print(f"[Scheduler] Habit reminder waiting {wait_secs/3600:.1f}h until {target}")
+                await _aio.sleep(wait_secs)
+
+                # Get tasks that need reminders
+                from tools.habit_store import get_reminders_for_today, log_daily
+                from tools.msg_telegram import send
+                reminders = get_reminders_for_today()
+                if reminders:
+                    header = "🔔 **DAILY TASK REMINDER**\n\n"
+                    lines = []
+                    for t in reminders:
+                        pri_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
+                        lines.append(f"• {pri_icon} #{t['id']} {t['title']} [{t['category']}]")
+                    msg = header + "\n".join(lines) + "\n\nTell me when you've done these! I can mark them complete."
+                    send(msg)
+                    print(f"[Scheduler] Sent {len(reminders)} habit reminders.")
+                else:
+                    print("[Scheduler] No pending daily reminders today.")
+            except Exception as e:
+                print(f"[Scheduler] Habit reminder error: {e}")
+                await _aio.sleep(60)
+
+    import asyncio
+    asyncio.create_task(_hourly_news_telegram())
+    asyncio.create_task(_daily_habit_reminder())
+    print("[Scheduler] Hourly news + daily habit reminders started.")
+
 ACTIVE_AGENT = "marin"
 
 # ── KNOWLEDGE HUB API ────────────────────────────────────────────────────────

@@ -197,6 +197,211 @@ def pdf_download_tool(query: str) -> str:
     return f"Could not download a valid PDF for '{query}' after trying {min(len(search_results), 5)} sources."
 
 @tool
+def app_launch(app_name: str) -> str:
+    """Launch an installed app by name. Use this instead of classifier to open apps.
+    
+    Available apps: swordfish, brave, chromium, zen, alacritty, ghostty, code, obsidian,
+    geany, vim, files, mpv, blender, feh, pavucontrol, record, okular, zathura, btop,
+    htop, gparted, vpn, shot.
+    
+    Args:
+        app_name: Name of the app to launch (e.g., 'code', 'brave', 'obsidian', 'mpv').
+    """
+    from tools.app_launcher import APPS, is_available, launch
+    key = app_name.lower().strip()
+    if key not in APPS:
+        matches = [k for k in APPS if key in k]
+        if matches:
+            return f"Unknown app '{key}'. Did you mean: {', '.join(matches)}?"
+        return f"Unknown app '{key}'. Available: {', '.join(APPS.keys())}"
+    _, cmd = APPS[key]
+    if not is_available(cmd):
+        return f"'{cmd.split()[0]}' is not installed on this system."
+    launch(cmd)
+    return f"Launched {APPS[key][0]} ({key})."
+
+@tool
+def app_list() -> str:
+    """List all available apps that can be launched."""
+    from tools.app_launcher import APPS, CATEGORIES, is_available
+    lines = ["📱 Available apps:\n"]
+    for cat, keys in CATEGORIES.items():
+        lines.append(f"  {cat}")
+        for key in keys:
+            desc, cmd = APPS[key]
+            avail = "●" if is_available(cmd) else "○"
+            lines.append(f"    {avail} {key} — {desc}")
+        lines.append("")
+    return "\n".join(lines)
+
+@tool
+def swordwatch_inspect(target: str) -> str:
+    """Deep inspect a running process by name or PID. Shows CPU, memory, threads, children, open files, network connections.
+    
+    Args:
+        target: Process name (e.g., 'firefox') or PID number (e.g., '1234').
+    """
+    import time as _time
+    from tools.swordwatch import find_procs, get_cmdline, get_threads, get_children, get_open_files, get_connections, fmt_bytes, fmt_uptime
+    import psutil
+
+    matches = find_procs(target)
+    if not matches:
+        return f"No process matching '{target}'."
+
+    proc = matches[0]
+    try:
+        with proc.oneshot():
+            pid     = proc.pid
+            name    = proc.name()
+            status  = proc.status()
+            uptime  = _time.time() - proc.create_time()
+            cpu_p   = proc.cpu_percent(interval=0.3)
+            mem     = proc.memory_info()
+            mem_p   = proc.memory_percent()
+            thr     = get_threads(proc)
+            cmd     = get_cmdline(proc)
+            try: user = proc.username()
+            except: user = "—"
+
+        files = get_open_files(proc)
+        conns = get_connections(proc)
+        kids  = get_children(proc)
+    except psutil.NoSuchProcess:
+        return f"Process '{target}' disappeared during inspection."
+
+    lines = [
+        f"🔍 {name} (pid {pid})",
+        f"  Status: {status} | User: {user}",
+        f"  CPU: {cpu_p:.1f}% | Memory: {mem_p:.1f}% ({fmt_bytes(mem.rss)})",
+        f"  Threads: {thr} | Uptime: {fmt_uptime(uptime)}",
+        f"  Command: {cmd[:120]}",
+    ]
+    if kids:
+        lines.append(f"  Children: {len(kids)} ({', '.join(k.name() for k in kids[:5])})")
+    if files:
+        lines.append(f"  Open files: {len(files)}")
+    if conns:
+        lines.append(f"  Network: {len(conns)} connections")
+    return "\n".join(lines)
+
+@tool
+def swordwatch_kill(target: str, force: bool = False) -> str:
+    """Kill a process by name or PID. Sends SIGTERM by default, SIGKILL if force=True.
+    
+    Args:
+        target: Process name (e.g., 'firefox') or PID number.
+        force: If True, sends SIGKILL (instant, no cleanup). If False, sends SIGTERM (graceful).
+    """
+    import signal as _signal
+    from tools.swordwatch import find_procs
+    import psutil
+
+    matches = find_procs(target)
+    if not matches:
+        return f"No process matching '{target}'."
+
+    sig = _signal.SIGKILL if force else _signal.SIGTERM
+    sig_name = "SIGKILL" if force else "SIGTERM"
+    results = []
+
+    for p in matches:
+        try:
+            name = p.name()
+            pid = p.pid
+            p.send_signal(sig)
+            results.append(f"✓ {sig_name} → {name} (pid {pid})")
+        except psutil.NoSuchProcess:
+            results.append(f"pid {p.pid} already gone")
+        except psutil.AccessDenied:
+            results.append(f"✗ pid {p.pid} access denied (try sudo)")
+
+    return "\n".join(results)
+
+@tool
+def msg_telegram(message: str) -> str:
+    """Send a message to the operator via Telegram.
+    
+    Args:
+        message: The message text to send (supports Markdown formatting).
+    """
+    from tools.msg_telegram import send
+    ok = send(message)
+    return f"Message sent to Telegram." if ok else "Failed to send Telegram message."
+
+@tool
+def email_send(to: str, subject: str, body: str = "", attachment_path: str = "") -> str:
+    """Send an email via Gmail. Can attach a .txt or .tex file.
+    
+    Args:
+        to: Recipient email address.
+        subject: Email subject line.
+        body: Plain text body (optional if attachment provided).
+        attachment_path: Full path to .txt or .tex file to attach (optional).
+    """
+    from tools.email_sender import send_email
+    return send_email(to, subject, body, attachment_path)
+
+@tool
+def habit_add(title: str, category: str = "general", priority: str = "medium", remind_daily: bool = False) -> str:
+    """Add a new task/habit to track. Set remind_daily=True for tasks Marin should remind you about every day via Telegram.
+    
+    Args:
+        title: What the task is (e.g., 'Study math', 'Exercise 30min').
+        category: Group (e.g., 'study', 'health', 'work').
+        priority: low / medium / high.
+        remind_daily: If True, Marin will remind you every day until it's done.
+    """
+    from tools.habit_store import add_task
+    task = add_task(title, category, priority, remind_daily)
+    remind = " (daily reminder ON)" if remind_daily else ""
+    return f"Task #{task['id']} added: '{title}' [{priority}] in {category}{remind}"
+
+@tool
+def habit_complete(task_id: int) -> str:
+    """Mark a task as done.
+    
+    Args:
+        task_id: The task number to complete.
+    """
+    from tools.habit_store import complete_task
+    return complete_task(task_id)
+
+@tool
+def habit_list(status: str = "", category: str = "") -> str:
+    """List tasks. Filter by status ('todo', 'done', 'in-progress') or category.
+    
+    Args:
+        status: Filter by status (optional).
+        category: Filter by category (optional).
+    """
+    from tools.habit_store import list_tasks
+    tasks = list_tasks(status=status or None, category=category or None)
+    if not tasks:
+        return "No tasks found."
+    lines = []
+    for t in tasks[:15]:
+        icon = {"done": "✅", "in-progress": "🔄", "todo": "⏳"}.get(t["status"], "⏳")
+        remind = " 🔔" if t["remind_daily"] else ""
+        lines.append(f"#{t['id']} {icon} [{t['priority']}] {t['title']} ({t['category']}){remind}")
+    return "\n".join(lines)
+
+@tool
+def habit_stats() -> str:
+    """Get habit tracker overview — completion rates, pending tasks by priority."""
+    from tools.habit_store import get_stats
+    s = get_stats()
+    lines = [
+        f"📊 Tasks: {s['total']} total | ✅ {s['done']} done | ⏳ {s['todo']} todo | 🔄 {s['in_progress']} active"
+    ]
+    for c in s["categories"]:
+        pct = round(c["done"] / c["total"] * 100) if c["total"] else 0
+        lines.append(f"  {c['category']}: {c['done']}/{c['total']} ({pct}%)")
+    if s["pending_by_priority"]:
+        lines.append(f"  Pending: {s['pending_by_priority']}")
+    return "\n".join(lines)
+
+@tool
 def vault_access(category: str = "misc", query: str = "") -> str:
     """Search or read from Marin's persistent vault storage. Use category and query to find stored notes, memories, or data."""
     from tools.vault_manager import manage_vault
@@ -232,7 +437,9 @@ ALL_TOOLS = [
     alarm_tool, timer_tool, math_plot_tool, map_tool,
     news_tool, weather_tool, stock_tool, crypto_tool,
     screenshot_tool, terminal_tool, vault_access, rag_search,
-    pdf_download_tool,
+    pdf_download_tool, msg_telegram, email_send, app_launch, app_list,
+    swordwatch_inspect, swordwatch_kill,
+    habit_add, habit_complete, habit_list, habit_stats,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -279,6 +486,16 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - vault_access(category: str, query: str) — Search vault storage. Args: {"category": "misc", "query": "notes"}
 - rag_search(query: str) — Search knowledge base. Args: {"query": "search terms"}
 - pdf_download_tool(query: str) — Search & download PDF to unique/download vault. Args: {"query": "book name or topic"}
+- msg_telegram(message: str) — Send message to operator via Telegram. Args: {"message": "text"}
+- email_send(to, subject, body, attachment_path) — Send email via Gmail, attach .txt/.tex. Args: {"to": "...", "subject": "...", "body": "...", "attachment_path": "/path/to/file"}
+- habit_add(title, category, priority, remind_daily) — Add task with optional daily reminder. Args: {"title": "...", "category": "study", "priority": "high", "remind_daily": true}
+- habit_complete(task_id) — Mark task done. Args: {"task_id": 1}
+- habit_list(status, category) — List tasks. Args: {"status": "todo", "category": "study"}
+- habit_stats() — Get overview. Args: {}
+- app_launch(app_name: str) — Open an app by name. Args: {"app_name": "code|brave|obsidian|mpv|..."}
+- app_list() — List all available apps. Args: {}
+- swordwatch_inspect(target) — Deep inspect a process (CPU, mem, threads, files, network). Args: {"target": "name or pid"}
+- swordwatch_kill(target, force) — Kill a process (SIGTERM or SIGKILL). Args: {"target": "name or pid", "force": false}
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
