@@ -822,6 +822,7 @@
                 <button id="voice-btn" onclick="toggleVoice()" style="font-family:monospace;font-size:.6rem;background:none;cursor:pointer;padding:3px 8px;border:1px solid #f4722433;border-radius:3px;color:#f4722488">🔇 VOICE</button>
                 <button id="rag-btn" onclick="toggleRag()" style="font-family:monospace;font-size:.6rem;background:none;cursor:pointer;padding:3px 8px;border:1px solid #10b98133;border-radius:3px;color:#10b981">📚 RAG</button>
                 <button id="term-btn" onclick="toggleTermPanel()" style="font-family:monospace;font-size:.6rem;background:none;cursor:pointer;padding:3px 8px;border:1px solid #22d3ee33;border-radius:3px;color:#22d3ee88">⬛ LOG</button>
+                <button onclick="window.open('/logs','_blank')" style="font-family:monospace;font-size:.6rem;background:none;cursor:pointer;padding:3px 8px;border:1px solid #a78bfa33;border-radius:3px;color:#a78bfa88">👁 LIVE</button>
                 <button id="flow-btn" onclick="window.location.href='/moduleflow'" style="font-family:monospace;font-size:.6rem;background:none;cursor:pointer;padding:3px 8px;border:1px solid #a78bfa33;border-radius:3px;color:#a78bfa88">🌊 MARIN UNIVERSE</button>
                 </div>
 
@@ -1028,12 +1029,18 @@
             nameEl.textContent = 'MARIN';
             badgeEl.textContent = 'KITAGAWA';
 
-            // Clear chat and LOAD HISTORY FIRST
             const msgs = document.getElementById('messages');
-            msgs.innerHTML = '';
+            msgs.innerHTML = `
+                <div class="msg ai">
+                    <div class="avatar ai">⚔</div>
+                    <div class="bubble" style="color:var(--text-muted);font-style:italic">
+                        Loading session...
+                    </div>
+                </div>`;
 
             loadRecentHistory().then(() => {
                 scrollToBottom();
+                startProactiveListener();
             });
         }
         const depths = ['quick', 'standard', 'deep'];
@@ -1157,6 +1164,7 @@
             document.getElementById('send-btn').disabled = false;
             document.getElementById('stop-speech-btn').style.display = 'none';
             scrollToBottom();
+            drainProactiveQueue();
         }
 
         function buildMessageWithMode(msg) {
@@ -1580,8 +1588,30 @@
 		    try {
 		        const res = await fetch(`/memory/status?agent=${currentAgent}`);
 		        const data = await res.json();
-		        const recent = data.messages.slice(-20); // last 20 messages
-		        recent.forEach(msg => {
+
+		        const messages = (data.messages || [])
+		            .filter(m => m.role === 'user' || m.role === 'assistant');
+
+		        const recent = messages.slice(-20);
+		        const firstUserIdx = recent.findIndex(m => m.role === 'user');
+		        const clean = firstUserIdx > 0 ? recent.slice(firstUserIdx) : recent;
+
+		        const msgs = document.getElementById('messages');
+		        msgs.innerHTML = '';
+
+		        if (clean.length === 0) {
+		            msgs.innerHTML = `
+		                <div class="msg ai">
+		                    <div class="avatar ai">⚔</div>
+		                    <div class="bubble">
+		                        <strong>MARIN HS-02 ONLINE</strong><br>
+		                        Systems operational. Awaiting your command, Operator.
+		                    </div>
+		                </div>`;
+		            return;
+		        }
+
+		        clean.forEach(msg => {
 		            let content = msg.content || '';
 		            if (msg.role === 'user') {
 		                const marker = "USER'S MESSAGE:";
@@ -1646,6 +1676,52 @@
                 document.getElementById('news-content').innerHTML = 'Intelligence feed offline.';
             }
         }
+
+        // ── PROACTIVE SSE LISTENER ─────────────────────────────────────────
+        let proactiveSource = null;
+        let pendingProactive = [];
+
+        function startProactiveListener() {
+            if (proactiveSource) proactiveSource.close();
+
+            proactiveSource = new EventSource(`/proactive/stream?agent=${currentAgent}`);
+
+            proactiveSource.onmessage = (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.type !== 'proactive' || !data.text) return;
+
+                    const inp = document.getElementById('msg-input');
+                    const userTyping = inp.value.trim().length > 0;
+                    if (isStreaming || userTyping) {
+                        pendingProactive.push(data.text);
+                        return;
+                    }
+                    deliverProactive(data.text);
+                } catch (err) {}
+            };
+
+            proactiveSource.onerror = () => {
+                proactiveSource.close();
+                setTimeout(startProactiveListener, 30000);
+            };
+        }
+
+        function deliverProactive(text) {
+            appendMessage('ai', text);
+            scrollToBottom();
+        }
+
+        function drainProactiveQueue() {
+            while (pendingProactive.length > 0) {
+                deliverProactive(pendingProactive.shift());
+            }
+        }
+
+        // Override sendMessage ending to drain queue
+        const _origSendMsg = sendMessage;
+        // Queue drain happens after each send completes via scrollToBottom calls
+
     </script>
 </body>
 
