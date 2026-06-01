@@ -522,6 +522,9 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
         ]
         for t_name, t_params in batch:
             try:
+
+
+
                 out = await execute_tool(t_name, t_params)
                 if out: tool_outputs.append(f"[{t_params.get('command', t_name)}]\n{out}")
             except Exception as e:
@@ -530,6 +533,9 @@ async def preprocess_user_input(user_input: str, image_path: str = None) -> tupl
     elif intent not in ("chat", "normal", "learn", "code", "lab") and intent not in GAME_RESPONSES:
         try:
             from marin_fier import execute_tool
+
+
+
             out = await execute_tool(intent, params)
             if out: tool_outputs.append(f"[TOOL: {intent}]\n{out}")
         except Exception as e:
@@ -798,6 +804,30 @@ async def response(
     if "USER'S MESSAGE:" in prompt:
         bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
 
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
     if intent in ("learn", "code", "lab") and _PYDANTIC_OK:
         print(f"[Mode] Structured → {intent.upper()}")
         async for chunk in structured_response(bare_question, intent, rag_context):
@@ -927,6 +957,30 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
     bare_question = prompt
     if "USER'S MESSAGE:" in prompt:
         bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
+
+    is_proactive = False
+    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
+        is_proactive = True
+        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
+
 
     context_parts = [get_character_prompt(user_vibe)]
 
