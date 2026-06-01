@@ -392,6 +392,7 @@ def create_integrated_hub_map(
         zoom_start=13,
     )
 
+
     # ── Weather marker ────────────────────────────────────────────────────────
     wcode = weather.get("weathercode", 0)
     wicon = _WEATHER_ICONS.get(wcode, "🌡️")
@@ -408,6 +409,18 @@ def create_integrated_hub_map(
         tooltip=f"{wicon} Weather: {city}",
         icon=folium.Icon(color="blue", icon="cloud"),
     ).add_to(m)
+
+    # ── Map Bounds ──────────────────────────────────────────────────────────
+    bounds = [[weather["latitude"], weather["longitude"]]]
+    if pins:
+        for p in pins:
+            bounds.append([p['lat'], p['lon']])
+    if custom_pins:
+        for p in custom_pins:
+            bounds.append([p['lat'], p['lon']])
+
+    m.fit_bounds(bounds)
+
 
     # ── Custom pins (user-specified locations) ────────────────────────────────
     geocoded_custom = []

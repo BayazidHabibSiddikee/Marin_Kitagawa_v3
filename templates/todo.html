@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Marin Todo | Interactive Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --panel: #12121e;
+            --border: #1e1e35;
+            --text: #d1d5db;
+            --purple: #8b5cf6;
+        }
+        body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; }
+        .btn { background: var(--purple); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; text-decoration: none; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+        .todo-item { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 10px 0; }
+        .todo-item:last-child { border: none; }
+        input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 4px; }
+        canvas { max-height: 300px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>Marin Todo Dashboard</h2>
+        <a href="/chat" class="btn">Back to Chat</a>
+    </div>
+
+    <div class="grid">
+        <div class="panel">
+            <h3>Add Task</h3>
+            <form id="add-form" style="display:flex; gap:10px;">
+                <input type="text" id="title" placeholder="New task..." required style="flex:1;">
+                <select id="priority">
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                </select>
+                <button type="submit" class="btn">Add</button>
+            </form>
+
+            <h3 style="margin-top:20px;">Tasks</h3>
+            <div id="todo-list"></div>
+        </div>
+
+        <div class="panel">
+            <h3>Task Status</h3>
+            <canvas id="statusChart"></canvas>
+
+            <h3 style="margin-top:20px;">Daily Completion</h3>
+            <canvas id="dailyChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let statusChart, dailyChart;
+
+        async function loadTodos() {
+            const res = await fetch('/api/todos');
+            const todos = await res.json();
+            const list = document.getElementById('todo-list');
+            list.innerHTML = '';
+            todos.forEach(t => {
+                list.innerHTML += `
+                    <div class="todo-item" style="opacity: ${t.status === 'done' ? 0.5 : 1}">
+                        <div>
+                            <strong>${t.title}</strong>
+                            <span style="font-size:0.8em; color:gray;">[${t.priority}]</span>
+                        </div>
+                        <div>
+                            ${t.status !== 'done' ? `<button class="btn" style="background:#10b981; padding:4px 8px; font-size:0.8em;" onclick="updateTodo(${t.id}, 'done')">Done</button>` : ''}
+                            <button class="btn" style="background:#dc2626; padding:4px 8px; font-size:0.8em;" onclick="deleteTodo(${t.id})">Del</button>
+                        </div>
+                    </div>
+                `;
+            });
+            loadStats();
+        }
+
+        async function loadStats() {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+
+            if(statusChart) statusChart.destroy();
+            const ctx1 = document.getElementById('statusChart').getContext('2d');
+            statusChart = new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(data.status),
+                    datasets: [{ data: Object.values(data.status), backgroundColor: ['#8b5cf6', '#10b981', '#f59e0b'] }]
+                }
+            });
+
+            if(dailyChart) dailyChart.destroy();
+            const ctx2 = document.getElementById('dailyChart').getContext('2d');
+            dailyChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: data.daily_completion.map(d => d.completed_at),
+                    datasets: [{ label: 'Tasks Completed', data: data.daily_completion.map(d => d.count), backgroundColor: '#8b5cf6' }]
+                }
+            });
+        }
+
+        document.getElementById('add-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await fetch('/api/todos', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    title: document.getElementById('title').value,
+                    priority: document.getElementById('priority').value
+                })
+            });
+            document.getElementById('title').value = '';
+            loadTodos();
+        });
+
+        async function updateTodo(id, status) {
+            await fetch(`/api/todos/${id}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status})
+            });
+            loadTodos();
+        }
+
+        async function deleteTodo(id) {
+            await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+            loadTodos();
+        }
+
+        loadTodos();
+    </script>
+</body>
+</html>

@@ -370,7 +370,57 @@
             if (e.key === 'Enter') performSearch();
         });
 
-        async function performSearch() {
+        async
+async function browseUrl(url) {
+    if (!url) return;
+    const res = await fetch('/api/research/browse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url})
+    });
+    const data = await res.json();
+    const resultsDiv = document.getElementById('results');
+
+    if (data.error) {
+        resultsDiv.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+        return;
+    }
+
+    const downloadUrl = async (url) => {
+        const btn = event.target;
+        btn.innerText = 'Downloading...';
+        const res = await fetch('/api/research/download', {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({url})
+        });
+        const out = await res.json();
+        if(out.error) btn.innerText = 'Error';
+        else {
+            btn.innerText = 'Downloaded';
+            if(out.file) window.open(out.file, '_blank');
+        }
+    };
+    window.downloadUrl = downloadUrl;
+
+    resultsDiv.innerHTML = `
+        <div class="card" style="white-space: pre-wrap; font-family: monospace; max-height: 70vh; overflow-y: auto;">
+            <h4>${url}</h4>
+            <div style="font-size: 0.9em; margin-top: 10px;">${data.text}</div>
+        </div>
+    `;
+}
+
+// Modify performSearch to intercept URLs
+const oldPerformSearch = performSearch;
+performSearch = function() {
+    const q = document.getElementById('search-query').value.trim();
+    if (q.startsWith('http://') || q.startsWith('https://')) {
+        browseUrl(q);
+    } else {
+        oldPerformSearch();
+    }
+}
+
+        function performSearch() {
             const query = searchInput.value.trim();
             const loader = document.getElementById('loader');
             const resultsDiv = document.getElementById('results');
