@@ -25,7 +25,7 @@ import sys
 import time
 import asyncio
 from functools import lru_cache
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from geopy.geocoders import Nominatim
 import folium
 from bs4 import BeautifulSoup
@@ -618,13 +618,13 @@ def _camofox_search(query: str, max_results: int = 5) -> list:
 
 
 def search_web(query: str, max_results: int = 20) -> list:
-    """Search the web — tries Camofox first, then ddgs, then fallback."""
+    """Search the web — tries Camofox first, then ddgs, then Google fallback."""
     results = _camofox_search(query, max_results)
     if results:
         return results
     try:
         from ddgs import DDGS
-        results = DDGS().text(query, max_results=max_results)
+        results = list(DDGS().text(query, max_results=max_results))
         if results:
             return results
     except Exception as e:
