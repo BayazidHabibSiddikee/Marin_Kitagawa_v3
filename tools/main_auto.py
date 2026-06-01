@@ -6,10 +6,10 @@ import ollama
 import json
 
 # --- CONFIGURATION ---
-API = "8690254124:AAG4hFS89yHbsEcNT3Wsfoa6io1jlVUAGgI"
+API = os.getenv("TELEGRAM_API_KEY", "")
 bot = telebot.TeleBot(token=API)
 OLLAMA_MODEL = "qwen2.5:0.5b"
-ALLOWED_USERS = [8058658801]
+ALLOWED_USERS = [int(os.getenv("TELEGRAM_USER_ID", "0"))]
 
 # ── PRESET SHAPES (synced with mathplot.py) ────────────────────────────────────
 PRESETS = {
