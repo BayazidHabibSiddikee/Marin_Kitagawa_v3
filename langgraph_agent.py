@@ -480,9 +480,6 @@ class AgentState(TypedDict):
     tool_outputs:          dict                 # {"raw": "...", "rejection_reason": "..."}
     technical_verification: bool               # set by Node C
     emotional_state:       str                 # "neutral" | "energetic" | "focused" | "low"
-    retry_count:           int                 # tracks auditor→executor retry loops
-    max_retries:           int                 # hard cap (default 3)
-    failure_reason:        str                 # auditor writes why it failed
 
 # ── LLM instances ────────────────────────────────────────────────────────────
 
@@ -532,22 +529,14 @@ STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the u
 
 RULES:
 1. Read the user message and determine what actions are needed.
-2. For searches: use rag_search for knowledge, vault_access for stored notes, news_tool for news.
-3. For downloading books/PDFs: use pdf_download_tool. It searches the web and downloads PDFs to unique/download/.
-4. For installing software: use terminal_tool with the install command (e.g., "sudo apt install postgresql"). Do NOT block on sudo — just include it in the plan.
-5. For sending messages: use msg_telegram for Telegram, email_send for email.
-6. For managing tasks: use habit_add, habit_list, habit_complete, habit_stats, habit_today, habit_delete.
-7. For opening apps: use app_launch. For process control: use swordwatch_inspect, swordwatch_kill.
-8. For time/clock: use terminal_tool with "date" command.
-9. Output a structured plan as a JSON array of steps. Each step is a dict:
+2. If you need context from vault or knowledge base, call vault_access or rag_search as a tool call.
+3. Output a structured plan as a JSON array of steps. Each step is a dict:
    {{"action": "<tool_name or 'respond'>", "args": {{...}}, "rationale": "..."}}
-10. If the task is simple (pure conversation, no tool needed), output a single step:
-    [{{"action": "respond", "args": {{}}, "rationale": "Direct conversational response"}}]
-11. NEVER refuse to use tools. The tools exist — use them. If the user asks for a book, use pdf_download_tool. If they ask to search, use rag_search. If they ask to install, use terminal_tool.
-12. For multi-step tasks, plan multiple steps. Example for "find a database book and install postgresql":
-    [{{"action": "pdf_download_tool", "args": {{"query": "database systems concepts textbook"}}, "rationale": "Search and download database book"}},
-     {{"action": "terminal_tool", "args": {{"command": "sudo apt install -y postgresql postgresql-contrib"}}, "rationale": "Install PostgreSQL database"}},
-     {{"action": "respond", "args": {{}}, "rationale": "Report results to user"}}]
+4. If the task is simple (pure conversation, no tool needed), output a single step:
+   [{{"action": "respond", "args": {{}}, "rationale": "Direct conversational response"}}]
+5. For multi-step tasks, plan multiple steps. Example for "what's bitcoin price and weather":
+   [{{"action": "crypto_tool", "args": {{"coin": "bitcoin"}}, "rationale": "Get crypto price"}},
+    {{"action": "weather_tool", "args": {{"city": "Dhaka"}}, "rationale": "Get weather"}},
     {{"action": "respond", "args": {{}}, "rationale": "Combine results into response"}}]
 6. Do NOT execute tools yourself — only plan.
 
@@ -555,9 +544,6 @@ Output ONLY the plan JSON. No extra text."""
 
 def node_strategist(state: AgentState) -> dict:
     """Node A — Builds the execution plan. Owns state.plan."""
-    from tools.agent_log import log
-    log("strategist", "thinking", "analyzing user request...")
-
     messages = state["messages"]
     system = SystemMessage(content=STRATEGIST_SYSTEM)
     response = llm_planner.invoke([system] + list(messages))
@@ -597,8 +583,6 @@ def node_strategist(state: AgentState) -> dict:
     except (json.JSONDecodeError, TypeError):
         plan = [{"action": "respond", "args": {}, "rationale": content or "Direct response"}]
 
-    log("strategist", "plan built", " → ".join(s.get("action", "?") for s in plan), extra={"plan": plan})
-
     return {
         "plan": plan,
         "tool_outputs": {},
@@ -619,54 +603,22 @@ RULES:
 
 def node_executor(state: AgentState) -> dict:
     """Node B — Executes one plan step. Owns state.tool_outputs."""
-    from tools.agent_log import log
     messages = state["messages"]
     plan = state.get("plan", [])
     tool_outputs = dict(state.get("tool_outputs", {}))
     correction = tool_outputs.get("__correction_hint__", "")
-    retry_count = state.get("retry_count", 0)
-    failure_reason = state.get("failure_reason", "")
 
-    # Determine current step by counting actual step_* keys (not internal keys)
-    completed_steps = len([k for k in tool_outputs if k.startswith("step_")])
+    # Determine current step
+    completed_steps = len(tool_outputs)
     current_step = plan[completed_steps] if completed_steps < len(plan) else None
 
-    # ── Build retry context so Executor learns from rejection ──────────
-    retry_context = ""
-    if correction and retry_count > 0:
-        retry_context = f"""
-PREVIOUS ATTEMPT FAILED (attempt {retry_count}):
-Auditor rejected with: {correction}
-You MUST change your approach — use different search terms, broader/narrower query,
-or a different tool entirely. Do NOT repeat the same tool call that just failed.
-"""
-    elif failure_reason and retry_count > 0:
-        retry_context = f"""
-PREVIOUS ATTEMPT FAILED (attempt {retry_count}):
-Reason: {failure_reason}
-Change your approach. Try different search terms or a different strategy.
-"""
-
     if current_step is None:
-        log("executor", "generating", "all steps done, building final response...")
-
-        # On retry with empty tools, generate an honest "couldn't find" response
-        if retry_count > 0 and failure_reason.startswith("TOOL_EMPTY"):
-            tool_outputs["__final_response__"] = (
-                "I searched for the requested content but couldn't find any matching results. "
-                "The search queries returned empty. Would you like me to try different search terms?"
-            )
-            return {"tool_outputs": tool_outputs}
-
-        # Normal final response generation
+        # All steps done — generate final response
         executor_msgs = [
-            SystemMessage(content=(
-                "All plan steps are complete. Generate a comprehensive, helpful response "
-                "to the user based on the collected information."
-                f"{retry_context}"
-            )),
+            SystemMessage(content="All plan steps are complete. Generate a comprehensive, helpful response to the user based on the collected information."),
         ] + list(messages)
         response = llm_executor.invoke(executor_msgs)
+        # Store the final response content in tool_outputs under a sentinel key
         tool_outputs["__final_response__"] = response.content or ""
         return {"tool_outputs": tool_outputs}
 
@@ -685,7 +637,6 @@ Change your approach. Try different search terms or a different strategy.
             f"User asked: {messages[-1].content}\n"
             f"Collected info:\n{context_str}\n"
             f"Rationale: {current_step.get('rationale', '')}\n\n"
-            f"{retry_context}\n"
             f"Generate a clear, helpful response."
         )
         response = llm_executor.invoke([SystemMessage(content=prompt)])
@@ -695,16 +646,13 @@ Change your approach. Try different search terms or a different strategy.
     elif action in tools_by_name:
         # Execute the tool
         tool_fn = tools_by_name[action]
-        log("executor", "tool call", f"{action}({args})")
         try:
             result = tool_fn.invoke(args)
             step_key = f"step_{completed_steps}_{action}"
             tool_outputs[step_key] = str(result)
-            log("executor", "tool result", f"{action} → {str(result)[:80]}")
         except Exception as e:
             step_key = f"step_{completed_steps}_{action}"
             tool_outputs[step_key] = f"Error: {e}"
-            log("executor", "tool error", f"{action} → {e}")
 
         # If correction hint exists from fail loop, append it as context
         if correction:
@@ -746,66 +694,11 @@ Be strict about facts. Be lenient about process."""
 
 def node_auditor(state: AgentState) -> dict:
     """Node C — Verifies tool_outputs. Owns state.technical_verification."""
-    from tools.agent_log import log
-    log("auditor", "verifying", "checking tool outputs for accuracy...")
     messages = state["messages"]
     tool_outputs = state.get("tool_outputs", {})
     plan = state.get("plan", [])
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 3)
 
-    # ── Hard exit: retries exhausted → force pass to Persona ──────────
-    if retry_count >= max_retries:
-        log("auditor", "result: FORCE PASS", f"max retries ({max_retries}) exhausted")
-        return {
-            "technical_verification": True,
-            "failure_reason": f"MAX_RETRIES: exhausted after {retry_count} attempts",
-            "retry_count": retry_count,
-            "tool_outputs": {
-                **tool_outputs,
-                "__correction_hint__": "",
-            },
-        }
-
-    # If plan is just "respond" with no tools, skip strict verification
-    has_tools = any(s.get("action", "respond") != "respond" for s in plan)
-    final_resp = tool_outputs.get("__final_response__", "")
-
-    if not has_tools:
-        # No tools were used — just check if the response is non-empty
-        if final_resp and len(final_resp.strip()) > 10:
-            log("auditor", "result: PASS", "direct response, no tools needed")
-            return {
-                "technical_verification": True,
-                "failure_reason": "",
-                "retry_count": retry_count,
-                "tool_outputs": tool_outputs,
-            }
-
-    # ── Check if tool genuinely returned empty (not a logic error) ─────
-    # Collect all actual tool outputs (skip internal keys)
-    tool_data = {k: v for k, v in tool_outputs.items() if not k.startswith("__")}
-    all_tool_text = " ".join(str(v) for v in tool_data.values()).lower()
-
-    tool_truly_empty = (
-        not tool_data
-        or all(s in all_tool_text for s in ["no results", "not found", "no pdf", "error", "empty", "0 results"])
-        or all_tool_text.strip() == ""
-    )
-
-    if tool_truly_empty and has_tools:
-        log("auditor", "result: TOOL EMPTY", "tools returned no data — passing to persona gracefully")
-        return {
-            "technical_verification": True,  # pass → Persona tells user honestly
-            "failure_reason": "TOOL_EMPTY: tools returned no results for this query",
-            "retry_count": retry_count,
-            "tool_outputs": {
-                **tool_outputs,
-                "__correction_hint__": "",
-            },
-        }
-
-    # ── Normal logic audit ─────────────────────────────────────────────
+    # Build context for auditor
     output_summary = json.dumps(tool_outputs, indent=2, default=str)[:4000]
     plan_summary = json.dumps(plan, indent=2, default=str)[:2000]
     user_msg = ""
@@ -852,15 +745,8 @@ def node_auditor(state: AgentState) -> dict:
     else:
         full_hint = correction_hint
 
-    status = "PASS" if verified else "FAIL"
-    log("auditor", f"result: {status}", f"issues: {len(issues)}" + (f" — {'; '.join(issues[:2])}" if issues else ""))
-
-    new_retry = retry_count if verified else retry_count + 1
-
     return {
         "technical_verification": verified,
-        "failure_reason": "" if verified else f"AUDIT_FAIL: {full_hint}",
-        "retry_count": new_retry,
         "tool_outputs": {**tool_outputs, "__correction_hint__": full_hint if not verified else ""},
     }
 
@@ -877,9 +763,6 @@ async def persona_node(state: AgentState) -> AgentState:
     Wraps the verified tool output in Marin's personality.
     Never calls tools. Never modifies the technical content.
     """
-    from tools.agent_log import log
-    log("persona", "wrapping", f"emotional_state={state.get('emotional_state', 'neutral')}")
-
     # Safety guard — should never reach here if auditor failed,
     # but defend anyway
     if not state.get("technical_verification", False):
@@ -890,8 +773,6 @@ async def persona_node(state: AgentState) -> AgentState:
 
     emotional_state = state.get("emotional_state", "neutral")
     tool_outputs    = state.get("tool_outputs", {})
-    failure_reason  = state.get("failure_reason", "")
-
     # Read from __final_response__ (written by Executor) or "raw" or synthesize
     raw_content = (
         tool_outputs.get("__final_response__", "")
@@ -901,26 +782,13 @@ async def persona_node(state: AgentState) -> AgentState:
         parts = [str(v) for k, v in sorted(tool_outputs.items()) if not k.startswith("__")]
         raw_content = "\n".join(parts) if parts else "No output to present."
 
-    # Pull the character prompt from marin.py
+    # Pull the character prompt from marin.py — this is where
+    # Hehehe~~ and Ummaaah~~! live
     from marin import get_character_prompt
     persona_prompt = get_character_prompt(emotional_state)
 
-    # ── Handle failure cases gracefully ────────────────────────────────
-    if failure_reason.startswith("MAX_RETRIES") or failure_reason.startswith("TOOL_EMPTY"):
-        wrap_instruction = f"""
-You are Marin. The system tried to fulfill this request but could not complete it.
-
-Failure context: {failure_reason}
-
-Tell the operator honestly and warmly that you couldn't complete this task.
-Suggest what they could try instead (different search terms, manual download, etc.).
-Stay in character. Under 4 sentences.
-Emotional state: {emotional_state}
-Persona rules: {persona_prompt}
-"""
-    else:
-        # Normal verified content wrapping
-        wrap_instruction = f"""
+    # Build the wrapping instruction
+    wrap_instruction = f"""
 You are Marin. The following is a technically verified answer from your reasoning engine.
 Your job is ONLY to reformat the delivery — the facts must not change.
 
@@ -959,14 +827,7 @@ def route_after_executor(state: AgentState) -> str:
     return "executor"
 
 def route_after_auditor(state: AgentState) -> str:
-    """After Auditor: verified → Persona, not verified → Executor (fail loop with cap)."""
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 3)
-
-    # Hard exit: retries exhausted, force to persona
-    if retry_count >= max_retries:
-        return "persona"
-
+    """After Auditor: verified → Persona, not verified → Executor (fail loop)."""
     if state.get("technical_verification", False):
         return "persona"
     return "executor"
@@ -1033,9 +894,6 @@ async def chat_with_marin(message: str, history: list = None):
         "tool_outputs":           {},
         "technical_verification": False,
         "emotional_state":        _infer_emotional_state(history or []),
-        "retry_count":            0,
-        "max_retries":            3,
-        "failure_reason":         "",
     }
 
     result = await agent.ainvoke(initial_state)
@@ -1060,9 +918,6 @@ async def stream_chat_with_marin(message: str, history: list = None):
         "tool_outputs":           {},
         "technical_verification": False,
         "emotional_state":        _infer_emotional_state(history or []),
-        "retry_count":            0,
-        "max_retries":            3,
-        "failure_reason":         "",
     }
 
     # astream_events v2 — only yield tokens from the persona node's LLM call

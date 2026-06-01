@@ -9,7 +9,7 @@ import json
 API = "8690254124:AAG4hFS89yHbsEcNT3Wsfoa6io1jlVUAGgI"
 bot = telebot.TeleBot(token=API)
 OLLAMA_MODEL = "qwen2.5:0.5b"
-ALLOWED_USERS = [int(os.getenv("TELEGRAM_CHAT_ID", "0"))]
+ALLOWED_USERS = [8058658801]
 
 # ── PRESET SHAPES (synced with mathplot.py) ────────────────────────────────────
 PRESETS = {
