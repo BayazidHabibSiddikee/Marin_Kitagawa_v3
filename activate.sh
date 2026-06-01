@@ -1,4 +1,4 @@
 #!/bin/bash
 # Quick activation script for xMarin venv
-source ~/Documents/BayazidxMarin/.venv/bin/activate 
+source ~/.venv/langchain-fix/bin/activate
 echo "✓ xMarin venv activated"

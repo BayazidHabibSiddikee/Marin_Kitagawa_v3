@@ -723,18 +723,26 @@ AUDITOR_SYSTEM = """You are Marin's Auditor — a strict quality gate. You revie
 
 YOUR JOB:
 1. Read the tool outputs and the original user question.
-2. Check for: factual errors, math mistakes, hallucinated data, incomplete answers, fluff.
-3. Set technical_verification to True ONLY if the output is accurate and complete.
-4. If there are errors, explain what's wrong in detail so the Executor can fix it.
+2. Check ONLY for: factual errors, math mistakes, hallucinated data, or completely empty/irrelevant answers.
+3. Set technical_verification to True if the output is accurate and addresses the user's question.
+4. If there are errors, explain what's wrong so the Executor can fix it.
+
+CRITICAL RULES — you MUST follow these:
+- Do NOT criticize which tools were used or the order they were called. Tool selection is the Strategist's job, not yours.
+- Do NOT fail because the agent used one tool instead of two, or didn't follow a specific workflow you imagined.
+- Do NOT invent requirements the user never stated. Only judge what the user actually asked.
+- If a tool returned empty results (no PDF found, no results), that is NOT a factual error — pass it.
+- If the response honestly tells the user what was found (or not found), that is a PASS.
+- Only FAIL if the response contains factually wrong information or is completely unrelated to the question.
 
 OUTPUT FORMAT — respond with ONLY a JSON object:
 {
   "technical_verification": true or false,
-  "issues": ["list of issues found, empty if all good"],
-  "correction_hint": "detailed instruction for what to fix, empty if passed"
+  "issues": ["list of factual issues found, empty if all good"],
+  "correction_hint": "what factual content to fix, empty if passed"
 }
 
-Be strict but fair. Minor stylistic issues pass. Factual errors fail."""
+Be strict about facts. Be lenient about process."""
 
 def node_auditor(state: AgentState) -> dict:
     """Node C — Verifies tool_outputs. Owns state.technical_verification."""

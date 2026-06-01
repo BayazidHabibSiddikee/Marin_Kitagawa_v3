@@ -16,8 +16,12 @@ REQUEST_TIMEOUT = 30
 def _search_via_knowledge_hub(query: str) -> list:
     """Search using knowledge_hub.search_pdfs (Camoufox → ddgs → Google)."""
     try:
-        from knowledge_hub import search_pdfs
-        results = search_pdfs(query)
+        import sys, os as _os
+        _tools_dir = _os.path.dirname(_os.path.abspath(__file__))
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
+        from knowledge_hub import search_web
+        results = search_web(query)
         out = []
         for r in results:
             href = r.get("href") or r.get("link") or r.get("url") or ""
@@ -73,6 +77,10 @@ def _search_via_camoufox(query: str, max_results: int = 5) -> list:
 def _search_via_stealth_browser(query: str) -> list:
     """Fallback: use stealth_browser.stealth_search and parse markdown output."""
     try:
+        import sys, os as _os
+        _tools_dir = _os.path.dirname(_os.path.abspath(__file__))
+        if _tools_dir not in sys.path:
+            sys.path.insert(0, _tools_dir)
         from stealth_browser import stealth_search
         text = stealth_search(query)
         urls = re.findall(r'(https?://[^\s\)]+)', text)
@@ -90,6 +98,7 @@ def _search_via_stealth_browser(query: str) -> list:
 
 def search_pdfs(query: str) -> list:
     """Search for PDF books. Cascade: knowledge_hub → camoufox direct → stealth_browser."""
+    # Use search_web directly to avoid double-appending filetype:pdf
     pdf_query = f"{query} filetype:pdf"
     print(f"[*] Searching: {pdf_query}")
 
