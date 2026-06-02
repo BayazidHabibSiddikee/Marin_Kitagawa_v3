@@ -1160,6 +1160,7 @@
             { mood: 'sad',     words: ['sad','sorry','don\'t cry','come here','😢','😭','i\'m sorry'] },
             { mood: 'flirty',  words: ['hehe','tease','😉','🤭','naughty','cheeky','wink'] },
             { mood: 'lovely',  words: ['love you','mwah','ummaaah','miss you','❤','💕','💋','darling'] },
+            { mood: 'normal',  words: ['here\'s','let me explain','step','formula','concept','theorem','method','algorithm','definition','note that','first,','second,','third,','in summary','to summarize','**'] },
         ];
 
         let _lastDetectedMood = null;
@@ -1235,7 +1236,7 @@
                     const chunk = decoder.decode(value, { stream: true });
 
                     if (chunk.includes('__VIBE__')) {
-                        const vibe = chunk.split('__VIBE__')[1]?.trim().split(/\s/)[0] || 'neutral';
+                        const vibe = chunk.split('__VIBE__')[1]?.trim().split(/\s/)[0] || 'normal';
                         setMoodAvatar(vibe);
                         continue;
                     }

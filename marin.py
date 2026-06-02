@@ -309,7 +309,9 @@ def analyze_marin_vibe(reply: str) -> str:
         return "sad"
     if any(w in lower for w in ["yay", "!!!", "excited", "omg", "🥳"]):
         return "excited"
-    return "lovely"
+    if any(w in lower for w in ["here's", "let me explain", "step", "formula", "concept", "theorem", "method", "algorithm", "note that"]):
+        return "normal"
+    return "normal"
 
 
 def format_game_context_for_marin(game_state: dict) -> str:
