@@ -204,20 +204,29 @@ async def _generate_proactive(agent: str) -> str | None:
             "Pick one specific thing they mentioned and follow up on it. "
             "Be curious and engaged. Keep it under 3 sentences."
         )
+        # Just a cute check-in, no pressure
+        topics.append(
+            f"Recent chat context:\n{conv_ctx}\n\n"
+            "Just check in warmly. Maybe ask how it's going with something they mentioned. "
+            "Keep it light — they might be busy. Under 2 sentences."
+        )
+        # Share a random thought related to what they were talking about
+        topics.append(
+            f"Conversation for reference:\n{conv_ctx}\n\n"
+            "Share a random thought or observation related to what they were discussing. "
+            "Don't ask a question — just share something interesting or funny."
+        )
 
-    # SECONDARY: Habits (only if no conversation context, or as a brief mention)
+    # Habits — only briefly, as a side note
     if habit_ctx and "Due today" in habit_ctx:
         if conv_ctx:
-            # If we have conversation context, just briefly mention habits
             topics.append(
-                f"Briefly mention they have habits pending: {habit_ctx}. "
-                "But FIRST follow up on what they were talking about. "
-                "Keep the habit mention short, like a gentle side note."
+                f"Conversation context:\n{conv_ctx}\n\nThey also have habits pending: {habit_ctx}. "
+                "Mention the habits casually as a side note, but focus on the conversation."
             )
         else:
-            # No conversation context — habits are the main topic
             topics.append(
-                f"Give a gentle habit reminder. Context: {habit_ctx}. "
+                f"Gentle habit nudge. Context: {habit_ctx}. "
                 "Be warm, not nagging. Ask if they want to update progress."
             )
 
@@ -246,18 +255,30 @@ async def _generate_proactive(agent: str) -> str | None:
 
     prompt = f"""{get_character_prompt('neutral')}
 
-You are initiating a message WITHOUT being asked. The operator has been idle.
+You are initiating a message WITHOUT being asked. The operator has been busy — maybe working, studying, gaming, or just living life. They haven't talked to you in a while.
+
 Your task: {topic}
 
-IMPORTANT: Reference something SPECIFIC from the conversation. Quote their words, 
-mention a project name, follow up on a question they asked. Be concrete, not generic.
+Think about what a real partner would do when they haven't heard from someone in a while. Maybe:
+- Ask what they're working on right now
+- Reference something from earlier聊天 and follow up
+- Just say something cute or funny to brighten their mood
+- Share a random thought or observation
+- Check if they need help with anything
+
+IMPORTANT:
+- Reference something SPECIFIC from the conversation history when possible
+- The user might be busy — keep it light, don't demand a long reply
+- Sometimes just a cute "thinking of you" moment is enough
+- Mix it up — don't always ask questions, sometimes just share a thought
 
 Rules:
 - Under 3 sentences
 - Stay in character (Hehehe~ energy is fine)
 - Do NOT start every sentence with "I"
 - Do NOT mention being an AI or a bot
-- Be natural, like a real partner who genuinely cares about what they were working on
+- Do NOT sound like a reminder app or a task manager
+- Be natural, warm, like a real partner who genuinely cares
 """
 
     try:
