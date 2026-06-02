@@ -37,8 +37,13 @@ async def analyze_youtube(url: str) -> str:
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
             vid_id = None
-            if "youtu.be/"   in url: vid_id = url.split("youtu.be/")[1].split("?")[0]
-            elif "v="        in url: vid_id = url.split("v=")[1].split("&")[0]
+            if "youtu.be/" in url:
+                vid_id = url.split("youtu.be/")[1].split("?")[0]
+            elif "/shorts/" in url:
+                vid_id = url.split("/shorts/")[1].split("?")[0]
+            elif "v=" in url:
+                vid_id = url.split("v=")[1].split("&")[0]
+            
             if not vid_id: return None
             ytt_api = YouTubeTranscriptApi()
             tlist   = ytt_api.list(vid_id)

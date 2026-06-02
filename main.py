@@ -78,8 +78,12 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(proactive_broadcaster())
 
     # Start Telegram bot (bidirectional chat)
-    from telegram_bot import start_telegram_bot
-    await start_telegram_bot()
+    try:
+        from telegram_bot import start_telegram_bot
+        asyncio.create_task(start_telegram_bot())
+        print("[Telegram] Bot task created.")
+    except (ImportError, AttributeError):
+        print("[Telegram] Bot startup function not found, skipping.")
 
     print("[Proactive] Engine started — broadcasts to web + Telegram.")
     print("[Telegram] Bot active — send messages to chat with Marin!")
@@ -126,11 +130,26 @@ async def research_hub_page(request: Request):
 
 @app.post("/api/research/search")
 async def research_search_api(request: Request):
-    from tools.knowledge_hub import search_pdfs, search_web
     data = await request.json()
     query = data.get("query")
     mode = data.get("mode", "pdf")  # "pdf" or "web"
-    results = search_web(query, max_results=10) if mode == "web" else search_pdfs(query)
+    
+    if mode == "pdf":
+        from tools.pdf_downloader import search_pdfs
+        # pdf_downloader.search_pdfs returns [{'title':..., 'url':...}]
+        raw_results = search_pdfs(query)
+        # Normalize for frontend which expects 'href' and 'body'
+        results = []
+        for r in raw_results:
+            results.append({
+                "title": r.get("title", "Untitled PDF"),
+                "href": r.get("url", ""),
+                "body": "PDF Document found via Research Hub Cascade."
+            })
+    else:
+        from tools.knowledge_hub import search_web
+        results = search_web(query, max_results=10)
+        
     return JSONResponse({"results": results})
 
 
@@ -139,24 +158,25 @@ async def research_search_api(request: Request):
 async def research_download_api(request: Request):
     data = await request.json()
     url = data.get("url")
+    title = data.get("title", "document")
     if not url or not (url.startswith("http://") or url.startswith("https://")):
         return JSONResponse({"error": "Valid HTTP/HTTPS URL required"})
 
-    import subprocess
-    import time
-    os.makedirs("static/downloads", exist_ok=True)
-
     try:
-        if url.lower().endswith(".pdf"):
-            filename = f"static/downloads/document_{int(time.time())}.pdf"
-            subprocess.run(["curl", "-s", "-L", "-o", filename, "--", url], check=True, timeout=30)
-            return JSONResponse({"status": "Success", "file": f"/{filename}"})
+        from tools.pdf_downloader import download_pdf
+        print(f"[Research] Request: url={url}, title={title}")
+        # Save to static/downloads so it's web-accessible
+        filepath = download_pdf(url, title, output_dir="static/downloads")
+        if filepath:
+            print(f"[Research] Download Success: {filepath}")
+            web_path = f"/{filepath}" if not filepath.startswith("/") else filepath
+            return JSONResponse({"status": "Success", "file": web_path})
         else:
-            filename = f"static/downloads/media_{int(time.time())}.%(ext)s"
-            subprocess.run(["yt-dlp", "-o", filename, "--", url], check=True, timeout=60)
-            return JSONResponse({"status": "Success", "msg": "Downloaded via yt-dlp to static/downloads/"})
+            print(f"[Research] Download Failed (Tool returned empty string)")
+            return JSONResponse({"error": "Download failed or invalid PDF content"})
     except Exception as e:
-        return JSONResponse({"error": str(e)})
+        print(f"[Research] Download Exception: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/api/research/browse")
 async def research_browse_api(request: Request):

@@ -153,8 +153,8 @@ def launch_app(name: str) -> str:
         try:
             subprocess.Popen(
                 [key],
-                stdout=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
-                stderr=open('/home/sword/Documents/xMarin/logs/tool_execution.log', 'a'),
+                stdout=open('logs/tool_execution.log', 'a'),
+                stderr=open('logs/tool_execution.log', 'a'),
                 start_new_session=True,
             )
             return f"Opening {name}~ ✨"
@@ -229,7 +229,7 @@ os.environ["OLLAMA_HOST"] = OLLAMA_BASE_URL
 API_KEYS = _settings.get("api_keys", {})
 
 # ── EMAIL ──────────────────────────────────────────────────────────────────────
-EMAIL_SENDER = _settings.get("email", {}).get("sender", os.getenv("EMAIL_SENDER", ""))
+EMAIL_SENDER = _settings.get("email", {}).get("sender", os.getenv("EMAIL_SENDER", os.getenv("GMAIL_ADDRESS", "")))
 EMAILS: dict[str, str] = {
     # "name": "email@example.com"
     # Add your contacts here

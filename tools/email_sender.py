@@ -9,12 +9,15 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Gmail SMTP config
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "izuku.midoriya.genzi@gmail.com"
-SENDER_PASSWORD = "ncnwcsffkcopitcb"  # app password (no spaces)
+SENDER_EMAIL = os.getenv("GMAIL_ADDRESS", "2208053.mte.ruet@gmail.com")
+SENDER_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "ydwoswqdbqfwkulo")
 
 
 def send_email(
