@@ -24,6 +24,7 @@ from utils.shared_logic import (
     timer, handle_timer_command, USER_CONTEXT
 )
 from marin import main as marin_main, format_game_context_for_marin
+from proactive_engine import proactive_stream, record_user_message, proactive_broadcaster, get_status as proactive_status
 
 from marin_fier import classify, extract_timer_task, extract_topic, extract_quiz_params # Use unified classifier
 from config import UPLOAD_FOLDER, HOST, PORT
@@ -54,8 +55,18 @@ async def lifespan(app: FastAPI):
             try:
                 now = datetime.datetime.now()
                 if now.hour == 9 and now.minute == 0:
-                    from tools.habit import main as check_habits
-                    check_habits()
+                    from tools.habit_store import get_reminders_for_today
+                    from tools.msg_telegram import send
+                    reminders = get_reminders_for_today()
+                    if reminders:
+                        header = "DAILY TASK REMINDER\n\n"
+                        lines = []
+                        for t in reminders:
+                            pri_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
+                            lines.append(f"• {pri_icon} #{t['id']} {t['title']} [{t['category']}]")
+                        msg = header + "\n".join(lines) + "\n\nTell me when you've done these!"
+                        send(msg)
+                        print(f"[Scheduler] Sent {len(reminders)} habit reminders.")
                     await _aio.sleep(61)
                 else:
                     await _aio.sleep(30)
@@ -64,6 +75,14 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_hourly_news_telegram())
     asyncio.create_task(_daily_habit_reminder())
+    asyncio.create_task(proactive_broadcaster())
+
+    # Start Telegram bot (bidirectional chat)
+    from telegram_bot import start_telegram_bot
+    await start_telegram_bot()
+
+    print("[Proactive] Engine started — broadcasts to web + Telegram.")
+    print("[Telegram] Bot active — send messages to chat with Marin!")
     yield
 
 app = FastAPI(title="Marin HS-02", lifespan=lifespan)
@@ -455,6 +474,7 @@ async def handle_message(
     # We ignore the 'agent' parameter and always use marin now
     target_agent = "marin"
     print(f"[Message] Agent: {target_agent} | Msg: {message[:50]}...")
+    record_user_message(target_agent)
 
     image_path = None
     if image and image.filename:
@@ -656,6 +676,32 @@ Do not include any conversational text, markdown formatting (no ```json), or pre
 @app.get("/health")
 async def health():
     return {"status": "operational", "codename": "Marin HS-02"}
+
+
+# ── PROACTIVE ENGINE ─────────────────────────────────────────────────────
+
+@app.get("/proactive/stream")
+async def proactive_sse(agent: str = "marin"):
+    return StreamingResponse(
+        proactive_stream(agent),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.get("/proactive/status")
+async def proactive_status_endpoint():
+    return JSONResponse(proactive_status())
+
+
+@app.post("/proactive/reset")
+async def proactive_reset(agent: str = "marin"):
+    from proactive_engine import reset_session
+    reset_session(agent)
+    return JSONResponse({"ok": True, "message": "Proactive session reset."})
 
 
 

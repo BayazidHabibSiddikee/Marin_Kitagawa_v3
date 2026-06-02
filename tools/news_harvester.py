@@ -4,6 +4,8 @@ import json
 import os
 import asyncio
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 import ollama
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -11,9 +13,9 @@ STORAGE_DIR = "storage"
 NEWS_FILE   = os.path.join(STORAGE_DIR, "latest_news.json")
 MODEL       = "qwen2.5:0.5b"
 
-# Telegram Config
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# Telegram Config (news bot — separate from chat bot)
+TELEGRAM_TOKEN   = os.getenv("TELEGRAM_NEWS_BOT_TOKEN", "") or os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_NEWS_CHAT_ID", "") or os.getenv("TELEGRAM_CHAT_ID", "")
 
 # ── RSS Sources ────────────────────────────────────────────────────────────────
 # Add or remove feeds here. Key = display name, value = RSS URL.

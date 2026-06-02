@@ -7,7 +7,7 @@
     <title> HS-02 — Command Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"
         rel="stylesheet">
     <!-- KaTeX for LaTeX formula rendering -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
@@ -137,26 +137,25 @@
         }
 
         .nav-brand {
-            .logo {
-                font-family: 'DM Serif Display', 'Cinzel', serif;
-                font-size: 1.1rem;
-                font-weight: 600;
-                letter-spacing: .08em;
-                color: var(--teal);
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
+            font-family: 'Cinzel', serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: .08em;
+            color: var(--purple);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
-            .logo .badge {
-                font-family: 'JetBrains Mono', 'Share Tech Mono', monospace;
-                font-size: .6rem;
-                background: linear-gradient(135deg, var(--teal), var(--teal-dim));
-                color: #fff;
-                padding: 2px 8px;
-                border-radius: 2px;
-                letter-spacing: .05em;
-            }
+        .nav-brand .hs {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: .6rem;
+            background: linear-gradient(135deg, var(--purple), var(--violet));
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 2px;
+            letter-spacing: .05em;
+        }
 
         .nav-links {
             display: flex;
@@ -540,14 +539,9 @@
         </div>
         <div class="nav-links">
             <a href="/">HOME</a>
-            <a href="/knowledge-hub?tab=research">📚 RESEARCH</a>
-            <a href="/knowledge-hub">🌐 HUB</a>
-            <a href="/vault">📁 VAULT</a>
-            <a href="/profile">PROFILE</a>
-            <a href="/chat?agent=marin" style="color:#ff6b9d88;border-color:#ff6b9d33" onmouseover="this.style.color='#ffb7c5';this.style.borderColor='#ff6b9d'" onmouseout="this.style.color='#ff6b9d88';this.style.borderColor='#ff6b9d33'">🌸 MARIN</a>
-            <a href="/" style="color:#fbbf2488;border-color:#fbbf2433" onmouseover="this.style.color='#fbbf24';this.style.borderColor='#fbbf24'" onmouseout="this.style.color='#fbbf2488';this.style.borderColor='#fbbf2433'">⚡ ARENA</a>
-            <a href="/moduleflow" style="color:#22d3ee88;border-color:#22d3ee33" onmouseover="this.style.color='#22d3ee';this.style.borderColor='#22d3ee'" onmouseout="this.style.color='#22d3ee88';this.style.borderColor='#22d3ee33'">🌊 MARIN UNIVERSE</a>
             <a href="/chat" class="cta">⚔ ENTER COMMAND CENTER</a>
+            <a href="/knowledge-hub">🌐 HUB</a>
+            <a href="/chat?agent=marin">🌸 MARIN</a>
         </div>
     </nav>
 
@@ -565,11 +559,7 @@
         </p>
         <div class="hero-cta">
             <a href="/chat" class="btn-primary">⚔ ENTER COMMAND CENTER</a>
-            <a href="/knowledge-hub?tab=research" class="btn-secondary">📚 RESEARCH HUB</a>
             <a href="/knowledge-hub" class="btn-secondary">🌐 KNOWLEDGE HUB</a>
-            <a href="/chat?agent=marin" class="btn-secondary">🌸 CHAT WITH MARIN</a>
-            <a href="/" class="btn-secondary">⚡ ARENA</a>
-            <a href="/moduleflow" class="btn-secondary">🌊 MARIN UNIVERSE MAP</a>
         </div>
     </section>
 

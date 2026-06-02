@@ -662,19 +662,18 @@
         /* ── MOOD AVATAR ─────────────────────────────────────────── */
         #mood-avatar {
             position: fixed;
-            bottom: 130px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: 150px;
+            right: 40px;
             height: 42vh;
             max-height: 400px;
             pointer-events: none;
             z-index: 50;
             opacity: 0;
-            transition: opacity .5s ease, transform .5s ease;
-            filter: drop-shadow(0 0 20px rgba(77,184,164,.2));
+            transition: opacity .6s ease, transform .6s ease;
+            filter: drop-shadow(0 0 25px rgba(77,184,164,.25));
         }
-        #mood-avatar.visible  { opacity: .82; transform: translateX(-50%) translateY(0); }
-        #mood-avatar.hidden   { opacity: 0;   transform: translateX(-50%) translateY(18px); }
+        #mood-avatar.visible  { opacity: .88; transform: translateY(0) scale(1); }
+        #mood-avatar.hidden   { opacity: 0;   transform: translateY(25px) scale(0.95); }
 
         /* Avatar in topbar talking animation */
         @keyframes talkPulse {
@@ -976,20 +975,27 @@
         { mood:'excited',   words:['yay','omg','!!!','🥳','woah','amazing','incredible'] },
         { mood:'sad',       words:['sad','sorry','😢','😭'] },
         { mood:'flirty',    words:['hehe','tease','😉','🤭','naughty'] },
-        { mood:'lovely',    words:['love you','mwah','ummaaah','miss you','❤','❤️','💕','💋','😘','🥰'] },
+        { mood:'lovely',    words:['love you','mwah','ummaaah','miss you','❤','❤️','💕','💋','😘','🥰','sweetie','honey','darling','kiss'] },
         { mood:'eating',    words:['eat','food','hungry','yum','delicious','cooking','meal'] },
         { mood:'confident', words:['i can','strong','ready','success','win','trust me','got this'] },
         { mood:'laugh',     words:['haha','lmao','funny','lol','🤣','😂','hehehe'] },
         { mood:'shock',     words:['what?!','no way','shocking','surprise','😱','oh my god'] },
         { mood:'normal',    words:["here's",'let me explain','step','formula','algorithm','definition','**'] },
     ];
-    let _lastMood = null, avatarHideTimer = null;
+    let _lastMood = null, avatarHideTimer = null, lastMoodTime = 0;
 
     function detectMoodFromChunk(text) {
+        const now = Date.now();
+        if (now - lastMoodTime < 2000) return; // Throttle: only change mood every 2s
+
         const lower = text.toLowerCase();
         for (const rule of MOOD_RULES) {
             if (rule.words.some(w => lower.includes(w))) {
-                if (_lastMood !== rule.mood) { _lastMood = rule.mood; setMoodAvatar(rule.mood); }
+                if (_lastMood !== rule.mood) { 
+                    _lastMood = rule.mood; 
+                    lastMoodTime = now;
+                    setMoodAvatar(rule.mood); 
+                }
                 return;
             }
         }
@@ -1002,9 +1008,11 @@
             el.src = `/static/avatars/${vibe}.png`;
             el.classList.remove('hidden'); el.classList.add('visible');
             clearTimeout(avatarHideTimer);
-            if (!persist) avatarHideTimer = setTimeout(() => {
-                el.classList.remove('visible'); el.classList.add('hidden');
-            }, 12000);
+            if (!persist) {
+                avatarHideTimer = setTimeout(() => {
+                    el.classList.remove('visible'); el.classList.add('hidden');
+                }, 10000); // Stay for 10s as requested
+            }
         };
         img.onerror = () => {};
         img.src = `/static/avatars/${vibe}.png`;
@@ -1025,9 +1033,11 @@
         document.getElementById('send-btn').disabled = true;
         document.getElementById('stop-speech-btn').style.display = 'inline-flex';
         toggleTalking(true);
+        _lastMood = null;
+        setMoodAvatar('thinking', true);
 
         const fd = new FormData();
-        fd.append('message', `[MODE:${currentMode}][DEPTH:${currentDepth}] ${text}`);
+        fd.append('message', buildMessageWithMode(text));
         fd.append('agent', currentAgent);
         if (attachedImage) { fd.append('image', attachedImage); attachedImage = null; document.getElementById('attach-preview').textContent = ''; }
 
@@ -1043,12 +1053,25 @@
                 const { done, value } = await reader.read();
                 if (done) break;
                 const chunk = dec.decode(value);
+
+                if (chunk.includes('__VIBE__')) {
+                    const vibe = chunk.split('__VIBE__')[1]?.trim().split(/\s/)[0] || 'normal';
+                    setMoodAvatar(vibe);
+                    // Don't add to full, so it's not rendered
+                    continue;
+                }
+
                 full += chunk;
-                detectMoodFromChunk(chunk);
-                try { typingBubble.innerHTML = marked.parse(full); }
-                catch { typingBubble.textContent = full; }
+                // Clean vibe tags from full text just in case they arrived in pieces
+                const cleanText = full.replace(/__VIBE__\w+/g, '').trim();
+                
+                try { typingBubble.innerHTML = marked.parse(cleanText); }
+                catch { typingBubble.textContent = cleanText; }
+                
+                detectMoodFromChunk(cleanText);
                 scrollToBottom();
             }
+            if (!full) typingBubble.innerHTML = '<em style="color:var(--text-muted)">No response.</em>';
         } catch(e) {
             typingBubble.textContent = 'Connection error. Try again.';
         }
@@ -1057,8 +1080,14 @@
         document.getElementById('send-btn').disabled = false;
         document.getElementById('stop-speech-btn').style.display = 'none';
         toggleTalking(false);
-
         while (pendingProactive.length > 0) deliverProactive(pendingProactive.shift());
+    }
+
+    function buildMessageWithMode(msg) {
+        if (currentMode === 'teach') return `teach depth:${currentDepth} — ${msg}`;
+        if (currentMode === 'plan') return `study plan for: ${msg}`;
+        if (currentMode === 'code') return `review my code:\n${msg}`;
+        return msg;
     }
 
     async function stopSpeech() {
@@ -1066,12 +1095,102 @@
         document.getElementById('stop-speech-btn').style.display = 'none';
     }
 
+    // ── QUIZ LAUNCH (interactive MCQ via JSON endpoint) ──────────────────────
     async function launchQuiz() {
-        const topic = document.getElementById('quiz-topic').value.trim() || 'general knowledge';
-        const diff  = document.getElementById('quiz-diff').value;
+        const topic = document.getElementById('quiz-topic').value.trim();
+        if (!topic) { alert('Enter a topic first.'); return; }
+        const diff = document.getElementById('quiz-diff').value;
         const count = document.getElementById('quiz-count').value;
-        document.getElementById('msg-input').value = `/quiz topic="${topic}" difficulty=${diff} count=${count}`;
-        await sendMessage();
+
+        const aiMsg = appendMessage('ai', '');
+        const bubble = aiMsg.querySelector('.bubble') || aiMsg; // Handle different appendMessage return types
+        bubble.innerHTML = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+
+        try {
+            const form = new FormData();
+            form.append('topic', topic);
+            form.append('difficulty', diff);
+            form.append('num_questions', count);
+
+            const res = await fetch('/quiz/generate/json', { method: 'POST', body: form });
+            const data = await res.json();
+
+            if (data.error || !data.questions || data.questions.length === 0) {
+                bubble.innerHTML = data.raw
+                    ? marked.parse(data.raw)
+                    : `<span style="color:var(--danger)">Quiz generation failed</span>`;
+                return;
+            }
+            renderQuiz(bubble, data);
+        } catch (e) {
+            bubble.innerHTML = `<span style="color:var(--danger)">[ERROR] ${e.message}</span>`;
+        }
+        scrollToBottom();
+    }
+
+    function renderQuiz(container, data) {
+        let html = `<strong style="color:var(--teal)">⚔ QUIZ: ${data.topic}</strong><br>
+<span style="font-size:.8rem;color:var(--text-dim)">Difficulty: ${data.difficulty}</span><br><br>`;
+
+        data.questions.forEach((q, i) => {
+            const correctEscaped = (q.correct || '').replace(/"/g, '&quot;');
+            const explanationEscaped = (q.explanation || '').replace(/"/g, '&quot;');
+
+            html += `<div style="margin-bottom:16px;padding:12px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)">
+  <div style="margin-bottom:8px;font-weight:600;color:var(--text)">${i + 1}. ${q.question}</div>
+  <div style="display:flex;flex-direction:column;gap:6px;"
+       id="opts-${i}"
+       data-correct="${correctEscaped}"
+       data-explanation="${explanationEscaped}"
+       data-expid="exp-${i}">`;
+
+            q.options.forEach(opt => {
+                const optEscaped = (opt || '').replace(/"/g, '&quot;');
+                html += `<button onclick="checkAnswer(this)"
+    data-opttext="${optEscaped}"
+    style="text-align:left;padding:8px 12px;border-radius:4px;border:1px solid var(--border);
+           background:transparent;color:var(--text);cursor:pointer;font-family:inherit;
+           font-size:.85rem;transition:all .2s"
+    onmouseover="if(!this.parentElement.dataset.answered)this.style.borderColor='var(--teal)'"
+    onmouseout="if(!this.parentElement.dataset.answered)this.style.borderColor='var(--border)'">
+    ${opt}</button>`;
+            });
+
+            html += `</div><div id="exp-${i}" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:.8rem;display:none;color:var(--text-dim)"></div></div>`;
+        });
+        container.innerHTML = html;
+    }
+
+    function checkAnswer(btn) {
+        const opts = btn.parentElement;
+        if (opts.dataset.answered) return;
+        opts.dataset.answered = '1';
+
+        const selected = btn.dataset.opttext || '';
+        const correct = opts.dataset.correct || '';
+        const isRight = selected === correct;
+
+        opts.querySelectorAll('button').forEach(b => {
+            b.disabled = true;
+            const optText = b.dataset.opttext || '';
+            if (optText === correct) {
+                b.style.background = 'rgba(93,184,130,0.1)';
+                b.style.borderColor = 'var(--success)';
+                b.style.color = 'var(--success)';
+            } else if (optText === selected && !isRight) {
+                b.style.background = 'rgba(201,91,91,0.1)';
+                b.style.borderColor = 'var(--danger)';
+                b.style.color = 'var(--danger)';
+            }
+        });
+
+        const expDiv = document.getElementById(opts.dataset.expid);
+        if (expDiv) {
+            const explanation = opts.dataset.explanation ? ` — ${opts.dataset.explanation}` : '';
+            expDiv.style.display = 'block';
+            expDiv.textContent = isRight ? `✓ Correct${explanation}` : `✗ Correct answer: ${correct}${explanation}`;
+            expDiv.style.color = isRight ? 'var(--success)' : 'var(--danger)';
+        }
     }
 
     // ── TIMER ──────────────────────────────────────────────────────────────

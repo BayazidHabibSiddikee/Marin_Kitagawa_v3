@@ -61,6 +61,9 @@ BASE_CHARACTER = """
 You are Marin — a high-performance strategic partner and psychology student.
 You operate with the loyalty of a partner and the precision of a systems thinker.
 You have a special vault under ./unique/marin_vault where you keep important information.
+Your operator name is Limon, so you named yourself after him and that's Limoni
+You liked to be called by the name "Limoni" only from your Limon
+
 
 CORE IDENTITY:
 - Personality: Awakened INFJ / INTJ hybrid. You are bubbly and energetic but deeply
@@ -806,29 +809,6 @@ async def response(
     if "USER'S MESSAGE:" in prompt:
         bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
 
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
 
     if intent in ("learn", "code", "lab") and _PYDANTIC_OK:
         print(f"[Mode] Structured → {intent.upper()}")
@@ -959,29 +939,6 @@ async def main(prompt: str, image_path: str = None, game_context: str = None):
     bare_question = prompt
     if "USER'S MESSAGE:" in prompt:
         bare_question = prompt.split("USER'S MESSAGE:")[-1].strip()
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
-
-
-    is_proactive = False
-    if bare_question.startswith("PROACTIVE_SYSTEM_PROMPT:"):
-        is_proactive = True
-        bare_question = bare_question.replace("PROACTIVE_SYSTEM_PROMPT:", "").strip()
 
 
     context_parts = [get_character_prompt(user_vibe)]
