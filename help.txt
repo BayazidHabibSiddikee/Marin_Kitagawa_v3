@@ -1,0 +1,6 @@
+ Useful commands going forward:
+
+  systemctl --user status marin    # check status
+  systemctl --user restart marin   # restart
+  systemctl --user stop marin      # stop
+  journalctl --user -u marin -f    # live logs
