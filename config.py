@@ -6,8 +6,6 @@ import shutil
 import subprocess
 from dotenv import load_dotenv
 load_dotenv()
-from dotenv import load_dotenv
-load_dotenv()
 
 # ── APP LAUNCHER ───────────────────────────────────────────────────────────────
 # Each entry is a list of candidate commands tried left-to-right.

@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 
 import ollama
 import httpx
@@ -567,6 +568,90 @@ async def memory_status(agent: str = None):
 async def memory_clear_endpoint(agent: str = Form(None)):
     database.clear_history("marin")
     return {"ok": True}
+
+# ── QUIZ API (Structured JSON) ──────────────────────────────────────────
+
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[str]
+    correct: str
+    explanation: str
+
+class QuizData(BaseModel):
+    topic: str
+    difficulty: str
+    questions: List[QuizQuestion]
+
+@app.post("/quiz/generate/json")
+async def generate_quiz_json(
+    topic: str = Form(...),
+    difficulty: str = Form("medium"),
+    num_questions: int = Form(5)
+):
+    prompt = f"""Generate a {difficulty} difficulty quiz about '{topic}' with exactly {num_questions} multiple-choice questions.
+Return ONLY a valid JSON object matching this schema:
+{{
+  "topic": "{topic}",
+  "difficulty": "{difficulty}",
+  "questions": [
+    {{
+      "question": "question text",
+      "options": ["opt1", "opt2", "opt3", "opt4"],
+      "correct": "the exact text of the correct option",
+      "explanation": "brief explanation"
+    }}
+  ]
+}}
+Do not include any conversational text, markdown formatting (no ```json), or preamble."""
+
+    # Try tinyllama for speed if it's available, otherwise use default FAST_MODEL
+    model_to_use = "tinyllama:latest"
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": model_to_use,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "options": {"temperature": 0.2, "num_predict": 1000}
+                }
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            raw = result['message']['content'].strip()
+            
+            # Extract JSON from potential markdown code blocks
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if match:
+                raw = match.group(0)
+            
+            data = json.loads(raw)
+            return JSONResponse(data)
+    except Exception as e:
+        print(f"[Quiz Error] {e}")
+        # Fallback to FAST_MODEL if tinyllama failed
+        try:
+             async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": FAST_MODEL,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "options": {"temperature": 0.2}
+                    }
+                )
+                result = resp.json()
+                raw = result['message']['content'].strip()
+                match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if match: raw = match.group(0)
+                data = json.loads(raw)
+                return JSONResponse(data)
+        except Exception as e2:
+            return JSONResponse({"error": str(e2), "raw": raw if 'raw' in locals() else None}, status_code=500)
+
 
 @app.get("/health")
 async def health():

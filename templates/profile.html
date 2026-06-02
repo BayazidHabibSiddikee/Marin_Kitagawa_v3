@@ -6,23 +6,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title> HS-02 — Profile</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0a0a0f;
-            --bg2: #0f0f1a;
-            --panel: #12121e;
-            --border: #1e1e35;
-            --purple: #8b5cf6;
-            --violet: #a78bfa;
-            --text: #d1d5db;
-            --dim: #6b7280;
-            --muted: #3f3f5a;
-            --danger: #dc2626;
-            --gold: #fbbf24;
+            --bg: #13100e;
+            --bg2: #1c1814;
+            --panel: #221e19;
+            --border: #3a342c;
+            --purple: #4db8a4;
+            --violet: #2d8a78;
+            --text: #e8ddd0;
+            --dim: #8a7d72;
+            --muted: #4a4038;
+            --danger: #e07b6a;
+            --gold: #c9965a;
             --success: #10b981;
+            
+            --teal: #4db8a4;
+            --teal-dim: #2d8a78;
         }
 
         * {
@@ -34,7 +35,7 @@
         body {
             background: var(--bg);
             color: var(--text);
-            font-family: 'Rajdhani', sans-serif;
+            font-family: 'DM Sans', sans-serif;
             min-height: 100vh;
         }
 
@@ -43,7 +44,7 @@
             position: fixed;
             inset: 0;
             background: repeating-linear-gradient(0deg, transparent, transparent 2px,
-                    rgba(139, 92, 246, 0.025) 2px, rgba(139, 92, 246, 0.025) 4px);
+                    rgba(77, 184, 164, 0.02) 2px, rgba(77, 184, 164, 0.02) 4px);
             pointer-events: none;
             z-index: 0;
         }
@@ -53,7 +54,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 14px 32px;
-            background: rgba(10, 10, 15, 0.9);
+            background: var(--bg2);
             border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
@@ -68,29 +69,28 @@
             left: 0;
             right: 0;
             height: 1px;
-            background: linear-gradient(90deg, transparent, var(--purple), transparent);
+            background: linear-gradient(90deg, transparent, var(--teal-dim), transparent);
         }
 
         .nav-brand {
-            font-family: 'Cinzel', serif;
-            font-size: 1rem;
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.1rem;
             font-weight: 600;
-            letter-spacing: .15em;
-            color: var(--violet);
-            text-shadow: 0 0 20px rgba(167, 139, 250, 0.4);
+            letter-spacing: .08em;
+            color: var(--teal);
             display: flex;
             align-items: center;
             gap: 10px;
         }
 
         .nav-brand .hs {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: .62rem;
-            background: linear-gradient(135deg, var(--purple), var(--violet));
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .6rem;
+            background: linear-gradient(135deg, var(--teal), var(--teal-dim));
             color: #fff;
             padding: 2px 8px;
             border-radius: 2px;
-            letter-spacing: .1em;
+            letter-spacing: .05em;
         }
 
         .nav-links {
@@ -99,22 +99,23 @@
         }
 
         .nav-links a {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .7rem;
-            color: var(--dim);
+            color: var(--text-dim);
             text-decoration: none;
-            padding: 4px 12px;
+            padding: 4px 10px;
             border: 1px solid var(--border);
             border-radius: 3px;
-            letter-spacing: .06em;
+            letter-spacing: .05em;
             transition: all .2s;
         }
 
-        .nav-links a:hover,
-        .nav-links a.active {
-            color: var(--violet);
-            border-color: var(--purple);
-            background: rgba(139, 92, 246, 0.08);
+        .nav-links a:hover {
+            color: var(--teal);
+            border-color: var(--teal-dim);
+            background: rgba(77, 184, 164, 0.05);
+        }
+
         }
 
         .page {

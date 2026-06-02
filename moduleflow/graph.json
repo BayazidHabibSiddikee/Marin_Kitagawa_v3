@@ -6998,38 +6998,38 @@
       "is_async": true
     },
     {
-      "id": "utils/platform.py",
+      "id": "utils.sys_platform.py",
       "type": "file",
       "name": "platform",
-      "path": "utils/platform.py",
+      "path": "utils.sys_platform.py",
       "lines": 13,
       "imports_count": 0,
       "functions_count": 3,
       "classes_count": 0
     },
     {
-      "id": "utils/platform.py::open_camera",
+      "id": "utils.sys_platform.py::open_camera",
       "type": "function",
       "name": "open_camera",
-      "file": "utils/platform.py",
+      "file": "utils.sys_platform.py",
       "line": 3,
       "args": [],
       "is_async": false
     },
     {
-      "id": "utils/platform.py::kill_camera",
+      "id": "utils.sys_platform.py::kill_camera",
       "type": "function",
       "name": "kill_camera",
-      "file": "utils/platform.py",
+      "file": "utils.sys_platform.py",
       "line": 6,
       "args": [],
       "is_async": false
     },
     {
-      "id": "utils/platform.py::screenshot",
+      "id": "utils.sys_platform.py::screenshot",
       "type": "function",
       "name": "screenshot",
-      "file": "utils/platform.py",
+      "file": "utils.sys_platform.py",
       "line": 9,
       "args": [],
       "is_async": false
@@ -10626,22 +10626,22 @@
       "type": "calls"
     },
     {
-      "source": "utils/platform.py",
-      "target": "utils/platform.py::open_camera",
+      "source": "utils.sys_platform.py",
+      "target": "utils.sys_platform.py::open_camera",
       "type": "defines"
     },
     {
-      "source": "utils/platform.py",
-      "target": "utils/platform.py::kill_camera",
+      "source": "utils.sys_platform.py",
+      "target": "utils.sys_platform.py::kill_camera",
       "type": "defines"
     },
     {
-      "source": "utils/platform.py",
-      "target": "utils/platform.py::screenshot",
+      "source": "utils.sys_platform.py",
+      "target": "utils.sys_platform.py::screenshot",
       "type": "defines"
     },
     {
-      "source": "utils/platform.py",
+      "source": "utils.sys_platform.py",
       "target": "tools/vpa.py::run",
       "type": "calls"
     },
