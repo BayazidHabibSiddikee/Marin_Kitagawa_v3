@@ -1177,20 +1177,21 @@
             }
         }
         let avatarHideTimer = null;
-        function setMoodAvatar(vibe) {
+        function setMoodAvatar(vibe, persist = false) {
             const el = document.getElementById('mood-avatar');
             const src = `/static/avatars/${vibe}.png`;
-            // check if file exists before showing
             const img = new Image();
             img.onload = () => {
                 el.src = src;
                 el.classList.remove('hidden');
                 el.classList.add('visible');
                 clearTimeout(avatarHideTimer);
-                avatarHideTimer = setTimeout(() => {
-                    el.classList.remove('visible');
-                    el.classList.add('hidden');
-                }, 4000);
+                if (!persist) {
+                    avatarHideTimer = setTimeout(() => {
+                        el.classList.remove('visible');
+                        el.classList.add('hidden');
+                    }, 4000);
+                }
             };
             img.onerror = () => {}; // silently skip if image missing
             img.src = src;
@@ -1229,6 +1230,7 @@
                 let full = '';
                 bubble.innerHTML = '';
                 _lastDetectedMood = null;
+                setMoodAvatar('thinking', true);
 
                 while (true) {
                     const { done, value } = await reader.read();
