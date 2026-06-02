@@ -134,7 +134,19 @@ async def send_telegram_notification(news_items: list):
         print(f"Failed to send Telegram notification: {e}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+SENT_TITLES_FILE = os.path.join(STORAGE_DIR, "sent_news_titles.json")
+
+def load_sent_titles() -> set:
+    if os.path.exists(SENT_TITLES_FILE):
+        with open(SENT_TITLES_FILE) as f:
+            return set(json.load(f))
+    return set()
+
+def save_sent_titles(titles: set):
+    # Keep only last 500 to prevent unbounded growth
+    trimmed = list(titles)[-500:]
+    with open(SENT_TITLES_FILE, "w") as f:
+        json.dump(trimmed, f)
 async def main():
     os.makedirs(STORAGE_DIR, exist_ok=True)
 
@@ -164,7 +176,16 @@ async def main():
     except Exception as e:
         print(f"DB save failed: {e}")
 
-    await send_telegram_notification(analyzed_news)
+    sent_titles = load_sent_titles()
+    new_items = [item for item in analyzed_news if item["title"] not in sent_titles]
+
+    if new_items:
+        await send_telegram_notification(new_items)
+        sent_titles.update(item["title"] for item in new_items)
+        save_sent_titles(sent_titles)
+        print(f"Sent {len(new_items)} new items to Telegram.")
+    else:
+        print("No new items to send to Telegram.")
 
 
 if __name__ == "__main__":
