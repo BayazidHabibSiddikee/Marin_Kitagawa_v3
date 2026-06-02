@@ -150,6 +150,11 @@ class CodeReviewInput(BaseModel):
 class DebugInput(BaseModel):
     error: str = Field(description="The error message or description of the bug")
 
+class WhatsAppInput(BaseModel):
+    action: str = Field(description="Action: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'")
+    message_data: Optional[str] = Field(default=None, description="JSON string with sender, content, chat_name, is_group for 'process' action")
+    limit: int = Field(default=10, description="Number of items to list")
+
 
 # ── COMMAND ALLOWLIST ─────────────────────────────────────────────────────────
 _CMD_ALLOW = re.compile(
@@ -667,6 +672,81 @@ def tool_manage_todo(action: str, title: str = None, priority: str = "medium", t
     finally:
         conn.close()
 
+def tool_whatsapp_manage(action: str, message_data: str = None, limit: int = 10) -> str:
+    """WhatsApp integration tool for Marin. Actions: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'."""
+    try:
+        from tools.whatsapp_integration import whatsapp_integration
+        import json
+        
+        if action == "process" and message_data:
+            # Process incoming WhatsApp message
+            data = json.loads(message_data)
+            sender = data.get("sender", "Unknown")
+            content = data.get("content", "")
+            chat_name = data.get("chat_name", "Unknown")
+            is_group = data.get("is_group", False)
+            
+            # Run async processing
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            items = loop.run_until_complete(
+                whatsapp_integration.process_whatsapp_message(sender, content, chat_name, is_group)
+            )
+            loop.close()
+            
+            if items:
+                return f"Processed message from {sender}. Found {len(items)} actionable item(s). Created todos for high-confidence items."
+            return f"Processed message from {sender}. No actionable items found."
+        
+        elif action == "list_messages":
+            messages = whatsapp_integration.get_recent_messages(limit)
+            if not messages:
+                return "No WhatsApp messages recorded yet."
+            
+            result = f"Recent {len(messages)} WhatsApp messages:\n"
+            for msg in messages[-10:]:  # Show last 10
+                result += f"- [{msg.sender}] {msg.content[:50]}{'...' if len(msg.content) > 50 else ''}\n"
+            return result
+        
+        elif action == "list_todos":
+            todos = whatsapp_integration.todo_manager.get_whatsapp_todos(limit)
+            if not todos:
+                return "No todos created from WhatsApp messages yet."
+            
+            result = f"WhatsApp-generated todos ({len(todos)}):\n"
+            for todo in todos:
+                status_icon = "✅" if todo['status'] == 'done' else "⏳"
+                result += f"{status_icon} {todo['id']}. {todo['title']} [{todo['priority']}] (from {todo['sender']})\n"
+            return result
+        
+        elif action == "list_actionable":
+            items = whatsapp_integration.get_actionable_items()
+            if not items:
+                return "No actionable items found in messages."
+            
+            result = f"Actionable items ({len(items)}):\n"
+            for item in items[-10:]:  # Show last 10
+                result += f"- [{item.action_type}] {item.extracted_text[:50]}{'...' if len(item.extracted_text) > 50 else ''} (conf: {item.confidence:.1f})\n"
+            return result
+        
+        elif action == "stats":
+            stats = whatsapp_integration.get_integration_stats()
+            return (
+                f"WhatsApp Integration Stats:\n"
+                f"Total messages: {stats['total_messages']}\n"
+                f"Actionable items: {stats['actionable_items']}\n"
+                f"Todos created: {stats['todo_stats']['total']}\n"
+                f"Pending todos: {stats['todo_stats']['pending']}\n"
+                f"Completed todos: {stats['todo_stats']['completed']}\n"
+                f"Avg confidence: {stats['todo_stats']['avg_confidence']:.2f}"
+            )
+        
+        else:
+            return "Invalid action. Use: 'process', 'list_messages', 'list_todos', 'stats', or 'list_actionable'"
+    
+    except Exception as e:
+        return f"WhatsApp tool error: {str(e)}"
+
 def tool_teach_topic(topic: str, sub_intent: str = "standard") -> str:
     return f"MARIN_INTENT:teach:{topic}:{sub_intent}"
 
@@ -860,6 +940,11 @@ TOOLS = [
         func=tool_explain_error, name="debug",
         description="Analyze a code error/exception and provide a fix.",
         args_schema=DebugInput,
+    ),
+    StructuredTool.from_function(
+        func=tool_whatsapp_manage, name="whatsapp_manage",
+        description="WhatsApp integration tool. Process messages, list todos from WhatsApp, get stats. Use when asked about WhatsApp messages or tasks.",
+        args_schema=WhatsAppInput,
     ),
 ]
 
