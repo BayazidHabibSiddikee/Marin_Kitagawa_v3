@@ -228,6 +228,29 @@
             color: var(--muted);
             display: flex;
             gap: 1rem;
+            align-items: center;
+        }
+
+        .btn-download {
+            display: inline-block;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            transition: all 0.2s;
+            margin-top: 0.75rem;
+            text-decoration: none;
+        }
+
+        .btn-download:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+            color: white;
         }
 
         .loader {
@@ -370,8 +393,7 @@
             if (e.key === 'Enter') performSearch();
         });
 
-        async
-async function browseUrl(url) {
+        async function browseUrl(url) {
     if (!url) return;
     const res = await fetch('/api/research/browse', {
         method: 'POST',
@@ -455,6 +477,9 @@ performSearch = function() {
                                 <div class="result-meta">
                                     <span><i class="fas fa-spider"></i> Camofox · Result ${i + 1}</span>
                                 </div>
+                                <a href="/api/research/download" onclick="return downloadViaPdfDownloader('${escapeHtml(r.href || '')}')" class="btn-download" title="Download via PDF Downloader">
+                                    <i class="fas fa-download"></i> Download PDF
+                                </a>
                             </div>
                         `).join('') + 
                         '</div>';
@@ -472,6 +497,12 @@ performSearch = function() {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        async function downloadViaPdfDownloader(url) {
+            if (!url) return false;
+            window.open(url, '_blank');
+            return false;
         }
     </script>
 </body>

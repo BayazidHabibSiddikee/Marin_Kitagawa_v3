@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../../../BayazidxMarin'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../../../marin'))
 
 from bayazid import (
     main as bayazid_main,

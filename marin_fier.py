@@ -122,6 +122,11 @@ class BanglaInput(BaseModel):
 class VPAInput(BaseModel):
     command: Optional[str] = Field(None, description="Optional command to pass to the VPA assistant.")
 
+class SendEmailDirectInput(BaseModel):
+    to: str = Field(description="Recipient email address")
+    subject: str = Field(description="Email subject line")
+    body: str = Field(description="Email body content")
+
 class NoInput(BaseModel):
     pass   # tools that need no parameters
 
@@ -149,12 +154,12 @@ class DebugInput(BaseModel):
 # ── COMMAND ALLOWLIST ─────────────────────────────────────────────────────────
 _CMD_ALLOW = re.compile(
     r'^(ls|cat|pwd|echo|whoami|date|uptime|df|du|free|uname|hostname|'
-    r'ps|git|python3?|pip3?|mkdir|touch|cp|mv|ln|rmdir|chmod|chown|'
+    r'ps|git|python3?|pip3?|mkdir|touch|cp|mv|ln|rm|rmdir|chmod|chown|'
     r'find|grep|rg|head|tail|wc|sort|uniq|cut|awk|sed|tr|'
     r'curl|wget|make|gcc|g\+\+|avr-gcc|avrdude|cargo|rustc|'
     r'tree|which|type|env|printenv|lsusb|lsblk|ip|ping|'
     r'ollama|uvicorn|node|npm|npx|yarn|pnpm|gemini|claude|openclaude|opencode|kimi|kiro-cli|'
-    r'systemctl|journalctl|ffmpeg|ffprobe|yt-dlp|youtube-dl|'
+    r'systemctl|journalctl|ffmpeg|ffprobe|yt-dlp|youtube-dl|shutdown|'
     r'cd|nano|vim|nvim|emacs|code|less|more|'
     r'docker|podman|kubectl|docker-compose|'
     r'ssh|scp|rsync|diff|stat|realpath|readlink|basename|dirname|'
@@ -169,7 +174,7 @@ _CMD_ALLOW = re.compile(
     re.IGNORECASE
 )
 _CMD_BLOCK = re.compile(
-    r'(rm\s+-rf\s*/|sudo\s+rm|dd\s+if=|mkfs|shutdown|reboot|passwd|'
+    r'(rm\s+-rf\s*/|sudo\s+rm|dd\s+if=|mkfs|passwd|'
     r'useradd|userdel|wget.+\|\s*bash|curl.+\|\s*sh|>\s*/dev/sd|nc\s+-e|bash\s+-i)',
     re.IGNORECASE
 )
@@ -353,6 +358,15 @@ def tool_send_email() -> str:
     err = _popen("tools/email_tool.py")
     if err: return err
     return "Email composer launched. It will ask for recipient, subject, and body interactively."
+
+def tool_send_email_direct(to: str, subject: str, body: str) -> str:
+    """Send an email directly without user interaction."""
+    try:
+        from tools.email_sender import send_email
+        result = send_email(to, subject, body)
+        return result
+    except Exception as e:
+        return f"Failed to send email: {e}"
 
 def tool_play_tictactoe() -> str:
     err = _popen("tools/tictactoe.py")
@@ -561,6 +575,21 @@ def tool_search_pdfs(topic: str) -> str:
     msg += f"\n\n(You can see more results at http://localhost:{PORT}/research-hub)"
     return msg
 
+def tool_download_pdf(topic: str) -> str:
+    from tools.pdf_downloader_marin import marin_search_and_download
+    import os
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    download_dir = os.path.join(base_dir, "unique", "download")
+    
+    print(f"[Tool] Marin downloading: {topic}")
+    path = marin_search_and_download(topic, download_dir)
+    
+    if path:
+        return f"Successfully downloaded '{topic}'! Saved to: {path}"
+    else:
+        return f"I tried to download '{topic}', but I couldn't find a direct PDF link that worked. You might want to try searching on the Research Hub directly."
+
 def tool_scrape_content(url: str) -> str:
     from tools.knowledge_hub import scrape_content
     try:
@@ -689,6 +718,11 @@ TOOLS = [
         args_schema=NoInput,
     ),
     StructuredTool.from_function(
+        func=tool_send_email_direct, name="send_email_direct",
+        description="Send an email directly to a recipient with subject and body.",
+        args_schema=SendEmailDirectInput,
+    ),
+    StructuredTool.from_function(
         func=tool_play_tictactoe, name="play_tictactoe",
         description="Launch Tic Tac Toe game.",
         args_schema=NoInput,
@@ -764,6 +798,11 @@ TOOLS = [
         func=tool_search_pdfs, name="search_pdfs",
         description="Specialized search for PDF books, research papers, and technical documents.",
         args_schema=SearchPDFInput,
+    ),
+    StructuredTool.from_function(
+        func=tool_download_pdf, name="download_pdf",
+        description="Download a PDF document or book by name or URL. Saves to the unique/download vault.",
+        args_schema=SearchPDFInput, # Reuse search schema (takes 'topic')
     ),
     StructuredTool.from_function(
         func=tool_scrape_content, name="scrape_content",
@@ -1013,6 +1052,7 @@ _ALARM_PAT = re.compile(r'\b(set\s+an?\s+alarm|alarm\s+(?:for|at))\b')
 _TIMER_PAT = re.compile(r'\b(set\s+a?\s*timer|start\s+timer)\b|\d+\s*(?:min|minute|hour|hr|sec)\s*(?:timer|countdown)')
 _NEWS_PAT  = re.compile(r'\b(open\s+news|latest\s+news|news|headlines)\b')
 _EMAIL_PAT = re.compile(r'\b(send\s+(?:an?\s+)?email|email\s+to|compose\s+(?:an?\s+)?email|write\s+(?:a\s+)?mail)\b')
+_EMAIL_DIRECT_PAT = re.compile(r'\b(send\s+(?:an?\s+)?email\s+to\s+[\w.+-]+@[\w-]+\.[\w.]+|email\s+[\w.+-]+@[\w-]+\.[\w.]+)\b')
 _TTT_PAT   = re.compile(r'\b(tic\s*tac\s*toe|tiktaktoe|tictactoe)\b')
 _C4_PAT    = re.compile(r'\b(connect\s*4|connect\s*four|connect4)\b')
 _WORD_PAT  = re.compile(r'\b(word\s*game|wordgame|word\s*scramble)\b')
@@ -1049,8 +1089,8 @@ _EXECUTING_PAT = re.compile(
     re.IGNORECASE
 )
 
-_SEARCH_PAT = re.compile(r'\b(search|find|lookup|google|duckduckgo)\b')
-_PDF_PAT    = re.compile(r'\b(pdf|book|paper|textbook|research|thesis)\b')
+_SEARCH_PAT = re.compile(r'\b(search|find|lookup|google|duckduckgo|download|fetch|get)\b')
+_PDF_PAT    = re.compile(r'\b(pdf|book|paper|textbook|research|thesis|downloader)\b')
 
 _MAP_PAT   = re.compile(r'\b(map|location|flood|weather\s*map|environmental\s*map|route|directions|pin|places|attractions|best\s*places)\b')
 _WEATHER_PAT = re.compile(r'\b(weather|temperature|humidity|temp)\b')
@@ -1118,6 +1158,13 @@ def _regex_stage(text: str) -> dict | None:
 
     if _DEBUG_PAT.search(lower):
         return {"intent": "debug", "params": {"error": text}, "confidence": 0.95}
+
+    # PDF Download check
+    if _PDF_PAT.search(lower) and re.search(r'\b(download|get|fetch|save)\b', lower):
+        # Extract topic
+        topic = re.sub(r'\b(download|get|fetch|save|pdf|book|paper|textbook|research|thesis|downloader)\b', '', lower).strip()
+        if not topic: topic = lower
+        return {"intent": "download_pdf", "params": {"topic": topic.title()}, "confidence": 1.0}
 
     # PDF Search check
     if _PDF_PAT.search(lower) and _SEARCH_PAT.search(lower):
@@ -1272,6 +1319,22 @@ def _regex_stage(text: str) -> dict | None:
     if _NEWS_PAT.search(lower):
         return {"intent": "open_news", "params": {}, "confidence": 0.97}
 
+    if _EMAIL_DIRECT_PAT.search(text):
+        # Extract email details from the message
+        email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.]+', text)
+        if email_match:
+            to_email = email_match.group(0)
+            # Try to extract subject and body
+            subject_match = re.search(r'subject[:\s]+([^\n]+)', text, re.IGNORECASE)
+            body_match = re.search(r'body[:\s]+([^\n]+)', text, re.IGNORECASE)
+            
+            subject = subject_match.group(1).strip() if subject_match else "No Subject"
+            body = body_match.group(1).strip() if body_match else text
+            
+            return {"intent": "send_email_direct", 
+                    "params": {"to": to_email, "subject": subject, "body": body}, 
+                    "confidence": 0.95}
+    
     if _EMAIL_PAT.search(lower):
         return {"intent": "send_email", "params": {}, "confidence": 0.97}
 

@@ -173,28 +173,20 @@ def pdf_download_tool(query: str) -> str:
     """Search for and download a PDF book or document. Saves to unique/download/ vault.
     
     Args:
-        query: What to search for (e.g., 'machine learning basics', 'calculus textbook', 'python programming pdf').
+        query: The name of the book or document to search for.
     """
-    from tools.pdf_downloader import search_pdfs, download_pdf, validate_pdf
+    from tools.pdf_downloader_marin import marin_search_and_download
+    
     base_dir = os.path.dirname(os.path.abspath(__file__))
     download_dir = os.path.join(base_dir, "unique", "download")
-    os.makedirs(download_dir, exist_ok=True)
-
-    pdf_query = f"{query} filetype:pdf"
-    search_results = search_pdfs(pdf_query)
-    if not search_results:
-        return f"No PDF results found for '{query}'."
-
-    for i, r in enumerate(search_results[:5], 1):
-        url = r.get("url", "")
-        title = r.get("title", query)
-        if not url:
-            continue
-        path = download_pdf(url, title, download_dir)
-        if path:
-            return f"PDF downloaded successfully: {path}"
-
-    return f"Could not download a valid PDF for '{query}' after trying {min(len(search_results), 5)} sources."
+    
+    print(f"[Agent] Triggering Marin PDF download for: {query}")
+    path = marin_search_and_download(query, download_dir)
+    
+    if path:
+        return f"Successfully downloaded the book! I've placed it in your vault here: {path}"
+    else:
+        return f"I found some links for '{query}', but I couldn't get a valid PDF file from them. They might be protected or not direct links. Want me to try a different search term?"
 
 @tool
 def app_launch(app_name: str) -> str:

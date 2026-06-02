@@ -892,6 +892,12 @@ function setResMode(mode) {
   }
 }
 
+function escHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 async function performResearchSearch() {
   const query = document.getElementById('res-search-query').value.trim();
   const loader = document.getElementById('res-loader');
@@ -916,17 +922,36 @@ async function performResearchSearch() {
     const data = await response.json();
     
     if (data.results && data.results.length > 0) {
-      const icon = _resMode === 'pdf' ? 'fa-file-pdf' : 'fa-globe';
-      resultsDiv.innerHTML = data.results.map((r, i) => `
-        <div class="mcard" style="display:flex; flex-direction:column; gap:8px; padding:15px; height:auto;">
-          <div style="font-size:1.5rem; color:var(--purple);"><i class="fas ${icon}"></i></div>
-          <a href="${r.href || '#'}" target="_blank" class="ticker" style="font-size:0.9rem; color:var(--violet); text-decoration:none; display:block;">${r.title || 'Untitled'}</a>
-          <div class="pin-meta" style="font-size:0.75rem; color:var(--text-dim); line-height:1.4;">${(r.body || 'No description available').substring(0, 120)}...</div>
-          <div class="pin-meta" style="margin-top:auto; font-size:0.65rem; color:var(--text-muted);">
-            <i class="fas fa-spider"></i> CAMOFOX · RESULT ${i + 1}
-          </div>
-        </div>
-      `).join('');
+      if (_resMode === 'pdf') {
+        resultsDiv.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:15px;';
+        resultsDiv.innerHTML = data.results.map((r, i) => {
+          const safeUrl = (r.href||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const safeTitle = (r.title||'document').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          return `
+            <div class="mcard" style="display:flex; flex-direction:column; gap:8px; padding:15px; height:auto; position:relative;">
+              <div style="font-size:1.5rem; color:var(--purple);"><i class="fas fa-file-pdf"></i></div>
+              <a href="${r.href || '#'}" target="_blank" class="ticker" style="font-size:0.9rem; color:var(--violet); text-decoration:none; display:block; position:relative; z-index:1;">${escHtml(r.title || 'Untitled')}</a>
+              <div class="pin-meta" style="font-size:0.75rem; color:var(--text-dim); line-height:1.4;">${escHtml((r.body || 'No description available').substring(0, 120))}...</div>
+              <div class="pin-meta" style="font-size:0.65rem; color:var(--text-muted);">
+                <i class="fas fa-spider"></i> CAMOFOX · RESULT ${i + 1}
+              </div>
+              <button onclick="event.stopPropagation(); downloadPdf('${safeUrl}', '${safeTitle}', this)" style="display:inline-block; background:linear-gradient(135deg,#10b981,#059669); color:white; padding:5px 12px; border-radius:6px; font-size:0.75rem; font-weight:600; border:none; cursor:pointer; margin-top:4px; width:fit-content; position:relative; z-index:10;">
+                <i class="fas fa-download"></i> Download PDF
+              </button>
+            </div>`;
+        }).join('');
+      } else {
+        resultsDiv.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+        resultsDiv.innerHTML = data.results.map(r => {
+          const site = (() => { try { return new URL(r.href||'').hostname.replace(/^www\./,''); } catch(e) { return r.href||''; } })();
+          return `
+            <div style="background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--purple); border-radius:6px; padding:12px 14px;">
+              <a href="${r.href||'#'}" target="_blank" style="font-size:1rem; font-weight:600; color:var(--violet); text-decoration:none; display:block; margin-bottom:4px;">${escHtml(r.title||site)}</a>
+              <div style="font-family:'Share Tech Mono',monospace; font-size:0.7rem; color:var(--success); margin-bottom:6px;">${escHtml(site)}</div>
+              <div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5;">${escHtml((r.body||r.snippet||'No description available').substring(0,250))}</div>
+            </div>`;
+        }).join('');
+      }
     } else {
       resultsDiv.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);">No results found for "${query}"</div>`;
     }
@@ -934,6 +959,50 @@ async function performResearchSearch() {
     resultsDiv.innerHTML = `<div style="grid-column:1/-1; color:var(--danger); text-align:center;">Error: ${err.message}</div>`;
   } finally {
     loader.style.display = 'none';
+  }
+}
+
+async function downloadPdf(url, title, btn) {
+  if (!url) return;
+  const originalHtml = btn ? btn.innerHTML : '<i class="fas fa-download"></i> Download PDF';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...';
+  }
+  
+  toast(`Starting download: ${title}...`);
+  try {
+    const response = await fetch('/api/research/download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: url, title: title})
+    });
+    const data = await response.json();
+    if (data.status === 'Success') {
+      toast('Download complete!');
+      if (btn) {
+        btn.innerHTML = '<i class="fas fa-check"></i> Done';
+        btn.style.background = 'linear-gradient(135deg,#059669,#047857)';
+      }
+      window.open(data.file, '_blank');
+    } else {
+      toast(`Error: ${data.error || 'Download failed'}`, 5000);
+      if (btn) {
+        btn.innerHTML = '<i class="fas fa-times"></i> Failed';
+        btn.style.background = 'linear-gradient(135deg,#dc2626,#b91c1c)';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          btn.style.background = '';
+        }, 3000);
+      }
+    }
+  } catch (err) {
+    toast(`Network error: ${err.message}`, 5000);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
   }
 }
 

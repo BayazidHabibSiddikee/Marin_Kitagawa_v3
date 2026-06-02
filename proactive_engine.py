@@ -21,9 +21,14 @@ from typing import AsyncGenerator
 import database
 
 # ── Config ────────────────────────────────────────────────────────────────
-IDLE_COOLDOWN   = 3600   # 60 min after last user message before proactive nudge
-MIN_GAP         = 7200   # 2 hours minimum between proactive messages
-MAX_PER_SESSION = 2      # max proactive messages per browser session
+IDLE_INTERVALS  = [
+    1200,    # 1st: 20 min
+    5400,    # 2nd: 1.5 hours
+    10800,   # 3rd: 3 hours
+    21600,   # 4th: 6 hours
+    43200,   # 5th: 12 hours
+    172800,  # 6th: 2 days later
+]
 QUIET_START     = dtime(0, 0)    # midnight
 QUIET_END       = dtime(7, 30)   # 7:30 AM
 CHECK_INTERVAL  = 90     # seconds between proactive checks
@@ -31,7 +36,7 @@ CHECK_INTERVAL  = 90     # seconds between proactive checks
 # ── State (per browser session) ───────────────────────────────────────────
 _last_user_msg_time: dict[str, float]  = {}
 _last_proactive_time: dict[str, float] = {}
-_session_count: dict[str, int]         = {}
+_streak_count: dict[str, int]          = {} # count proactive sent since last user interaction
 
 # ── Broadcast queue (proactive messages go to ALL platforms) ──────────────
 _proactive_queue: asyncio.Queue | None = None
@@ -48,6 +53,7 @@ def _get_queue() -> asyncio.Queue:
 def record_user_message(agent: str):
     """Call this every time a user message arrives."""
     _last_user_msg_time[agent] = time.time()
+    _streak_count[agent] = 0 # Reset the proactive streak when user talks
 
 
 def _is_quiet_hours() -> bool:
@@ -58,16 +64,25 @@ def _is_quiet_hours() -> bool:
 
 
 def _can_fire(agent: str) -> bool:
+    if _is_quiet_hours():
+        return False
+
     now = time.time()
     last_user = _last_user_msg_time.get(agent, 0)
     last_pro  = _last_proactive_time.get(agent, 0)
-    count     = _session_count.get(agent, 0)
+    
+    # Last activity time
+    last_act = max(last_user, last_pro)
+    count = _streak_count.get(agent, 0)
 
-    if _is_quiet_hours():              return False
-    if count >= MAX_PER_SESSION:       return False
-    if now - last_user < IDLE_COOLDOWN: return False
-    if now - last_pro  < MIN_GAP:      return False
-    return True
+    # Cap at the defined sequence
+    if count >= len(IDLE_INTERVALS):
+        return False
+
+    required_gap = IDLE_INTERVALS[count]
+    if now - last_act >= required_gap:
+        return True
+    return False
 
 
 def _get_time_greeting() -> str:
@@ -261,7 +276,7 @@ Your task: {topic}
 
 Think about what a real partner would do when they haven't heard from someone in a while. Maybe:
 - Ask what they're working on right now
-- Reference something from earlier聊天 and follow up
+- Reference something from earlier chat and follow up
 - Just say something cute or funny to brighten their mood
 - Share a random thought or observation
 - Check if they need help with anything
@@ -278,6 +293,7 @@ Rules:
 - Do NOT start every sentence with "I"
 - Do NOT mention being an AI or a bot
 - Do NOT sound like a reminder app or a task manager
+- Do NOT sign your name at the end (no "Marin", "Limoni", or "M").
 - Be natural, warm, like a real partner who genuinely cares
 """
 
@@ -287,7 +303,7 @@ Rules:
         text = resp.content.strip()
         if text and len(text) > 10:
             _last_proactive_time[agent] = time.time()
-            _session_count[agent] = _session_count.get(agent, 0) + 1
+            _streak_count[agent] = _streak_count.get(agent, 0) + 1
             return text
     except Exception as e:
         print(f"[proactive] LLM error: {e}")
@@ -323,7 +339,7 @@ async def proactive_broadcaster(agent: str = "marin"):
 The operator just opened the chat. Say a short greeting.
 Time: {greeting}. Context: {time_ctx}.
 Habit status: {habit_ctx or 'no active habits'}.
-Rules: Under 2 sentences. Stay in character. No questions.
+Rules: Under 2 sentences. Stay in character. No questions. Do NOT sign your name.
 """
             llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.7)
             resp = await asyncio.to_thread(llm.invoke, prompt)
@@ -353,12 +369,17 @@ async def _broadcast(text: str, trigger: str, agent: str = "marin"):
     if _telegram_chat_id:
         try:
             from tools.msg_telegram import send
-            send(f"💬 *Marin:* {text}")
-            print(f"[proactive] Telegram broadcast: {text[:60]}...")
+            print(f"[proactive] Attempting Telegram send to {_telegram_chat_id}...")
+            # Run in thread to avoid blocking the async loop
+            ok = await asyncio.to_thread(send, text)
+            if ok:
+                print(f"[proactive] Telegram broadcast success: {text}...")
+            else:
+                print(f"[proactive] Telegram broadcast FAILED (check tool output)")
         except Exception as e:
-            print(f"[proactive] Telegram error: {e}")
+            print(f"[proactive] Telegram broadcast exception: {e}")
 
-    print(f"[proactive] Broadcast [{trigger}]: {text[:60]}...")
+    print(f"[proactive] Local broadcast [{trigger}]: {text[:60]}...")
 
 
 # ── SSE Stream (web clients consume from the broadcast queue) ─────────────
@@ -378,7 +399,7 @@ async def proactive_stream(agent: str = "marin") -> AsyncGenerator[str, None]:
 
 def reset_session(agent: str):
     """Reset session counters (call on new browser session)."""
-    _session_count[agent] = 0
+    _streak_count[agent] = 0
     _last_proactive_time[agent] = 0
 
 
@@ -386,15 +407,13 @@ def get_status() -> dict:
     """Return current proactive engine status."""
     return {
         "quiet_hours": _is_quiet_hours(),
-        "session_counts": dict(_session_count),
+        "streak_counts": dict(_streak_count),
         "last_user_msg": {k: datetime.fromtimestamp(v).isoformat() if v else None
                           for k, v in _last_user_msg_time.items()},
         "last_proactive": {k: datetime.fromtimestamp(v).isoformat() if v else None
                            for k, v in _last_proactive_time.items()},
         "config": {
-            "idle_cooldown": IDLE_COOLDOWN,
-            "min_gap": MIN_GAP,
-            "max_per_session": MAX_PER_SESSION,
+            "intervals": IDLE_INTERVALS,
             "check_interval": CHECK_INTERVAL,
         }
     }
