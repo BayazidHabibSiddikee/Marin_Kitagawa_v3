@@ -461,6 +461,15 @@
             color: #fff;
             border: 1px solid rgba(139, 92, 246, 0.4);
             box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .avatar.ai img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
 
         .avatar.user-av {
@@ -835,6 +844,28 @@
             animation: talk-pulse 0.8s infinite;
         }
 
+        /* ── MOOD AVATAR OVERLAY ── */
+        #mood-avatar {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            height: 45vh;
+            max-height: 420px;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            filter: drop-shadow(0 0 18px rgba(139,92,246,0.35));
+        }
+        #mood-avatar.visible {
+            opacity: 0.85;
+            transform: translateX(-50%) translateY(0);
+        }
+        #mood-avatar.hidden {
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+        }
     </style>
 </head>
 
@@ -939,7 +970,7 @@
         <div class="chat-wrapper">
             <div id="messages">
                 <div class="msg ai">
-                    <div class="avatar ai">⚔</div>
+                    <div class="avatar ai"><img src="/static/images/profile.png" alt="Marin"></div>
                     <div class="bubble">
                         <strong>MARIN HS-02 ONLINE</strong><br>
                         Cognitive warfare system activated. Ready to execute.<br><br>
@@ -1122,6 +1153,48 @@
             document.getElementById('stop-speech-btn').style.display = 'none';
         }
 
+        // ── MOOD AVATAR ──────────────────────────────────────────────────────────
+        const MOOD_RULES = [
+            { mood: 'angry',   words: ['angry','how dare','stupid','i\'m mad','hate you','💢','😠','😡'] },
+            { mood: 'excited', words: ['yay','omg','!!!','🥳','woah','amazing','incredible','let\'s go'] },
+            { mood: 'sad',     words: ['sad','sorry','don\'t cry','come here','😢','😭','i\'m sorry'] },
+            { mood: 'flirty',  words: ['hehe','tease','😉','🤭','naughty','cheeky','wink'] },
+            { mood: 'lovely',  words: ['love you','mwah','ummaaah','miss you','❤','💕','💋','darling'] },
+        ];
+
+        let _lastDetectedMood = null;
+        function detectMoodFromChunk(text) {
+            const lower = text.toLowerCase();
+            for (const rule of MOOD_RULES) {
+                if (rule.words.some(w => lower.includes(w))) {
+                    if (_lastDetectedMood !== rule.mood) {
+                        _lastDetectedMood = rule.mood;
+                        setMoodAvatar(rule.mood);
+                    }
+                    return;
+                }
+            }
+        }
+        let avatarHideTimer = null;
+        function setMoodAvatar(vibe) {
+            const el = document.getElementById('mood-avatar');
+            const src = `/static/avatars/${vibe}.png`;
+            // check if file exists before showing
+            const img = new Image();
+            img.onload = () => {
+                el.src = src;
+                el.classList.remove('hidden');
+                el.classList.add('visible');
+                clearTimeout(avatarHideTimer);
+                avatarHideTimer = setTimeout(() => {
+                    el.classList.remove('visible');
+                    el.classList.add('hidden');
+                }, 4000);
+            };
+            img.onerror = () => {}; // silently skip if image missing
+            img.src = src;
+        }
+
         async function sendMessage() {
             if (isStreaming) return;
             // Interrupt any ongoing TTS before sending new message
@@ -1154,6 +1227,7 @@
 
                 let full = '';
                 bubble.innerHTML = '';
+                _lastDetectedMood = null;
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -1161,8 +1235,8 @@
                     const chunk = decoder.decode(value, { stream: true });
 
                     if (chunk.includes('__VIBE__')) {
-                        // We could handle vibe changes here if we wanted more subtle UI changes
-                        // but for now we just filter it out of the text
+                        const vibe = chunk.split('__VIBE__')[1]?.trim().split(/\s/)[0] || 'neutral';
+                        setMoodAvatar(vibe);
                         continue;
                     }
                     if (chunk.includes('__STRUCTURED__')) {
@@ -1175,6 +1249,7 @@
 
                     full += chunk;
                     bubble.innerHTML = renderMarkdown(full);
+                    detectMoodFromChunk(full);
                     scrollToBottom();
                 }
                 if (!full) bubble.innerHTML = '<em style="color:var(--text-muted)">No response.</em>';
@@ -1301,7 +1376,7 @@
             const msgs = document.getElementById('messages');
             const div = document.createElement('div');
             div.className = `msg ${role}`;
-            let initials = role === 'ai' ? '🌸' : 'U';
+            let initials = role === 'ai' ? '<img src="/static/images/profile.png" alt="Marin">' : 'U';
             div.innerHTML = `
     <div class="avatar ${role === 'ai' ? 'ai' : 'user-av'}">${initials}</div>
     <div class="bubble">${content ? renderMarkdown(content) : ''}</div>`;
@@ -1693,6 +1768,7 @@
             }
         }
     </script>
+    <img id="mood-avatar" src="" alt="" class="hidden">
 </body>
 
 </html>
