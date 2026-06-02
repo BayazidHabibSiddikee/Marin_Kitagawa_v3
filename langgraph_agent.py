@@ -513,6 +513,7 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - app_list() — List all available apps. Args: {}
 - swordwatch_inspect(target) — Deep inspect a process (CPU, mem, threads, files, network). Args: {"target": "name or pid"}
 - swordwatch_kill(target, force) — Kill a process (SIGTERM or SIGKILL). Args: {"target": "name or pid", "force": false}
+- whatsapp_manage(action, message_data, limit) — WhatsApp integration. Actions: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'. Args: {"action": "list_todos", "limit": 10}
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
