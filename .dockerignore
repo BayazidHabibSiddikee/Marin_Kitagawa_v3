@@ -1,0 +1,53 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.log
+*.out
+
+# Runtime
+storage/*.db
+storage/faiss_db/
+storage/latest_news.json
+storage/sent_news_titles.json
+storage/agent.log
+logs/
+nohup.out
+*.log
+
+# Don't exclude .env — it's mounted at runtime
+# But don't bake it into image either
+
+# Dev / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs / non-essential
+images/
+doc/
+code/
+WHATSAPP_INTEGRATION.md
+WHATSAPP_INTEGRATION_SUMMARY.md
+README.md
+help.txt
+todo.log
+push.log
+
+# Vault snapshots (large, not needed in container)
+unique/
+
+# Langgraph example
+langgraph_example/
+
+# Static uploads / generated (user data, mount as volume)
+static/uploads/
+static/generated/
+static/downloads/
