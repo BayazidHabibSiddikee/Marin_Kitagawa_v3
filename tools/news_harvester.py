@@ -171,10 +171,13 @@ async def main():
     try:
         import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from database import init_db, save_news
+        from database import init_db, save_news, delete_old_news
         init_db()
         save_news(analyzed_news)
         print(f"Saved {len(analyzed_news)} items to database.")
+        deleted = delete_old_news(days=14)
+        if deleted:
+            print(f"Cleaned up {deleted} news items older than 14 days.")
     except Exception as e:
         print(f"DB save failed: {e}")
 

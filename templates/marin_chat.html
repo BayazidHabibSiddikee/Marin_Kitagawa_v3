@@ -290,6 +290,7 @@
         #messages {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 24px 28px;
             display: flex;
             flex-direction: column;
@@ -958,7 +959,7 @@
         if (raw) {
             bubble.innerHTML = content;
         } else {
-            try { bubble.innerHTML = marked.parse(content); }
+            try { bubble.innerHTML = renderWithLatex(content); }
             catch { bubble.textContent = content; }
         }
 
@@ -969,7 +970,36 @@
         return bubble;
     }
 
-    // ── MOOD AVATAR ─────────────────────────────────────────────────────────
+        // ── MARKDOWN + LATEX RENDER ──────────────────────────────────────────
+        function renderWithLatex(text) {
+            // Stash display math $$...$$ and inline math $...$
+            const latexBlocks = [];
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+                latexBlocks.push({ math, display: true });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+            text = text.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
+                latexBlocks.push({ math, display: false });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+
+            // Markdown processing
+            let html = marked.parse(text);
+
+            // Restore LaTeX placeholders as rendered KaTeX HTML
+            html = html.replace(/%%LATEX(\d+)%%/g, (_, idx) => {
+                const { math, display } = latexBlocks[parseInt(idx)];
+                try {
+                    return katex.renderToString(math, { displayMode: display, throwOnError: false });
+                } catch (e) {
+                    return display ? `$$${math}$$` : `$${math}$`;
+                }
+            });
+
+            return html;
+        }
+
+        // ── MOOD AVATAR ─────────────────────────────────────────────────────────
     const MOOD_RULES = [
         { mood:'angry',     words:['angry','how dare','stupid','hate you','💢','😠','😡'] },
         { mood:'excited',   words:['yay','omg','!!!','🥳','woah','amazing','incredible'] },
@@ -1065,7 +1095,7 @@
                 // Clean vibe tags from full text just in case they arrived in pieces
                 const cleanText = full.replace(/__VIBE__\w+/g, '').trim();
                 
-                try { typingBubble.innerHTML = marked.parse(cleanText); }
+                try { typingBubble.innerHTML = renderWithLatex(cleanText); }
                 catch { typingBubble.textContent = cleanText; }
                 
                 detectMoodFromChunk(cleanText);
@@ -1117,7 +1147,7 @@
 
             if (data.error || !data.questions || data.questions.length === 0) {
                 bubble.innerHTML = data.raw
-                    ? marked.parse(data.raw)
+                    ? renderWithLatex(data.raw)
                     : `<span style="color:var(--danger)">Quiz generation failed</span>`;
                 return;
             }
@@ -1269,15 +1299,15 @@
             const r = await fetch('/settings/rag');
             const d = await r.json();
             ragEnabled = d.rag_enabled;
-            updateRagLabel(d.rag_running);
+            updateRagLabel(d.rag_enabled);
         } catch(e){}
     }
-    function updateRagLabel(running) {
+    function updateRagLabel(enabled) {
         const btn = document.getElementById('rag-btn');
         const lbl = document.getElementById('rag-label');
-        lbl.textContent = running ? 'rag: on' : 'rag: off';
-        btn.style.color = running ? 'var(--success)' : '';
-        btn.style.borderColor = running ? 'var(--success)' : '';
+        lbl.textContent = enabled ? 'rag: on' : 'rag: off';
+        btn.style.color = enabled ? 'var(--success)' : '';
+        btn.style.borderColor = enabled ? 'var(--success)' : '';
     }
     async function toggleRag() {
         ragEnabled = !ragEnabled;
@@ -1287,7 +1317,8 @@
             const fd = new FormData(); fd.append('enabled', ragEnabled?'1':'0');
             const r = await fetch('/settings/rag', {method:'POST',body:fd});
             const d = await r.json();
-            updateRagLabel(d.rag_running);
+            ragEnabled = d.rag_enabled;
+            updateRagLabel(d.rag_enabled);
         } catch(e){ updateRagLabel(false); }
     }
 
@@ -1450,6 +1481,5 @@
     } catch(e) { console.error('Init error:', e); }
 </script>
 
-<img id="mood-avatar" src="" alt="" class="hidden">
 </body>
 </html>

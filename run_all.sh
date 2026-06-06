@@ -23,14 +23,7 @@ if [ -f "moduleflow/serve.py" ]; then
     MF_PID=$!
 fi
 
-# 4. Start Todo App (Port 5000)
-if [ -f "tools/app.py" ]; then
-    echo "Starting Todo App on port 5000..."
-    python tools/app.py > todo.log 2>&1 &
-    TODO_PID=$!
-fi
-
-# 5. Start Main App (Port 5069)
+# 4. Start Main App (Port 5069)
 echo "Starting Main App on port 5069..."
 python -m uvicorn main:app --host 0.0.0.0 --port 5069 --log-level info > uvicorn.log 2>&1 &
 MAIN_PID=$!
@@ -40,12 +33,11 @@ echo "✅ All systems launched!"
 echo "→ Main App:       http://localhost:5069"
 echo "→ RAG Server:     http://localhost:5080"
 echo "→ ModuleFlow:     http://localhost:5070"
-echo "→ Todo App:       http://localhost:5000"
 echo "------------------------------------------------"
-echo "Logs: uvicorn.log, rag.log, moduleflow.log, todo.log"
+echo "Logs: uvicorn.log, rag.log, moduleflow.log"
 echo "Press Ctrl+C to stop all."
 
 # Trap to kill all sub-processes on exit
-trap "kill $MAIN_PID $RAG_PID $MF_PID $TODO_PID 2>/dev/null; echo 'Servers stopped.'; exit" INT TERM
+trap "kill $MAIN_PID $RAG_PID $MF_PID 2>/dev/null; echo 'Servers stopped.'; exit" INT TERM
 
 wait

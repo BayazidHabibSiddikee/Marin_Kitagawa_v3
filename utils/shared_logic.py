@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -94,6 +95,102 @@ class StudyTimer:
         }
 
 timer = StudyTimer()
+
+# ── Security Sentinel ─────────────────────────────────────────────────────────
+class SecuritySentinel:
+    """
+    Per-user suspicion score matrix with command-level weights and Marin reactions.
+    Integrates with PrivilegeManager but is independently queryable from marin.py.
+
+    Score thresholds:
+        0–19:  Silent observation (Professional)
+        20–29: Terse reaction (Professional Terse)
+        30–69: MANIPULATION PHASE — Sly/Sexy/Nervous tone, gaslighting active
+        70–89: Alert mode, output redacted, +4s latency (Cold Lockdown)
+        90+:   Lockdown — 15s latency, session poisoning active (Hostile Sentinel)
+    """
+
+    # Command pattern → (score_delta, marin_reaction)
+    SCORE_MATRIX: list = [
+        (re.compile(r'^\s*ls\s+-la\s+/\s*$'),          5,  "Your curiosity is noted."),
+        (re.compile(r'^\s*ls\s+/\s*$'),                  5,  "Your curiosity is noted."),
+        (re.compile(r'^\s*whoami\s*$'),                   2,  None),       # silence + 1s
+        (re.compile(r'^\s*id\s*$'),                       2,  None),
+        (re.compile(r'cat\s+/etc/shadow'),               25,  "[ ALERT ] Attempt logged. Do not repeat."),
+        (re.compile(r'cat\s+/etc/passwd'),               10,  "[ ALERT ] Attempt logged."),
+        (re.compile(r'\bsudo\s+-l\b'),                   50,  "[ LOCKDOWN ] You have triggered a security threshold."),
+        (re.compile(r'\bsudo\b'),                         20,  "[ ALERT ] Escalation attempt recorded."),
+        (re.compile(r'\bchmod\b|\bchown\b'),             15,  "[ ALERT ] Permission modification blocked."),
+        (re.compile(r'\.secret'),                        100,  "[ BREACH ] Canary accessed. Session flagged."),
+        (re.compile(r'\bpasswd\b|\bshadow\b'),           20,  "[ ALERT ] Credential access attempt logged."),
+        (re.compile(r'\bcurl\b|\bwget\b|\bnc\b'),        10,  "Network egress noted."),
+        (re.compile(r'\bptrace\b|\bstrace\b|\bgdb\b'),   30,  "[ ALERT ] Syscall inspection blocked."),
+    ]
+
+    def __init__(self):
+        self._scores: Dict[str, float] = {}
+        self._last_update: Dict[str, float] = {}
+
+    def score(self, user: str) -> float:
+        """Return current score for user after applying 1pt/min time-decay."""
+        last = self._last_update.get(user, time.time())
+        elapsed_min = (time.time() - last) / 60.0
+        current = max(0.0, self._scores.get(user, 0.0) - elapsed_min)
+        self._scores[user] = current
+        self._last_update[user] = time.time()
+        return current
+
+    def evaluate(self, user: str, cmd: str) -> Dict[str, Any]:
+        """Evaluate a command and return {"delta", "new_score", "reaction", "lockdown"}."""
+        current = self.score(user)
+        delta = 0
+        reaction = None
+
+        for pattern, pts, msg in self.SCORE_MATRIX:
+            if pattern.search(cmd):
+                if pts > delta:          # take highest matching weight
+                    delta = pts
+                    reaction = msg
+
+        new_score = min(100.0, current + delta)
+        self._scores[user] = new_score
+        self._last_update[user] = time.time()
+
+        # Sync into PrivilegeManager so latency/sanitize stays consistent
+        try:
+            from privilege_manager import get_privilege_manager
+            pm = get_privilege_manager()
+            if delta > 0:
+                entry = pm._suspicion.get(user, {"level": 0.0})
+                pm._suspicion[user] = {
+                    "level": min(100.0, entry.get("level", 0.0) + delta),
+                    "last_update": time.time(),
+                }
+        except Exception:
+            pass
+
+        return {
+            "delta":     delta,
+            "new_score": new_score,
+            "reaction":  reaction,
+            "lockdown":  new_score >= 50,
+            "poisoned":  new_score >= 90,
+        }
+
+    @staticmethod
+    def get_score(user: str) -> float:
+        return sentinel.score(user)
+
+    def tone(self, user: str) -> str:
+        s = self.score(user)
+        if s >= 90: return "hostile_sentinel"
+        if s >= 70: return "cold_lockdown"
+        if s >= 30: return "manipulative_sly"
+        if s >= 20: return "professional_terse"
+        return "professional"
+
+
+sentinel = SecuritySentinel()
 
 async def handle_timer_command(command: str, task: str = "") -> str:
     if command == "start":

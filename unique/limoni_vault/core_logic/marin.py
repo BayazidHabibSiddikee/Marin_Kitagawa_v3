@@ -154,21 +154,9 @@ except Exception as e:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# HISTORY  — MongoDB preferred, JSON fallback
+# HISTORY  — SQLite via database.py
 # ═══════════════════════════════════════════════════════════════════════════════
 HISTORY_FILE = os.path.join(BASE_DIR, "..", "..", "..", "storage", "marin_history.json")
-
-try:
-    from pymongo import MongoClient
-    _mongo_client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
-    _mongo_client.server_info()
-    _db          = _mongo_client["marin_db"]
-    _history_col = _db["chat_history"]
-    MONGO_OK = True
-    print("[MongoDB] Connected ✓")
-except Exception as e:
-    MONGO_OK = False
-    print(f"[MongoDB] Not available ({e}) — falling back to marin_history.json")
 
 
 def load_history(limit: int = 40) -> list:

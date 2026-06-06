@@ -1,6 +1,49 @@
- Useful commands going forward:
+docker compose up --build        # build + start
+docker compose up -d --build     # detached mode
+docker compose down              # stop
+gemini --resume ae8616ad-93af-4f10-b261-fdd5710f72e4
+docker compose up -d --force-recreate
 
-  systemctl --user status marin    # check status
-  systemctl --user restart marin   # restart
-  systemctl --user stop marin      # stop
-  journalctl --user -u marin -f    # live logs
+1. How to login to her Docker Container
+  Since the container is named marin-hs02, you can jump into her shell at any time from your host terminal:
+
+   1 docker exec -it marin-hs02 bash
+  Once inside, you are root within the /app directory. You can see everything Marin sees.
+
+  ---
+
+  2. How to Test her Execution (The "Marin Way")
+  Marin now uses a Docker-aware wrapper. When she outputs a command in her chat, the system catches it and executes it inside that container.
+
+  Try this test in the Chat UI:
+  Ask her: "Marin, create a file named 'hello_limon.py' that prints 'Isolation Success!', then run it and show me the output."
+
+  What should happen:
+   1. She will use the file_tool to write the file.
+   2. She will use the terminal_tool to run python3 hello_limon.py.
+   3. Because I updated the backend, the command will actually run inside the marin-hs02 container.
+
+  ---
+
+  3. How to Verify it worked
+  While she is processing, you can "spy" on her from your host terminal:
+
+   1. Check the host directory:
+   1    ls hello_limon.py
+     (It will be there because we bind-mounted the folder).
+
+   2. Check the container process log:
+
+   1    docker exec marin-hs02 ps aux | grep python
+
+   3. Verify the Sandbox Isolation:
+     Ask her to run: __EXEC__ touch /etc/MARIN_WAS_HERE
+
+     Then, check your host:
+
+   1    ls /etc/MARIN_WAS_HERE
+   2    # (Result: File NOT found - Your host is safe!)
+     Then, check the container:
+
+   1    docker exec marin-hs02 ls /etc/MARIN_WAS_HERE
+   2    # (Result: File FOUND - She has full power in her sandbox!)
