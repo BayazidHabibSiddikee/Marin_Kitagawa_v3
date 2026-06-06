@@ -38,13 +38,25 @@ async def lifespan(app: FastAPI):
     migrate_from_json()
     print("[Database] Initialized and migrated.")
 
-    async def _hourly_news_telegram():
+    async def _daily_news_telegram():
+        """Fetch news from all 16 RSS portals once per day at 07:00."""
         import asyncio as _aio
+        import datetime as _dt
         while True:
             try:
-                await _aio.sleep(3600)
-                from tools.news_harvester import main as harvest_news
-                await harvest_news()
+                now = _dt.datetime.now()
+                # Run at 07:00 daily
+                if now.hour == 7 and now.minute == 0:
+                    from tools.news_harvester import main as harvest_news
+                    await harvest_news()
+                    # Clean up news older than 2 weeks after each harvest
+                    from database import delete_old_news
+                    deleted = delete_old_news(days=14)
+                    if deleted:
+                        print(f"[Cleanup] Deleted {deleted} news items older than 14 days.")
+                    await _aio.sleep(61)  # sleep past the 07:00 minute
+                else:
+                    await _aio.sleep(30)
             except Exception:
                 await _aio.sleep(60)
 
@@ -73,8 +85,12 @@ async def lifespan(app: FastAPI):
             except Exception:
                 await _aio.sleep(60)
 
-    asyncio.create_task(_hourly_news_telegram())
+    asyncio.create_task(_daily_news_telegram())
     asyncio.create_task(_daily_habit_reminder())
+
+    # Seed proactive engine state from DB before starting broadcaster
+    from proactive_engine import seed_from_db
+    seed_from_db("marin")
     asyncio.create_task(proactive_broadcaster())
 
     # Start Telegram bot (bidirectional chat)
@@ -268,7 +284,7 @@ async def get_api_logs(limit: int = 200):
 
 # ── TODO API (Integrated) ──────────────────────────────────────────────────
 import sqlite3
-from datetime import date
+from datetime import datetime
 
 DB_TODO = "storage/todos.db"
 
@@ -290,7 +306,8 @@ def init_todo_db():
             category_id INTEGER,
             status TEXT DEFAULT 'todo',
             priority TEXT DEFAULT 'medium',
-            created_at TEXT DEFAULT (date('now')),
+            remind_daily INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
             completed_at TEXT,
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
         );
@@ -320,8 +337,8 @@ async def create_todo(request: Request):
     db = get_todo_db()
     category_id = data.get("category_id")
     db.execute(
-        "INSERT INTO todos (title, category_id, priority) VALUES (?, ?, ?)",
-        (data["title"], category_id or None, data.get("priority", "medium")),
+        "INSERT INTO todos (title, category_id, priority, remind_daily) VALUES (?, ?, ?, ?)",
+        (data["title"], category_id or None, data.get("priority", "medium"), data.get("remind_daily", 0)),
     )
     db.commit()
     todo_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -339,13 +356,13 @@ async def update_todo(id: int, request: Request):
     db = get_todo_db()
     fields = []
     values = []
-    for key in ("title", "status", "priority", "category_id"):
+    for key in ("title", "status", "priority", "category_id", "remind_daily"):
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])
     if "status" in data and data["status"] == "done":
         fields.append("completed_at = ?")
-        values.append(date.today().isoformat())
+        values.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     if "status" in data and data["status"] != "done":
         fields.append("completed_at = NULL")
     values.append(id)
@@ -551,20 +568,34 @@ async def get_rag_setting():
 async def set_rag_setting(enabled: str = Form(...)):
     import marin
     marin.RAG_ENABLED = (enabled == "1")
+    running = False
+    from utils.agent_logic import RAG_URL
+    
     if marin.RAG_ENABLED:
         # Ensure server is running
-        from utils.agent_logic import RAG_URL
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.get(f"{RAG_URL}/health", timeout=1.0)
-                if r.status_code != 200: raise Exception("Not running")
+                if r.status_code == 200: 
+                    running = True
+                else:
+                    raise Exception("Not running")
         except:
             # Start it
             base = os.path.dirname(os.path.abspath(__file__))
             script = os.path.join(base, "rag_server.py")
             subprocess.Popen([sys.executable, script, "--port", "5080"], start_new_session=True)
+            # Give it a second to start (optional, or just return True if we tried)
+            running = True
+    else:
+        # Check if it's still running
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{RAG_URL}/health", timeout=1.0)
+                if r.status_code == 200: running = True
+        except: pass
             
-    return JSONResponse({"ok": True, "rag_enabled": marin.RAG_ENABLED})
+    return JSONResponse({"ok": True, "rag_enabled": marin.RAG_ENABLED, "rag_running": running})
 
 @app.get("/settings/wordlimit")
 async def get_wordlimit():

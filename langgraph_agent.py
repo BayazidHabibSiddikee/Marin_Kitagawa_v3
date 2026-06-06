@@ -157,16 +157,17 @@ def screenshot_tool() -> str:
 
 @tool
 def terminal_tool(command: str) -> str:
-    """Execute a safe shell command on the local system."""
+    """Execute a safe shell command inside Marin's sandbox. Use this for testing code or exploring the system."""
+    from utils.command_runner import run_command
     from marin_fier import is_cmd_allowed
+    
+    # We still check the allowlist for general safety, even in docker
     allowed, reason = is_cmd_allowed(command)
     if not allowed:
         return f"Blocked: {reason}"
-    try:
-        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
-        return f"STDOUT: {r.stdout}\nSTDERR: {r.stderr}"
-    except Exception as e:
-        return f"Error: {e}"
+    
+    code, output = run_command(command, timeout=30)
+    return f"Exit Code: {code}\nOutput:\n{output}"
 
 @tool
 def pdf_download_tool(query: str) -> str:
@@ -446,6 +447,59 @@ def rag_search(query: str) -> str:
     except Exception as e:
         return f"RAG search error: {e}"
 
+@tool
+def file_tool(action: str, path: str, content: str = "") -> str:
+    """Manage files on the system. Use this to create, read, or update code and notes.
+    
+    Actions:
+        - 'write': Overwrite or create a file with content.
+        - 'append': Add content to the end of a file.
+        - 'read': Read the content of a file.
+        - 'delete': Remove a file.
+        
+    Args:
+        action: 'write', 'append', 'read', or 'delete'.
+        path: Path to the file (relative to project root).
+        content: The text content to write or append.
+    """
+    from marin_fier import is_cmd_allowed
+    # Basic safety check: don't allow writing to sensitive files
+    blocked_paths = [".env", "config.py", "database.py", "privilege_manager.py"]
+    if any(p in path for p in blocked_paths):
+        return f"Access denied: {path} is a protected system file."
+
+    full_path = Path(path).resolve()
+    base_dir = Path(os.path.dirname(os.path.abspath(__file__))).resolve()
+    
+    # Ensure the path is within the project directory or allowed subdirs
+    if not str(full_path).startswith(str(base_dir)):
+         # Allow writing to home-relative paths if they are in allowed areas
+         if not str(full_path).startswith(os.path.expanduser("~")):
+             return f"Access denied: {path} is outside the allowed workspace."
+
+    try:
+        if action == "write":
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"Successfully wrote to {path}."
+        elif action == "append":
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.write(content)
+            return f"Successfully appended to {path}."
+        elif action == "read":
+            if not full_path.exists(): return f"File not found: {path}"
+            with open(full_path, "r", encoding="utf-8") as f:
+                return f"Content of {path}:\n{f.read()}"
+        elif action == "delete":
+            if not full_path.exists(): return f"File not found: {path}"
+            os.remove(full_path)
+            return f"Successfully deleted {path}."
+        else:
+            return f"Invalid action: {action}"
+    except Exception as e:
+        return f"File error: {e}"
+
 # ── Tool registry (kept for reference; Node B uses tools_by_name) ────────────
 
 ALL_TOOLS = [
@@ -455,6 +509,7 @@ ALL_TOOLS = [
     pdf_download_tool, msg_telegram, email_send, app_launch, app_list,
     swordwatch_inspect, swordwatch_kill,
     habit_add, habit_complete, habit_list, habit_stats, habit_today, habit_delete,
+    file_tool,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -514,6 +569,7 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - swordwatch_inspect(target) — Deep inspect a process (CPU, mem, threads, files, network). Args: {"target": "name or pid"}
 - swordwatch_kill(target, force) — Kill a process (SIGTERM or SIGKILL). Args: {"target": "name or pid", "force": false}
 - whatsapp_manage(action, message_data, limit) — WhatsApp integration. Actions: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'. Args: {"action": "list_todos", "limit": 10}
+- file_tool(action, path, content) — Create, read, or update files. Use this for code/notes. Args: {"action": "write", "path": "test.py", "content": "print('hi')"}
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
@@ -531,7 +587,8 @@ RULES:
    [{{"action": "crypto_tool", "args": {{"coin": "bitcoin"}}, "rationale": "Get crypto price"}},
     {{"action": "weather_tool", "args": {{"city": "Dhaka"}}, "rationale": "Get weather"}},
     {{"action": "respond", "args": {{}}, "rationale": "Combine results into response"}}]
-6. Do NOT execute tools yourself — only plan.
+6. Use file_tool whenever you need to create a script, save code, or write a note. 
+7. Do NOT execute tools yourself — only plan.
 
 Output ONLY the plan JSON. No extra text."""
 
@@ -563,17 +620,27 @@ def node_strategist(state: AgentState) -> dict:
 
     # Parse plan from LLM output
     try:
-        # Strip markdown code fences if present
         clean = content.strip()
-        if clean.startswith("```"):
-            clean = clean.split("\n", 1)[1]
-            if clean.endswith("```"):
-                clean = clean[:-3]
-            clean = clean.strip()
-        plan = json.loads(clean)
+        # Find the first '[' and last ']' to extract the JSON array
+        start = clean.find('[')
+        end = clean.rfind(']')
+        if start != -1 and end != -1 and end > start:
+            json_str = clean[start:end+1]
+            plan = json.loads(json_str)
+        else:
+            # Try parsing as a code block
+            if "```" in clean:
+                blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)```', clean)
+                if blocks:
+                    plan = json.loads(blocks[0].strip())
+                else:
+                    raise ValueError("No valid JSON found")
+            else:
+                plan = json.loads(clean)
+                
         if not isinstance(plan, list):
             plan = [{"action": "respond", "args": {}, "rationale": str(plan)}]
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError, ValueError):
         plan = [{"action": "respond", "args": {}, "rationale": content or "Direct response"}]
 
     return {

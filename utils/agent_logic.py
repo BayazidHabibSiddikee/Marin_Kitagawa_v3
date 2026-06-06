@@ -81,8 +81,7 @@ def execute_text_commands(text: str, base_dir: str):
     Scan text for shell commands and execute them.
     (Similar to marin.py's _exec_text_commands)
     """
-    from marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs
-    from marin_fier import is_cmd_allowed, _cmd_log
+    from marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs, CMD_LOG
     
     body = re.sub(r'```(?:\w*\n)?([\s\S]*?)```', r'\1', text)
     body = re.sub(r'[^\x20-\x7E\n]', '', body)
@@ -99,9 +98,6 @@ def execute_text_commands(text: str, base_dir: str):
 
     def _run():
         for cmd in raw_cmds:
-            allowed, reason = is_cmd_allowed(cmd)
-            if not allowed: continue
-            
             try:
                 r = subprocess.run(
                     cmd, shell=True, capture_output=True, text=True, timeout=30,
@@ -111,11 +107,9 @@ def execute_text_commands(text: str, base_dir: str):
                 out = f"[EXIT {r.returncode}] {(r.stdout or r.stderr or '(done)').strip()[:500]}"
                 print(f"[Agent] Ran: {cmd[:80]} -> {out[:100]}")
                 
-                # Update cmd log if available
-                if _cmd_log is not None:
-                    ts = datetime.now().strftime("%H:%M:%S")
-                    _cmd_log.append({"cmd": cmd, "allowed": True, "output": out[:200], "ts": ts})
-                    if len(_cmd_log) > 100: _cmd_log.pop(0)
+                ts = datetime.now().strftime("%H:%M:%S")
+                CMD_LOG.append({"cmd": cmd, "allowed": True, "output": out[:200], "ts": ts})
+                if len(CMD_LOG) > 100: CMD_LOG.pop(0)
             except Exception as e:
                 print(f"[Agent] Command failed: {cmd[:80]} — {e}")
 
@@ -129,7 +123,6 @@ def extract_and_execute_commands(text: str, base_dir: str) -> str:
     2. Extract remaining shell commands and execute them synchronously
     3. Return formatted results (to be fed back to LLM)
     """
-    from marin_fier import is_cmd_allowed
     import textwrap
 
     results = []
@@ -228,19 +221,12 @@ def extract_and_execute_commands(text: str, base_dir: str) -> str:
 # ── Unified Preprocessor ─────────────────────────────────────────────────────
 
 async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False, agent_name: str = "marin") -> Dict[str, Any]:
-    from marin_fier import classify, execute_tool
+    from marin import classify
     
-    classification = classify(user_input, agent_name=agent_name)
+    classification = classify(user_input)
     intent = classification.get("intent", "chat")
-    params = classification.get("params", {})
     
     tool_outputs = []
-    if intent not in ("chat", "normal", "learn", "code", "lab"):
-        try:
-            out = await execute_tool(intent, params, agent_name=agent_name)
-            if out: tool_outputs.append(f"[TOOL: {intent}]\n{out}")
-        except Exception as e:
-            print(f"[AgentLogic] Tool execution failed: {e}")
 
     yt_regex = r"(https?://)?(www.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[^\s]+"
     is_youtube = bool(re.search(yt_regex, user_input, re.IGNORECASE))

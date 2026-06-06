@@ -110,12 +110,6 @@ async def upload_image(image: UploadFile = File(...)):
         buf.write(await image.read())
     return {"ok": True, "path": f"/{filepath}"}
 
-from fastapi.responses import RedirectResponse
-
-@app.get("/", response_class=HTMLResponse)
-async def get_(request: Request):
-    return RedirectResponse(url="http://localhost:5071/")
-
 @app.post("/message")
 async def handle_message(message: str = Form(...), image: UploadFile = File(None)):
     image_path = None

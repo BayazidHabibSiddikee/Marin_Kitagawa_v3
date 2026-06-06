@@ -23,11 +23,9 @@ import database
 # ── Config ────────────────────────────────────────────────────────────────
 IDLE_INTERVALS  = [
     1200,    # 1st: 20 min
-    5400,    # 2nd: 1.5 hours
-    10800,   # 3rd: 3 hours
-    21600,   # 4th: 6 hours
-    43200,   # 5th: 12 hours
-    172800,  # 6th: 2 days later
+    7200,    # 2nd: 2 hours
+    21600,   # 3rd: 6 hours
+    172800,  # 4th: 2 days
 ]
 QUIET_START     = dtime(0, 0)    # midnight
 QUIET_END       = dtime(7, 30)   # 7:30 AM
@@ -54,6 +52,50 @@ def record_user_message(agent: str):
     """Call this every time a user message arrives."""
     _last_user_msg_time[agent] = time.time()
     _streak_count[agent] = 0 # Reset the proactive streak when user talks
+
+
+def seed_from_db(agent: str = "marin"):
+    """Restore proactive state from chat history on server startup."""
+    try:
+        conn = database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT timestamp FROM chat_history WHERE agent = ? ORDER BY id DESC LIMIT 1",
+            (agent,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row["timestamp"]:
+            # Parse the timestamp and compute how long ago it was
+            from datetime import datetime as _dt
+            try:
+                last_time = _dt.fromisoformat(row["timestamp"]).timestamp()
+            except (ValueError, TypeError):
+                last_time = time.time() - 300
+
+            elapsed = time.time() - last_time
+            _last_user_msg_time[agent] = last_time
+
+            # Determine streak based on elapsed time vs intervals
+            streak = 0
+            for i, interval in enumerate(IDLE_INTERVALS):
+                if elapsed >= interval:
+                    streak = i + 1
+                else:
+                    break
+            streak = min(streak, len(IDLE_INTERVALS) - 1)
+            _streak_count[agent] = streak
+            _last_proactive_time[agent] = last_time if streak > 0 else 0
+
+            mins = int(elapsed / 60)
+            print(f"[proactive] Seeded: last user msg {mins}m ago, streak={streak}")
+        else:
+            _last_user_msg_time[agent] = time.time()
+            _streak_count[agent] = 0
+            print("[proactive] No history found, starting fresh")
+    except Exception as e:
+        print(f"[proactive] DB seed failed: {e}")
 
 
 def _is_quiet_hours() -> bool:
@@ -283,17 +325,13 @@ Think about what a real partner would do when they haven't heard from someone in
 
 IMPORTANT:
 - Reference something SPECIFIC from the conversation history when possible
-- The user might be busy — keep it light, don't demand a long reply
 - Sometimes just a cute "thinking of you" moment is enough
 - Mix it up — don't always ask questions, sometimes just share a thought
 
 Rules:
-- Under 3 sentences
 - Stay in character (Hehehe~ energy is fine)
-- Do NOT start every sentence with "I"
 - Do NOT mention being an AI or a bot
 - Do NOT sound like a reminder app or a task manager
-- Do NOT sign your name at the end (no "Marin", "Limoni", or "M").
 - Be natural, warm, like a real partner who genuinely cares
 """
 

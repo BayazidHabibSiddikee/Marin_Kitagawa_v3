@@ -17,10 +17,12 @@ from bayazid import (
     timer, memory
 )
 from marin import main as marin_main, format_game_context_for_marin
-from  import (
-    build_marin__prompt, build_bayazid__prompt,
+from arena import (
+    build_marin_arena_prompt as build_marin__prompt,
+    build_bayazid_arena_prompt as build_bayazid__prompt,
     _stream_debate, _stream_judge,
-    _load__history, _load_bayazid_history, _format_history_for_context,
+    _load_arena_history as _load__history,
+    _load_bayazid_history, _format_history_for_context,
 )
 from classifier import classify, extract_timer_task, extract_topic, extract_quiz_params
 from config import UPLOAD_FOLDER, HOST, PORT
@@ -227,7 +229,7 @@ async def get_(request: Request):
     return templates.TemplateResponse(request=request, name="_chat.html")
 
 
-@app.post("//stream")
+@app.post("/arena/stream")
 async def _stream(request: Request):
     body        = await request.json()
     character   = body.get("character", "marin")
@@ -284,12 +286,12 @@ async def _stream(request: Request):
     return StreamingResponse(generate(), media_type="text/plain")
 
 
-@app.post("//stream/live")
+@app.post("/arena/stream/live")
 async def _stream_live(request: Request):
     return await _stream(request)
 
 
-@app.get("//history")
+@app.get("/arena/history")
 async def _history(limit: int = 10):
     marin_hist   = await asyncio.to_thread(_load__history,   limit)
     bayazid_hist = await asyncio.to_thread(_load_bayazid_history, limit)

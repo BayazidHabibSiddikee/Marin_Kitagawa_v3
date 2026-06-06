@@ -3,32 +3,45 @@ services:
     build: .
     container_name: marin-hs02
     restart: unless-stopped
-    ports:
-      - "5069:5069"   # Main chat UI
-      - "5080:5080"   # RAG server
-      - "5070:5070"   # ModuleFlow
+    # Full unrestricted access inside the container
+    privileged: true
+    user: root
+    # No security profiles — full Linux capabilities
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    # Capabilities so iptables, mount, raw sockets, etc. all work
+    cap_add:
+      - ALL
+    # Host networking — Marin sees the host network stack directly
+    network_mode: host
+    # No memory/cpu limits — she gets everything
+    deploy:
+      resources:
+        limits: {}
+        reservations: {}
+    # Environment
     env_file:
       - .env
     environment:
       # Reach host Ollama from container
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://127.0.0.1:11434
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
+      # Security — Docker-aware bypass
+      - OWNER_USER=Bayazid
+      - MARIN_ROLE=owner
+      - DOCKER_CONTAINER=1
+      # Disable Python buffering
+      - PYTHONUNBUFFERED=1
     volumes:
-      # Persist databases and FAISS index
-      - ./storage:/app/storage
-      # RAG corpus
-      - ./doc:/app/doc
-      - ./code:/app/code
-      # User uploads & generated content
-      - ./static/uploads:/app/static/uploads
-      - ./static/generated:/app/static/generated
-      - ./static/downloads:/app/static/downloads
-      # Logs
-      - ./logs:/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Sync the whole project directory for development and execution consistency
+      - .:/app
+      # Host filesystem — READ-ONLY reference so she can see the whole system
+      - /:/host:ro
+      # Docker socket — so she can manage containers
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5069"]
       interval: 30s

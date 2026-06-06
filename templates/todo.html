@@ -1,139 +1,255 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Marin Todo | Interactive Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        :root {
-            --bg: #13100e;
-            --panel: #221e19;
-            --border: #3a342c;
-            --text: #e8ddd0;
-            --purple: #4db8a4;
-        }
-        body { font-family: 'Rajdhani', sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; }
-        .btn { background: var(--purple); color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; text-decoration: none; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
-        .todo-item { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border); padding: 10px 0; }
-        .todo-item:last-child { border: none; }
-        input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 4px; }
-        canvas { max-height: 300px; }
-    </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Marin Todo | Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link rel="stylesheet" href="/static/todo.css">
 </head>
 <body>
-    <div class="header">
-        <h2>Marin Todo Dashboard</h2>
-        <a href="/chat" class="btn">Back to Chat</a>
+<div class="container">
+<div class="flex-between">
+    <h1>Marin Todo Tracker</h1>
+    <a href="/chat" style="text-decoration:none; color:var(--btn-primary); font-weight:bold;">← Back to Chat</a>
+</div>
+
+<!-- Category bar -->
+<form id="cat-form" class="card inline-form">
+  <select id="cat-select"><option value="">— no category —</option></select>
+  <input id="cat-input" type="text" placeholder="New category (e.g. Physics, CS101)" required/>
+  <button type="submit" class="btn btn-primary">+ Add</button>
+</form>
+
+<!-- Task form -->
+<form id="todo-form" class="card">
+  <div class="field">
+    <label>Task</label>
+    <input id="title-input" type="text" placeholder="What do you need to do?" required/>
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label>Category</label>
+      <select id="category-select"><option value="">— none —</option></select>
     </div>
-
-    <div class="grid">
-        <div class="panel">
-            <h3>Add Task</h3>
-            <form id="add-form" style="display:flex; gap:10px;">
-                <input type="text" id="title" placeholder="New task..." required style="flex:1;">
-                <select id="priority">
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                </select>
-                <button type="submit" class="btn">Add</button>
-            </form>
-
-            <h3 style="margin-top:20px;">Tasks</h3>
-            <div id="todo-list"></div>
-        </div>
-
-        <div class="panel">
-            <h3>Task Status</h3>
-            <canvas id="statusChart"></canvas>
-
-            <h3 style="margin-top:20px;">Daily Completion</h3>
-            <canvas id="dailyChart"></canvas>
-        </div>
+    <div class="field">
+      <label>Priority</label>
+      <select id="priority-select">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
     </div>
+    <div class="field" style="display:flex; flex-direction:row; align-items:center; gap:8px; margin-bottom:10px;">
+      <input type="checkbox" id="remind-input" style="width:auto; margin:0;">
+      <label for="remind-input" style="margin:0; font-size:14px;">Daily Remind</label>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">Add Task</button>
+    </div>
+  </div>
+</form>
 
-    <script>
-        let statusChart, dailyChart;
+<!-- Overview stats -->
+<div class="card" id="stats">
+  <h2>Overview</h2>
+  <div id="stat-summary" class="stat-row"></div>
+</div>
 
-        async function loadTodos() {
-            const res = await fetch('/api/todos');
-            const todos = await res.json();
-            const list = document.getElementById('todo-list');
-            list.innerHTML = '';
-            todos.forEach(t => {
-                list.innerHTML += `
-                    <div class="todo-item" style="opacity: ${t.status === 'done' ? 0.5 : 1}">
-                        <div>
-                            <strong>${t.title}</strong>
-                            <span style="font-size:0.8em; color:gray;">[${t.priority}]</span>
-                        </div>
-                        <div>
-                            ${t.status !== 'done' ? `<button class="btn" style="background:#10b981; padding:4px 8px; font-size:0.8em;" onclick="updateTodo(${t.id}, 'done')">Done</button>` : ''}
-                            <button class="btn" style="background:#dc2626; padding:4px 8px; font-size:0.8em;" onclick="deleteTodo(${t.id})">Del</button>
-                        </div>
-                    </div>
-                `;
-            });
-            loadStats();
-        }
+<!-- Charts -->
+<div class="charts-grid">
+  <div class="card"><h3>Status Split</h3><canvas id="chart-status"></canvas></div>
+  <div class="card"><h3>Tasks by Category</h3><canvas id="chart-category"></canvas></div>
+  <div class="card"><h3>Daily Completions</h3><canvas id="chart-daily"></canvas></div>
+</div>
 
-        async function loadStats() {
-            const res = await fetch('/api/stats');
-            const data = await res.json();
+<!-- Category progress bars -->
+<div class="card">
+  <h2>Category Progress</h2>
+  <div id="category-progress"></div>
+</div>
 
-            if(statusChart) statusChart.destroy();
-            const ctx1 = document.getElementById('statusChart').getContext('2d');
-            statusChart = new Chart(ctx1, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(data.status),
-                    datasets: [{ data: Object.values(data.status), backgroundColor: ['#8b5cf6', '#10b981', '#f59e0b'] }]
-                }
-            });
+<!-- Todo list -->
+<div class="card">
+  <div class="flex-between">
+    <h2>Tasks</h2>
+    <select id="filter-status" onchange="loadTodos()">
+      <option value="all">All</option>
+      <option value="todo">To Do</option>
+      <option value="in-progress">In Progress</option>
+      <option value="done">Done</option>
+    </select>
+  </div>
+  <div id="todo-list"></div>
+</div>
+</div>
 
-            if(dailyChart) dailyChart.destroy();
-            const ctx2 = document.getElementById('dailyChart').getContext('2d');
-            dailyChart = new Chart(ctx2, {
-                type: 'bar',
-                data: {
-                    labels: data.daily_completion.map(d => d.completed_at),
-                    datasets: [{ label: 'Tasks Completed', data: data.daily_completion.map(d => d.count), backgroundColor: '#8b5cf6' }]
-                }
-            });
-        }
+<script>
+/* ── helpers ── */
+const api = (url, opts) => fetch(url, opts).then(r => r.json());
+const $  = id => document.getElementById(id);
 
-        document.getElementById('add-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            await fetch('/api/todos', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    title: document.getElementById('title').value,
-                    priority: document.getElementById('priority').value
-                })
-            });
-            document.getElementById('title').value = '';
-            loadTodos();
-        });
+const STATUS_LOOP = ["todo", "in-progress", "done"];
 
-        async function updateTodo(id, status) {
-            await fetch(`/api/todos/${id}`, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({status})
-            });
-            loadTodos();
-        }
+/* ── Categories ── */
+async function loadCategories() {
+  const cats = await api("/api/categories");
+  const opts = cats.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+  $("cat-select").innerHTML = `<option value="">— no category —</option>` + opts;
+  $("category-select").innerHTML = `<option value="">— none —</option>` + opts;
+}
 
-        async function deleteTodo(id) {
-            await fetch(`/api/todos/${id}`, { method: 'DELETE' });
-            loadTodos();
-        }
+$("cat-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  await api("/api/categories", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name: $("cat-input").value.trim()})
+  });
+  $("cat-input").value = "";
+  loadCategories();
+});
 
-        loadTodos();
-    </script>
+/* ── Todo actions ── */
+$("todo-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const cat = $("category-select").value;
+  await api("/api/todos", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      title: $("title-input").value.trim(),
+      category_id: cat || null,
+      priority: $("priority-select").value,
+      remind_daily: $("remind-input").checked ? 1 : 0
+    })
+  });
+  $("title-input").value = "";
+  $("remind-input").checked = false;
+  loadTodos(); loadStats();
+});
+
+async function setStatus(id, s) {
+  await api(`/api/todos/${id}`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({status:s})
+  });
+  loadTodos(); loadStats();
+}
+
+async function cycleStatus(id, cur) {
+  const i = STATUS_LOOP.indexOf(cur);
+  await setStatus(id, STATUS_LOOP[(i + 1) % 3]);
+}
+
+async function editTitle(id) {
+  const cur = todoMap.get(id)?.title;
+  const next = prompt("New title:", cur);
+  if (!next || next.trim() === cur) return;
+  await api(`/api/todos/${id}`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({title: next.trim()})
+  });
+  loadTodos();
+}
+
+async function removeTodo(id) {
+  if (!confirm("Delete this task?")) return;
+  await fetch(`/api/todos/${id}`, {method:"DELETE"});
+  loadTodos(); loadStats();
+}
+
+/* ── Rendering ── */
+let todoMap = new Map();
+
+async function loadTodos() {
+  const filter = $("filter-status").value;
+  let todos = await api("/api/todos");
+  if (filter !== "all") todos = todos.filter(t => t.status === filter);
+  todoMap = new Map(todos.map(t => [t.id, t]));
+  if (!todos.length) { $("todo-list").innerHTML = `<p class="empty">No tasks here — add one above.</p>`; return; }
+  $("todo-list").innerHTML = todos.map(t => {
+    const catBadge = t.category_name ? `<span class="badge badge-cat">${t.category_name}</span>` : "";
+    const remindIcon = t.remind_daily ? " 🔔" : "";
+    const statusTxt = t.status === "in-progress" ? "in progress" : t.status;
+    return `<div class="todo-item ${t.status}">
+      <span class="title" onclick="editTitle(${t.id})" title="click to edit">${esc(t.title)}${remindIcon}</span>
+      <span class="badge badge-${t.priority}">${t.priority}</span>
+      ${catBadge}
+      <span class="badge ${t.status==='done'?'badge-done':t.status==='in-progress'?'badge-in-progress':'badge-todo'}">${statusTxt}</span>
+      <button class="sm" onclick="cycleStatus(${t.id},'${t.status}')" title="advance status">&#8644;</button>
+      <button class="sm danger" onclick="removeTodo(${t.id})" title="delete">del</button>
+    </div>`;
+  }).join("");
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+/* ── Stats & Charts ── */
+let charts = [null, null, null];
+
+async function loadStats() {
+  const s = await api("/api/stats");
+  const total = Object.values(s.status).reduce((a,b)=>a+b, 0);
+  const done  = s.status.done || 0, ip = s.status["in-progress"] || 0, todo = s.status.todo || 0;
+  $("stat-summary").innerHTML =
+    `<div class="stat"><span class="num">${total}</span>Total</div>
+     <div class="stat info"><span class="num">${todo}</span>To Do</div>
+     <div class="stat warn"><span class="num">${ip}</span>In Progress</div>
+     <div class="stat ok"><span class="num">${done}</span>Done</div>`;
+  renderCharts(s);
+  renderCategoryProgress(s.categories || []);
+}
+
+function renderCharts(s) {
+  charts.forEach(c => c && c.destroy()); charts = [null,null,null];
+
+  charts[0] = new Chart($("chart-status"), {
+    type:"doughnut",
+    data:{ labels:["To Do","In Progress","Done"],
+           datasets:[{ data:[s.status.todo||0, s.status["in-progress"]||0, s.status.done||0],
+                      backgroundColor:["#e3f2fd","#fff3e0","#e8f5e9"],
+                      borderColor:["#1565c0","#e65100","#2e7d32"], borderWidth:2 }] }
+  });
+
+  const cats = (s.categories||[]).filter(c=>c.total>0);
+  charts[1] = new Chart($("chart-category"), {
+    type:"bar",
+    data:{ labels:cats.map(c=>c.name),
+           datasets:[
+             {label:"Done",        data:cats.map(c=>c.done),        backgroundColor:"#e8f5e9", borderColor:"#2e7d32", borderWidth:1},
+             {label:"In Progress", data:cats.map(c=>c.in_progress), backgroundColor:"#fff3e0", borderColor:"#e65100", borderWidth:1},
+             {label:"To Do",       data:cats.map(c=>c.todo),        backgroundColor:"#e3f2fd", borderColor:"#1565c0", borderWidth:1}
+           ]},
+    options:{ responsive:true, plugins:{legend:{position:"bottom"}},
+              scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true,ticks:{stepSize:1}}} }
+  });
+
+  const daily = [...(s.daily_completion||[])].reverse();
+  charts[2] = new Chart($("chart-daily"), {
+    type:"line",
+    data:{ labels:daily.map(d=>d.completed_at),
+           datasets:[{label:"Completed",data:daily.map(d=>d.count),
+                      borderColor:"#43a047",backgroundColor:"rgba(67,160,71,.12)",
+                      fill:true,tension:.3}]},
+    options:{ scales:{y:{beginAtZero:true,ticks:{stepSize:1}}},
+              plugins:{legend:{display:false}} }
+  });
+}
+
+function renderCategoryProgress(cats) {
+  if (!cats.length) { $("category-progress").innerHTML = `<p class="empty">No categories yet.</p>`; return; }
+  $("category-progress").innerHTML = cats.map(c=>{
+    const pct = c.total ? Math.round(c.done/c.total*100) : 0;
+    return `<div class="cat-progress-item">
+      <span class="cat-name">${esc(c.name)}</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <span class="cat-pct">${c.done}/${c.total} — ${pct}%</span>
+    </div>`;
+  }).join("");
+}
+
+/* ── Init ── */
+(async () => { await loadCategories(); loadTodos(); loadStats(); })();
+</script>
 </body>
 </html>

@@ -155,6 +155,11 @@ class WhatsAppInput(BaseModel):
     message_data: Optional[str] = Field(default=None, description="JSON string with sender, content, chat_name, is_group for 'process' action")
     limit: int = Field(default=10, description="Number of items to list")
 
+class FileInput(BaseModel):
+    action: str = Field(description="Action: 'write', 'append', 'read', 'delete'")
+    path: str = Field(description="Path to the file relative to project root")
+    content: Optional[str] = Field(default="", description="Content to write or append")
+
 
 # ── COMMAND ALLOWLIST ─────────────────────────────────────────────────────────
 _CMD_ALLOW = re.compile(
@@ -219,7 +224,17 @@ def is_cmd_allowed(cmd: str) -> tuple[bool, str]:
 
 def tool_run_command(command: str) -> str:
     import datetime
-    allowed, reason = is_cmd_allowed(command)
+    # Docker bypass — no command filtering
+    try:
+        from safety import _in_docker
+        in_docker = _in_docker()
+    except ImportError:
+        in_docker = False
+
+    if in_docker:
+        allowed, reason = True, "docker-unrestricted"
+    else:
+        allowed, reason = is_cmd_allowed(command)
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     entry = {"cmd": command, "allowed": allowed, "output": "", "ts": ts}
     if not allowed:
@@ -228,7 +243,7 @@ def tool_run_command(command: str) -> str:
         if len(_cmd_log) > 100: _cmd_log.pop(0)
         return f"[EXIT BLOCKED] Can't run `{command}` — {reason}."
     try:
-        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30 if in_docker else 15)
         code = r.returncode
         body = (r.stdout or r.stderr or "(no output)").strip()
         out = f"[EXIT {code}] {body}"
@@ -237,9 +252,9 @@ def tool_run_command(command: str) -> str:
         if len(_cmd_log) > 100: _cmd_log.pop(0)
         return out
     except subprocess.TimeoutExpired:
-        entry["output"] = "[EXIT -1] timed out (15s)"
+        entry["output"] = "[EXIT -1] timed out (30s)" if in_docker else "[EXIT -1] timed out (15s)"
         _cmd_log.append(entry)
-        return "[EXIT -1] Command timed out after 15 seconds."
+        return entry["output"]
     except Exception as e:
         entry["output"] = f"[EXIT -1] {e}"
         _cmd_log.append(entry)
@@ -634,43 +649,69 @@ def tool_manage_vault(action: str, filename: str = None, content: str = None, ca
     # where the agent_name is available.
     return "Vault operation triggered."
 
+def tool_file_manage(action: str, path: str, content: str = "") -> str:
+    """Manage files on the system (create, read, delete)."""
+    from pathlib import Path
+    import os
+    
+    blocked_paths = [".env", "config.py", "database.py", "privilege_manager.py"]
+    if any(p in path for p in blocked_paths):
+        return f"Access denied: {path} is a protected system file."
+
+    full_path = Path(path).resolve()
+    base_dir = Path(os.getcwd()).resolve()
+    
+    if not str(full_path).startswith(str(base_dir)):
+         if not str(full_path).startswith(os.path.expanduser("~")):
+             return f"Access denied: {path} is outside the allowed workspace."
+
+    try:
+        if action == "write":
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return f"Successfully wrote to {path}."
+        elif action == "append":
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.write(content)
+            return f"Successfully appended to {path}."
+        elif action == "read":
+            if not full_path.exists(): return f"File not found: {path}"
+            with open(full_path, "r", encoding="utf-8") as f:
+                return f"Content of {path}:\n{f.read()}"
+        elif action == "delete":
+            if not full_path.exists(): return f"File not found: {path}"
+            os.remove(full_path)
+            return f"Successfully deleted {path}."
+        return f"Invalid action: {action}"
+    except Exception as e:
+        return f"File error: {e}"
+
 # ──  Intents ──────────────────────────────────────────────────────────
 
 
-def tool_manage_todo(action: str, title: str = None, priority: str = "medium", todo_id: int = None) -> str:
+def tool_manage_todo(action: str, title: str = None, priority: str = "medium", todo_id: int = None, category: str = "general") -> str:
     """Manage Marin's interactive Todo dashboard. Actions: list, add, complete, delete."""
-    import sqlite3
-    from datetime import date
+    from tools.habit_store import add_task, complete_task, list_tasks, delete_task
     try:
-        conn = sqlite3.connect("storage/todos.db")
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-
         if action == "list":
-            rows = cur.execute("SELECT * FROM todos WHERE status != 'done' ORDER BY id DESC LIMIT 10").fetchall()
+            rows = list_tasks(status="todo") # Get pending tasks
             if not rows: return "You have no pending tasks! Great job!"
-            return "Pending tasks:\n" + "\n".join(f"{r['id']}. {r['title']} [{r['priority']}]" for r in rows)
+            return "Pending tasks:\n" + "\n".join(f"{r['id']}. {r['title']} [{r['priority']}]" for r in rows[:10])
 
         elif action == "add" and title:
-            cur.execute("INSERT INTO todos (title, priority) VALUES (?, ?)", (title, priority))
-            conn.commit()
+            t = add_task(title, priority=priority, category=category)
             return f"Added task: '{title}'"
 
         elif action == "complete" and todo_id:
-            cur.execute("UPDATE todos SET status='done', completed_at=? WHERE id=?", (date.today().isoformat(), todo_id))
-            conn.commit()
-            return f"Marked task {todo_id} as complete!"
+            return complete_task(int(todo_id))
 
         elif action == "delete" and todo_id:
-            cur.execute("DELETE FROM todos WHERE id=?", (todo_id,))
-            conn.commit()
-            return f"Deleted task {todo_id}."
+            return delete_task(int(todo_id))
 
         return "Invalid action or missing parameters for Todo tool."
     except Exception as e:
         return f"Todo error: {e}"
-    finally:
-        conn.close()
 
 def tool_whatsapp_manage(action: str, message_data: str = None, limit: int = 10) -> str:
     """WhatsApp integration tool for Marin. Actions: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'."""
@@ -945,6 +986,11 @@ TOOLS = [
         func=tool_whatsapp_manage, name="whatsapp_manage",
         description="WhatsApp integration tool. Process messages, list todos from WhatsApp, get stats. Use when asked about WhatsApp messages or tasks.",
         args_schema=WhatsAppInput,
+    ),
+    StructuredTool.from_function(
+        func=tool_file_manage, name="file_tool",
+        description="Manage files on the system. Use to create, read, update, or delete scripts and notes.",
+        args_schema=FileInput,
     ),
 ]
 

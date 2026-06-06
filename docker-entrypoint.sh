@@ -3,6 +3,7 @@ set -e
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Marin HS-02 — Docker Entry Point"
+echo "  Mode: UNRESTRICTED (privileged container)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Ensure storage dirs exist
@@ -23,8 +24,8 @@ fi
 # Start Main App (foreground)
 echo "→ Starting Main App on port 5069..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Chat UI:   http://localhost:5069"
-echo "  RAG:       http://localhost:5080"
+echo "  Chat UI:    http://localhost:5069"
+echo "  RAG:        http://localhost:5080"
 echo "  ModuleFlow: http://localhost:5070"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 

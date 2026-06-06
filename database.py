@@ -79,14 +79,18 @@ def save_message(agent: str, role: str, content: str):
 def get_history(agent: str, limit: int = 50) -> List[Dict[str, str]]:
     conn = get_connection()
     cursor = conn.cursor()
+    # Subquery gets newest IDs, outer query returns them in chronological order
     cursor.execute(
-        "SELECT role, content FROM chat_history WHERE agent = ? ORDER BY timestamp DESC LIMIT ?",
+        """SELECT role, content FROM chat_history
+           WHERE id IN (
+               SELECT id FROM chat_history WHERE agent = ? ORDER BY id DESC LIMIT ?
+           )
+           ORDER BY id ASC""",
         (agent, limit)
     )
     rows = cursor.fetchall()
     conn.close()
-    # Reverse to get chronological order
-    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+    return [{"role": r["role"], "content": r["content"]} for r in rows]
 
 def clear_history(agent: str):
     conn = get_connection()
@@ -187,6 +191,19 @@ def get_latest_news(limit: int = 5) -> list:
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def delete_old_news(days: int = 14) -> int:
+    """Delete news older than `days` days. Returns count of deleted rows."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM news WHERE fetched_at < datetime('now', ?)",
+        (f"-{days} days",)
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 # ── Migration Helper ──────────────────────────────────────────────────────────
