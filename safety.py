@@ -12,22 +12,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-STORAGE_DIR = Path(__file__).parent.parent / "storage"
+from utils.sys_platform import in_docker, STORAGE_DIR
+
 KILL_SWITCH_FILE = STORAGE_DIR / "kill_switch.json"
 CONFIRM_FILE = STORAGE_DIR / "pending_confirmations.json"
-
-
-def _in_docker() -> bool:
-    """Detect if we're running inside a Docker container."""
-    if os.environ.get("DOCKER_CONTAINER"):
-        return True
-    if Path("/.dockerenv").exists():
-        return True
-    try:
-        with open("/proc/1/cgroup", "r") as f:
-            return "docker" in f.read() or "kubepods" in f.read()
-    except Exception:
-        return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # KILL SWITCH
@@ -106,7 +94,7 @@ class KillSwitch:
 
     def check(self) -> bool:
         """Returns True if commands are allowed, False if kill switch is active."""
-        if _in_docker():
+        if in_docker():
             return True  # Inside Docker — no kill switch, she runs free
         return not self.is_active
 
@@ -130,7 +118,7 @@ _counter = 0
 
 def agent_needs_confirmation(agent: str, action: str) -> bool:
     """Check if an agent action requires HITL confirmation."""
-    if _in_docker():
+    if in_docker():
         return False  # Inside Docker — no confirmation needed, she decides for herself
     actions = AGENT_REQUIRES_CONFIRM.get(agent, [])
     return action in actions

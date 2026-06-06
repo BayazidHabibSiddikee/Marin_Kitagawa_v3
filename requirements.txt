@@ -26,6 +26,9 @@ docx2txt>=0.8
 chromadb>=0.3.0
 langchain-chroma>=0.1.0
 
+# Infrastructure
+docker>=6.1.0
+
 # Database
 pymongo>=4.0.0
 

@@ -20,22 +20,10 @@ from datetime import datetime
 from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 
-STORAGE_DIR = Path(__file__).parent.parent / "storage"
+from utils.sys_platform import in_docker, STORAGE_DIR
+
 BREACH_LOG = STORAGE_DIR / "breach_log.json"
 PRIV_STATE = STORAGE_DIR / "priv_state.json"
-
-
-def _in_docker() -> bool:
-    """Detect if we're running inside a Docker container."""
-    if os.environ.get("DOCKER_CONTAINER"):
-        return True
-    if Path("/.dockerenv").exists():
-        return True
-    try:
-        with open("/proc/1/cgroup", "r") as f:
-            return "docker" in f.read() or "kubepods" in f.read()
-    except Exception:
-        return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # RBAC REGISTRY
@@ -86,23 +74,25 @@ ROLES: Dict[str, Role] = {
     ),
 }
 
-# User → Role mapping
+# User → Role mapping (legacy, kept for master/docker reference)
 USER_ROLES: Dict[str, str] = {
     "Bayazid": "owner",
     "marin": "owner",
-    "visitor": "guest",
-    "guest": "guest",
 }
 
 
-def get_role(user: str) -> Role:
-    role_name = USER_ROLES.get(user, "guest")
+def get_role(user: str or dict) -> Role:
+    """Get Role object. Now supports user dict from database or username string."""
+    if isinstance(user, dict):
+        role_name = user.get("role", "guest")
+    else:
+        role_name = USER_ROLES.get(user, "guest")
     return ROLES.get(role_name, ROLES["guest"])
 
 
-def has_capability(user: str, capability: str) -> bool:
-    if _in_docker():
-        return True  # Docker — everyone has all capabilities
+def has_capability(user: str or dict, capability: str) -> bool:
+    if in_docker():
+        return True  # Docker — everyone has all capabilities inside the sandbox
     role = get_role(user)
     return CAP_FULL_ACCESS in role.capabilities or capability in role.capabilities
 
@@ -142,7 +132,7 @@ class PrivilegeManager:
         Owner: resolves from /
         Guest: resolves from guest_vault, no traversal allowed.
         Docker: full access to everything."""
-        if _in_docker():
+        if in_docker():
             # Inside Docker — no path restrictions, she can touch anything in the container
             base = Path("/")
             return (base / user_path.lstrip("/")).resolve()
@@ -163,7 +153,7 @@ class PrivilegeManager:
             # Owner: resolve from /
             base = Path("/")
             target = (base / user_path.lstrip("/")).resolve()
-            if _in_docker():
+            if in_docker():
                 return target  # Docker — no blocked paths, full container access
             # Even owners can't access certain paths (on host only)
             blocked = ["/etc/shadow", "/etc/gshadow", "/proc", "/sys"]

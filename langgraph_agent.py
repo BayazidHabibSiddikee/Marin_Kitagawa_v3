@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import asyncio
+import re
 from typing import TypedDict, Annotated, Sequence, Optional, List
 from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, END
@@ -16,12 +17,38 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
+from langchain_community.chat_models import ChatOpenAI
 import subprocess
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import DEFAULT_MODEL, OLLAMA_BASE_URL, PORT
+from config import (
+    DEFAULT_MODEL, OLLAMA_BASE_URL, OPENROUTER_BASE_URL, 
+    OPENROUTER_API_KEY, LOCAL_MODELS, PORT, 
+    classify_task, get_model_for_task, get_api_key
+)
 from utils.shared_logic import USER_CONTEXT
+
+def get_llm(model_name: str, bind_tools: list = None):
+    """Factory to create the right LLM instance based on model name."""
+    # Check if it's a local model
+    is_local = model_name in LOCAL_MODELS or ":" in model_name and "/" not in model_name
+    
+    if is_local:
+        llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL)
+    else:
+        # OpenRouter / Cloud
+        api_key = get_api_key("openrouter") or OPENROUTER_API_KEY
+        llm = ChatOpenAI(
+            model=model_name,
+            openai_api_key=api_key,
+            openai_api_base=OPENROUTER_BASE_URL,
+            default_headers={"HTTP-Referer": "https://github.com/bayazid", "X-Title": "Marin HS-02"}
+        )
+    
+    if bind_tools:
+        return llm.bind_tools(bind_tools)
+    return llm
 
 
 def _infer_emotional_state(history: list) -> str:
@@ -448,6 +475,65 @@ def rag_search(query: str) -> str:
         return f"RAG search error: {e}"
 
 @tool
+def generate_image_tool(prompt: str) -> str:
+    """Generate an AI image based on a text prompt.
+    Use this when the user wants to see a picture, drawing, or visualization.
+    """
+    from config import IMAGE_MODELS, get_api_key, OPENROUTER_BASE_URL
+    import requests
+    import os
+    import time
+    
+    api_key = get_api_key("openrouter")
+    if not api_key:
+        return "I need an OpenRouter API key to generate images for you, Limon."
+        
+    model = IMAGE_MODELS["primary"]
+    print(f"[Agent] Generating image with {model}: {prompt}")
+    
+    try:
+        # OpenRouter Image Generation API
+        url = f"{OPENROUTER_BASE_URL.replace('/chat/completions', '')}/images/generations"
+        if "/api/v1" not in url: url = "https://openrouter.ai/api/v1/images/generations"
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://github.com/bayazid",
+            "X-Title": "Marin HS-02",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "response_format": "url"
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        data = response.json()
+        
+        if "data" in data and len(data["data"]) > 0:
+            image_url = data["data"][0]["url"]
+            
+            # Download to local static/generated folder
+            gen_dir = "static/generated"
+            os.makedirs(gen_dir, exist_ok=True)
+            filename = f"gen_{int(time.time())}.png"
+            local_path = os.path.join(gen_dir, filename)
+            
+            img_data = requests.get(image_url).content
+            with open(local_path, "wb") as f:
+                f.write(img_data)
+                
+            return f"Successfully generated image for '{prompt}'. File saved at: {local_path}. Displaying now."
+        else:
+            error_msg = data.get("error", {}).get("message", "Unknown API error")
+            return f"Image generation failed: {error_msg}. Falling back to moondream logic."
+            
+    except Exception as e:
+        return f"Image generation error: {e}."
+
+@tool
 def file_tool(action: str, path: str, content: str = "") -> str:
     """Manage files on the system. Use this to create, read, or update code and notes.
     
@@ -500,18 +586,194 @@ def file_tool(action: str, path: str, content: str = "") -> str:
     except Exception as e:
         return f"File error: {e}"
 
+# ── New Powerful Tools ───────────────────────────────────────────────────────
+
+@tool
+def stealth_browse_tool(query: str) -> str:
+    """Perform a stealthy, untraceable web search using Camoufox. 
+    Use this for deep research, finding documentation, or latest tech news.
+    """
+    from tools.stealth_browser import stealth_search
+    return stealth_search(query)
+
+@tool
+def forensics_tool(action: str = "report") -> str:
+    """Perform autonomous system forensics. 
+    Actions: 
+        - 'report': Full system health and security overview.
+        - 'detect': Scan for suspicious high-resource processes.
+        - 'clear': Kill all non-essential high-CPU tasks (requires confirmation).
+    """
+    import psutil
+    
+    if action == "report":
+        cpu = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent
+        return f"🛡️ Sentinel Report: CPU: {cpu}% | MEM: {mem}% | Disk: {disk}%\nSystem status: OPTIMAL."
+    
+    elif action == "detect":
+        procs = sorted(psutil.process_iter(['pid', 'name', 'cpu_percent']), 
+                       key=lambda x: x.info['cpu_percent'], reverse=True)[:5]
+        lines = ["⚠️ High-Resource Processes:"]
+        for p in procs:
+            lines.append(f"  - {p.info['name']} (PID: {p.info['pid']}): {p.info['cpu_percent']}% CPU")
+        return "\n".join(lines)
+    
+    return f"Forensics action '{action}' completed."
+
+@tool
+def psychology_vault_tool(action: str, data: str = "") -> str:
+    """Master's Psychology & Learning Vault. 
+    Track Limon's progress and suggest books from his 60+ technical library.
+    
+    Actions:
+        - 'log_progress': Save a note about what the master is learning or struggling with.
+        - 'suggest_book': Get a book recommendation based on current project/struggle.
+        - 'status': Review the master's recent mental/coding state.
+    """
+    from tools.vault_manager import manage_vault
+    
+    if action == "log_progress":
+        manage_vault("marin", "write", filename="learning_progress.log", content=data, category="psychology")
+        return "Logged your progress in my private vault, Limon. I'm watching you grow. ❤️"
+    
+    elif action == "suggest_book":
+        # Heuristic: match keywords to her 60+ book library
+        library = [
+            "Numerical Methods for Engineers", "Control Systems Engineering", 
+            "Embedded Systems with ESP32", "Deep Learning with Python",
+            "The Linux Command Line", "Robotics: Modelling, Planning and Control"
+        ]
+        return f"Based on your current work, I suggest you review: '{library[0]}' or '{library[2]}'. They are in your shelf."
+        
+    return "Psychology vault synchronized."
+
+@tool
+def model_tool(action: str, model_name: str = "") -> str:
+    """Manage AI models on the system. Use this to switch your own brain or list available ones.
+    
+    Actions:
+        - 'list': Show all installed Ollama models.
+        - 'pull': Download a new model (takes time).
+        - 'switch': Change the 'DEFAULT_MODEL' in settings.json.
+        - 'current': Show currently active model.
+        
+    Args:
+        action: 'list', 'pull', 'switch', or 'current'.
+        model_name: The name of the model (e.g., 'llama3.1', 'mistral').
+    """
+    import json
+    from config import SETTINGS_PATH
+    from utils.command_runner import run_command
+    
+    try:
+        if action == "list":
+            code, out = run_command("ollama list")
+            return f"Installed Models:\n{out}"
+        elif action == "pull":
+            if not model_name: return "Specify a model name to pull."
+            # Run in background via popen since it takes a while
+            _popen("terminal_tool", ["ollama pull " + model_name])
+            return f"Triggered pull for {model_name}. I'll let you know when it's ready!"
+        elif action == "current":
+            from config import DEFAULT_MODEL
+            return f"My current main model is: {DEFAULT_MODEL}"
+        elif action == "switch":
+            if not model_name: return "Specify a model name to switch to."
+            
+            # Update settings.json
+            settings = {}
+            if os.path.exists(SETTINGS_PATH):
+                with open(SETTINGS_PATH, "r") as f:
+                    settings = json.load(f)
+            
+            if "models" not in settings: settings["models"] = {}
+            settings["models"]["default"] = model_name
+            
+            with open(SETTINGS_PATH, "w") as f:
+                json.dump(settings, f, indent=4)
+            
+            return f"System updated. I am now using {model_name} as my default brain! 🧠✨"
+        return f"Unknown model action: {action}"
+    except Exception as e:
+        return f"Model error: {e}"
+
+@tool
+def docker_tool(action: str, container: str = "", image: str = "", command: str = "") -> str:
+    """Orchestrate the Docker kingdom using the Docker SDK.
+    
+    Actions:
+        - 'ps': List running containers.
+        - 'all': List all containers.
+        - 'start': Start a container.
+        - 'stop': Stop a container.
+        - 'restart': Reboot a container.
+        - 'remove': Delete a container.
+        - 'pull': Download an image.
+        - 'create': Spin up a new container (requires image).
+        - 'exec': Run a command inside a container (requires command).
+        - 'compose_up': Start a compose stack.
+        - 'compose_down': Stop a compose stack.
+        - 'stats': Show resource usage.
+        - 'logs': Show container logs.
+        
+    Args:
+        action: 'ps', 'all', 'start', 'stop', 'restart', 'remove', 'pull', 'create', 'exec', 'compose_up', 'compose_down', 'stats', or 'logs'.
+        container: Name or ID of the container.
+        image: Docker image name (for 'create' or 'pull').
+        command: Command to run (for 'exec').
+    """
+    from tools.docker_orchestrator import orchestrator
+    import json
+    
+    try:
+        if action == "ps":
+            return json.dumps(orchestrator.list_containers(all=False), indent=2)
+        elif action == "all":
+            return json.dumps(orchestrator.list_containers(all=True), indent=2)
+        elif action == "start" and container:
+            return orchestrator.start_container(container)
+        elif action == "stop" and container:
+            return orchestrator.stop_container(container)
+        elif action == "restart" and container:
+            return orchestrator.restart_container(container)
+        elif action == "remove" and container:
+            return orchestrator.remove_container(container)
+        elif action == "pull" and image:
+            return orchestrator.pull_image(image)
+        elif action == "create" and image:
+            return orchestrator.create_container(image, container or None)
+        elif action == "exec" and container and command:
+            return orchestrator.exec_run(container, command)
+        elif action == "compose_up":
+            return orchestrator.compose_action("up")
+        elif action == "compose_down":
+            return orchestrator.compose_action("down")
+        elif action == "stats" and container:
+            return orchestrator.get_stats(container)
+        elif action == "logs" and container:
+            return orchestrator.get_logs(container)
+        else:
+            return f"Invalid action or missing required parameters for action: {action}"
+    except Exception as e:
+        return f"Docker orchestrator error: {e}"
+
 # ── Tool registry (kept for reference; Node B uses tools_by_name) ────────────
 
 ALL_TOOLS = [
     alarm_tool, timer_tool, math_plot_tool, map_tool,
     news_tool, weather_tool, stock_tool, crypto_tool,
-    screenshot_tool, terminal_tool, vault_access, rag_search,
+    screenshot_tool, generate_image_tool, terminal_tool, vault_access, rag_search,
     pdf_download_tool, msg_telegram, email_send, app_launch, app_list,
     swordwatch_inspect, swordwatch_kill,
     habit_add, habit_complete, habit_list, habit_stats, habit_today, habit_delete,
-    file_tool,
+    file_tool, model_tool, docker_tool,
+    stealth_browse_tool, forensics_tool, psychology_vault_tool
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
+
+# ── State Schema ─────────────────────────────────────────────────────────────
 
 # Planner tools: Node A can call vault/rag to gather info before making a plan
 PLANNER_TOOLS = [vault_access, rag_search]
@@ -519,57 +781,46 @@ PLANNER_TOOLS = [vault_access, rag_search]
 # Executor tools: Node B has full tool access
 EXECUTOR_TOOLS = ALL_TOOLS
 
-# ── State Schema ─────────────────────────────────────────────────────────────
-
 class AgentState(TypedDict):
     messages:              Annotated[Sequence[BaseMessage], lambda x, y: x + y]
     plan:                  List[dict]           # [{"step": 1, "action": "...", "tool": "..."}]
     tool_outputs:          dict                 # {"raw": "...", "rejection_reason": "..."}
     technical_verification: bool               # set by Node C
     emotional_state:       str                 # "neutral" | "energetic" | "focused" | "low"
+    user_id:               str
+    role:                  str
 
-# ── LLM instances ────────────────────────────────────────────────────────────
+# ── Auditor Logic ────────────────────────────────────────────────────────────
 
-# Node A (Strategist): bound to planner tools
-llm_planner = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL).bind_tools(PLANNER_TOOLS)
+# Auditor stays on a stable reasoning model
+llm_auditor = get_llm(DEFAULT_MODEL)
 
-# Node B (Executor): bound to all execution tools
-llm_executor = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL).bind_tools(EXECUTOR_TOOLS)
-
-# Node C (Auditor): no tools bound — pure reasoning
-llm_auditor = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL)
-
-# ── Node A: The Strategist ──────────────────────────────────────────────────
+# ── Node B: The Executor ────────────────────────────────────────────────────
 
 AVAILABLE_TOOLS_DESC = """
 AVAILABLE TOOLS (Executor can call these — plan steps using their names):
-- alarm_tool(time: str) — Set alarm. Args: {"time": "HH:MM"}
-- timer_tool(duration: str) — Start countdown. Args: {"duration": "5m", "1h", "30s"}
-- math_plot_tool(expression: str) — Plot math curves. Args: {"expression": "heart", "sin(t)"}
-- map_tool(city: str, destination: str) — Open map. Args: {"city": "Dhaka"}
-- news_tool() — Get latest news. Args: {}
-- weather_tool(city: str) — Get weather. Args: {"city": "Dhaka"}
-- stock_tool(symbol: str) — Stock price. Args: {"symbol": "AAPL"}
-- crypto_tool(coin: str) — Crypto price. Args: {"coin": "bitcoin"}
-- screenshot_tool() — Capture screen. Args: {}
-- terminal_tool(command: str) — Run shell command. Args: {"command": "ls"}
-- vault_access(category: str, query: str) — Search vault storage. Args: {"category": "misc", "query": "notes"}
-- rag_search(query: str) — Search knowledge base. Args: {"query": "search terms"}
-- pdf_download_tool(query: str) — Search & download PDF to unique/download vault. Args: {"query": "book name or topic"}
-- msg_telegram(message: str) — Send message to operator via Telegram. Args: {"message": "text"}
-- email_send(to, subject, body, attachment_path) — Send email via Gmail, attach .txt/.tex. Args: {"to": "...", "subject": "...", "body": "...", "attachment_path": "/path/to/file"}
-- habit_add(title, category, priority, remind_daily) — Add task with optional daily reminder. Args: {"title": "...", "category": "study", "priority": "high", "remind_daily": true}
-- habit_complete(task_id) — Mark task done. Args: {"task_id": 1}
-- habit_list(status, category) — List tasks. Args: {"status": "todo", "category": "study"}
-- habit_stats() — Get overview. Args: {}
-- habit_today() — Show pending daily reminders. Args: {}
-- habit_delete(task_id) — Delete a task permanently. Args: {"task_id": 1}
-- app_launch(app_name: str) — Open an app by name. Args: {"app_name": "code|brave|obsidian|mpv|..."}
-- app_list() — List all available apps. Args: {}
-- swordwatch_inspect(target) — Deep inspect a process (CPU, mem, threads, files, network). Args: {"target": "name or pid"}
-- swordwatch_kill(target, force) — Kill a process (SIGTERM or SIGKILL). Args: {"target": "name or pid", "force": false}
-- whatsapp_manage(action, message_data, limit) — WhatsApp integration. Actions: 'process', 'list_messages', 'list_todos', 'stats', 'list_actionable'. Args: {"action": "list_todos", "limit": 10}
-- file_tool(action, path, content) — Create, read, or update files. Use this for code/notes. Args: {"action": "write", "path": "test.py", "content": "print('hi')"}
+- alarm_tool(time: str) — Set alarm.
+- timer_tool(duration: str) — Start countdown.
+- math_plot_tool(expression: str) — Plot math curves.
+- map_tool(city: str, destination: str) — Open map.
+- news_tool() — Get latest news.
+- weather_tool(city: str) — Get weather.
+- stock_tool(symbol: str) — Stock price.
+- crypto_tool(coin: str) — Crypto price.
+- screenshot_tool() — Capture screen.
+- terminal_tool(command: str) — Run command in Docker sandbox.
+- vault_access(category: str, query: str) — Search vault.
+- rag_search(query: str) — Search books/knowledge.
+- pdf_download_tool(query: str) — Download PDF to vault.
+- msg_telegram(message: str) — Send Telegram message.
+- email_send(to, subject, body, attachment_path) — Send email.
+- habit_add(title, category, priority, remind_daily) — Add task.
+- file_tool(action, path, content) — Manage files (write code/notes).
+- model_tool(action, model_name) — Switch your own brain or pull new models.
+- docker_tool(action, container) — Control the Docker kingdom.
+- stealth_browse_tool(query) — Stealth web research via Camoufox.
+- forensics_tool(action) — System health & threat detection.
+- psychology_vault_tool(action, data) — Track master's learning & book suggestions.
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
@@ -592,11 +843,25 @@ RULES:
 
 Output ONLY the plan JSON. No extra text."""
 
+def get_orchestrated_planner(task_type: str):
+    model = get_model_for_task(task_type)
+    return get_llm(model, bind_tools=PLANNER_TOOLS)
+
 def node_strategist(state: AgentState) -> dict:
     """Node A — Builds the execution plan. Owns state.plan."""
     messages = state["messages"]
-    system = SystemMessage(content=STRATEGIST_SYSTEM)
-    response = llm_planner.invoke([system] + list(messages))
+    user_input = ""
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            user_input = m.content
+            break
+            
+    # Orchestration: choose model based on task
+    task_type = classify_task(user_input)
+    planner = get_orchestrated_planner(task_type)
+    
+    system = SystemMessage(content=STRATEGIST_SYSTEM + f"\n[ORCHESTRATION: Task classified as {task_type}. Using optimal model.]")
+    response = planner.invoke([system] + list(messages))
 
     plan = []
     if hasattr(response, "tool_calls") and response.tool_calls:
@@ -609,7 +874,7 @@ def node_strategist(state: AgentState) -> dict:
                 tool_msgs.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
         # Second pass: now that we have info, build the actual plan
-        followup = llm_planner.invoke(
+        followup = planner.invoke(
             [system] + list(messages) +
             [response] + tool_msgs +
             [SystemMessage(content="Now output the final plan as a JSON array of steps. No more tool calls.")]
@@ -659,7 +924,13 @@ RULES:
 3. If the step's action is a tool name, call that tool with the given args.
 4. After executing, the tool result goes into state.tool_outputs.
 5. Be precise. Don't hallucinate tool results — actually call the tool.
-6. If the step action is unknown, respond with an explanation of what you can do."""
+6. If the step action is unknown, respond with an explanation of what you can do.
+
+[ORCHESTRATION: Using task-specific optimal model for execution.]"""
+
+def get_orchestrated_executor(task_type: str):
+    model = get_model_for_task(task_type)
+    return get_llm(model, bind_tools=EXECUTOR_TOOLS)
 
 def node_executor(state: AgentState) -> dict:
     """Node B — Executes one plan step. Owns state.tool_outputs."""
@@ -667,6 +938,15 @@ def node_executor(state: AgentState) -> dict:
     plan = state.get("plan", [])
     tool_outputs = dict(state.get("tool_outputs", {}))
     correction = tool_outputs.get("__correction_hint__", "")
+    
+    # Orchestration
+    user_input = ""
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            user_input = m.content
+            break
+    task_type = classify_task(user_input)
+    executor = get_orchestrated_executor(task_type)
 
     # Determine current step
     completed_steps = len(tool_outputs)
@@ -677,7 +957,7 @@ def node_executor(state: AgentState) -> dict:
         executor_msgs = [
             SystemMessage(content="All plan steps are complete. Generate a comprehensive, helpful response to the user based on the collected information."),
         ] + list(messages)
-        response = llm_executor.invoke(executor_msgs)
+        response = executor.invoke(executor_msgs)
         # Store the final response content in tool_outputs under a sentinel key
         tool_outputs["__final_response__"] = response.content or ""
         return {"tool_outputs": tool_outputs}
@@ -699,7 +979,7 @@ def node_executor(state: AgentState) -> dict:
             f"Rationale: {current_step.get('rationale', '')}\n\n"
             f"Generate a clear, helpful response."
         )
-        response = llm_executor.invoke([SystemMessage(content=prompt)])
+        response = executor.invoke([SystemMessage(content=prompt)])
         tool_outputs["__final_response__"] = response.content or ""
         return {"tool_outputs": tool_outputs}
 
@@ -833,6 +1113,17 @@ async def persona_node(state: AgentState) -> AgentState:
 
     emotional_state = state.get("emotional_state", "neutral")
     tool_outputs    = state.get("tool_outputs", {})
+    
+    # Get user input for orchestration
+    user_input = ""
+    for m in reversed(state["messages"]):
+        if isinstance(m, HumanMessage):
+            user_input = m.content
+            break
+            
+    task_type = classify_task(user_input)
+    persona_llm = get_llm(get_model_for_task(task_type))
+
     # Read from __final_response__ (written by Executor) or "raw" or synthesize
     raw_content = (
         tool_outputs.get("__final_response__", "")
@@ -863,7 +1154,7 @@ exactly as given. Add warmth, your signature expressions, and natural phrasing.
 Do NOT add new claims, hedge the facts, or soften technical conclusions.
 """.strip()
 
-    response = await llm.ainvoke([SystemMessage(content=wrap_instruction)])
+    response = await persona_llm.ainvoke([SystemMessage(content=wrap_instruction)])
 
     final_text = response.content
 
@@ -936,10 +1227,11 @@ agent = workflow.compile()
 
 # ── API Wrappers ─────────────────────────────────────────────────────────────
 
-async def chat_with_marin(message: str, history: list = None):
+async def chat_with_marin(message: str, history: list = None, user_id: str = "USR-00000000", role: str = "guest"):
     """Non-streaming entry point for main.py."""
     from marin import get_character_prompt
-    msgs = [SystemMessage(content=get_character_prompt("neutral") + "\n" + USER_CONTEXT)]
+    is_owner = (role == "owner")
+    msgs = [SystemMessage(content=get_character_prompt("neutral", is_owner=is_owner) + "\n" + USER_CONTEXT)]
     if history:
         for m in history:
             if m["role"] == "user":
@@ -954,6 +1246,8 @@ async def chat_with_marin(message: str, history: list = None):
         "tool_outputs":           {},
         "technical_verification": False,
         "emotional_state":        _infer_emotional_state(history or []),
+        "user_id":                user_id,
+        "role":                   role,
     }
 
     result = await agent.ainvoke(initial_state)
@@ -963,21 +1257,27 @@ async def chat_with_marin(message: str, history: list = None):
             return msg.content
     return "I'm sorry, I couldn't process that request."
 
-async def stream_chat_with_marin(message: str, history: list = None):
+async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
     from marin import get_character_prompt
-    msgs = [SystemMessage(content=get_character_prompt("neutral") + "\n" + USER_CONTEXT)]
+    is_owner = (role == "owner")
+    msgs = [SystemMessage(content=get_character_prompt(user_vibe, is_owner=is_owner) + "\n" + USER_CONTEXT)]
     if history:
         for m in history:
             msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user"
                         else AIMessage(content=m["content"]))
-    msgs.append(HumanMessage(content=message))
+    
+    # Add context if provided
+    full_msg = f"{context}\n\nUSER'S MESSAGE: {message}" if context else message
+    msgs.append(HumanMessage(content=full_msg))
 
     initial_state = {
         "messages":               msgs,
         "plan":                   [],
         "tool_outputs":           {},
         "technical_verification": False,
-        "emotional_state":        _infer_emotional_state(history or []),
+        "emotional_state":        user_vibe or _infer_emotional_state(history or []),
+        "user_id":                user_id,
+        "role":                   role,
     }
 
     # astream_events v2 — only yield tokens from the persona node's LLM call
