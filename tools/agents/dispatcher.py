@@ -164,13 +164,14 @@ def _load_agent(agent_name: str):
 AGENT_LOG = []  # circular buffer of last 200 dispatches
 
 
-def _log_dispatch(agent: str, action: str, params: dict, result: dict, user: str, elapsed_ms: float):
+def _log_dispatch(agent: str, action: str, params: dict, result: dict, user: str or dict, elapsed_ms: float):
+    user_name = user["username"] if isinstance(user, dict) else user
     entry = {
         "agent": agent,
         "action": action,
         "params": params,
         "ok": result.get("ok", False),
-        "user": user,
+        "user": user_name,
         "ts": datetime.now().strftime("%H:%M:%S"),
         "elapsed_ms": round(elapsed_ms, 1),
     }
@@ -187,7 +188,7 @@ def get_agent_log(limit: int = 20) -> list:
 # MAIN DISPATCH
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def dispatch_single(agent: str, action: str, params: Dict[str, str], user: str = OWNER_USER) -> Dict[str, Any]:
+def dispatch_single(agent: str, action: str, params: Dict[str, str], user: str or dict = OWNER_USER) -> Dict[str, Any]:
     """Dispatch a single agent action. Returns the result dict."""
     mod = _load_agent(agent)
     if not mod:
@@ -214,7 +215,7 @@ def dispatch_single(agent: str, action: str, params: Dict[str, str], user: str =
     return result
 
 
-def dispatch_all(text: str, user: str = OWNER_USER) -> list[Dict[str, Any]]:
+def dispatch_all(text: str, user: str or dict = OWNER_USER) -> list[Dict[str, Any]]:
     """Find all agent commands in text, dispatch them, return results."""
     commands = parse_agent_command(text)
     results = []
@@ -229,7 +230,7 @@ def dispatch_all(text: str, user: str = OWNER_USER) -> list[Dict[str, Any]]:
     return results
 
 
-def dispatch_from_text(text: str, user: str = OWNER_USER) -> str:
+def dispatch_from_text(text: str, user: str or dict = OWNER_USER) -> str:
     """Parse text, execute agents, return a formatted summary string."""
     results = dispatch_all(text, user)
     if not results:

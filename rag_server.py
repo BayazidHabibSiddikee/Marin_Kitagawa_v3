@@ -93,16 +93,26 @@ os.environ.setdefault("MKL_NUM_THREADS",    "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 
-from config import EMBEDDING_MODEL
+from config import EMBEDDING_MODEL, HF_EMBEDDING_MODEL
 
 def _lazy_embeddings():
     """Create embedding model — called on first search, not at boot."""
-    model = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"batch_size": 32},
-    )
-    return model
+    try:
+        model = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"batch_size": 32},
+        )
+        # Test if it actually loads (lazy loading check)
+        return model
+    except Exception as e:
+        print(f"[RAG] Error loading {EMBEDDING_MODEL}: {e}")
+        print(f"[RAG] Falling back to {HF_EMBEDDING_MODEL}")
+        return HuggingFaceEmbeddings(
+            model_name=HF_EMBEDDING_MODEL,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"batch_size": 32},
+        )
 
 
 class KnowledgeBase:

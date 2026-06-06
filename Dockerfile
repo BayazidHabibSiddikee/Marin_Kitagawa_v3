@@ -41,10 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
     cron \
     at \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
-
-# Give the app user unrestricted sudo inside the container
-RUN echo "root ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 WORKDIR /app
 

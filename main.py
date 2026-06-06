@@ -105,7 +105,84 @@ async def lifespan(app: FastAPI):
     print("[Telegram] Bot active — send messages to chat with Marin!")
     yield
 
+import os
+import secrets
+import threading
+import json
+import asyncio
+import tempfile
+import shlex
+import subprocess
+from pathlib import Path
+from datetime import datetime
+
+# ... (imports)
+
+from database import get_user_by_api_key, create_user, promote_user
+
 app = FastAPI(title="Marin HS-02", lifespan=lifespan)
+
+# Basic Security Middleware
+API_SECRET = os.getenv("MARIN_API_SECRET")
+if not API_SECRET:
+    # Generate a random 32-byte hex token if no secret is provided
+    API_SECRET = secrets.token_hex(32)
+    print(f"[SECURITY] WARNING: MARIN_API_SECRET not set in .env!")
+    print(f"[SECURITY] Generated temporary runtime secret: {API_SECRET}")
+    print("[SECURITY] Use this secret in X-API-Key header to authenticate.")
+
+@app.middleware("http")
+async def verify_api_key(request: Request, call_next):
+    # Protected routes: /api/*, /message, /upload, /proactive/*
+    protected_prefixes = ("/api/", "/message", "/upload", "/proactive/")
+    
+    path = request.url.path
+    if any(path.startswith(p) for p in protected_prefixes):
+        api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+        
+        # 1. Check Master Admin Key
+        if api_key == API_SECRET:
+            request.state.user = {"user_id": "USR-MASTER", "username": "admin", "role": "owner"}
+            return await call_next(request)
+            
+        # 2. Check Database Users
+        if api_key:
+            user = get_user_by_api_key(api_key)
+            if user:
+                request.state.user = user
+                return await call_next(request)
+        
+        # 3. Auto-Register New Guest if no key or invalid key
+        # (Optional: only auto-register on certain routes or if enabled)
+        if path == "/message" and not api_key:
+            new_user = create_user(f"guest_{secrets.token_hex(4)}")
+            request.state.user = new_user
+            # We'll need to send the key back in the response headers or a specific field
+            response = await call_next(request)
+            response.headers["X-Set-API-Key"] = new_user["api_key"]
+            response.headers["X-User-ID"] = new_user["user_id"]
+            return response
+
+        # 4. Localhost loopback bypass (development only)
+        if request.client.host in ("127.0.0.1", "localhost", "::1"):
+            request.state.user = {"user_id": "USR-LOCAL", "username": "local", "role": "owner"}
+            return await call_next(request)
+            
+        return JSONResponse(status_code=403, content={"detail": "Unauthorized. Valid X-API-Key required."})
+        
+    return await call_next(request)
+
+# ── User Management Routes ──────────────────────────────────────────────────
+
+@app.post("/api/users/promote")
+async def api_promote_user(request: Request, target_user_id: str, role: str):
+    user = getattr(request.state, "user", {})
+    if user.get("role") != "owner":
+        return JSONResponse(status_code=403, content={"detail": "Only owners can promote users."})
+    
+    promote_user(target_user_id, role)
+    return {"status": "success", "message": f"User {target_user_id} promoted to {role}."}
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/moduleflow", StaticFiles(directory="moduleflow", html=True), name="moduleflow")
 
@@ -270,6 +347,12 @@ async def tools_open_api(request: Request):
 @app.post("/api/cmd/run")
 async def cmd_run_api(request: Request):
     from marin_fier import tool_run_command
+    from privilege_manager import has_capability, CAP_EXECUTE
+    
+    user = getattr(request.state, "user", {})
+    if not has_capability(user, CAP_EXECUTE):
+        return JSONResponse(status_code=403, content={"detail": "You do not have permission to execute commands."})
+        
     data = await request.json()
     command = data.get("command", "")
     output = tool_run_command(command)
@@ -453,19 +536,28 @@ async def vault_explorer_page(request: Request):
     return templates.TemplateResponse(request=request, name="vault_explorer.html")
 
 @app.get("/api/vault/list/{agent}")
-async def vault_list_api(agent: str):
+async def vault_list_api(request: Request, agent: str):
     from tools.vault_manager import manage_vault
+    user = getattr(request.state, "user", {})
+    # For now, guests can only list general categories
     return JSONResponse(manage_vault(agent, "list"))
 
 @app.post("/api/vault/read")
 async def vault_read_api(request: Request):
     from tools.vault_manager import manage_vault
     data = await request.json()
+    user = getattr(request.state, "user", {})
+    # Security: check if guest is trying to read private owner logs
+    if user.get("role") == "guest" and "psychology" in data.get("category", ""):
+        return JSONResponse(status_code=403, content={"detail": "Unauthorized vault access."})
     return JSONResponse(manage_vault(data["agent"], "read", data["filename"], category=data["category"]))
 
 @app.post("/api/vault/delete")
 async def vault_delete_api(request: Request):
     from tools.vault_manager import manage_vault
+    user = getattr(request.state, "user", {})
+    if user.get("role") != "owner":
+        return JSONResponse(status_code=403, content={"detail": "Only owners can delete vault entries."})
     data = await request.json()
     return JSONResponse(manage_vault(data["agent"], "delete", data["filename"], category=data["category"]))
 
@@ -533,8 +625,11 @@ async def handle_message(
     if timer_status["active"]:
         msg_with_timer = f"[Focus: {timer_status['task']} ({timer_status['elapsed_formatted']})]\n{message}"
     
+    # Get authenticated user from request state (injected by middleware)
+    user = getattr(request, "state", None).user if hasattr(request, "state") else None
+    
     return StreamingResponse(
-        marin_main(msg_with_timer, image_path=image_path, game_context=game_context),
+        marin_main(msg_with_timer, image_path=image_path, user=user, game_context=game_context),
         media_type="text/plain"
     )
 

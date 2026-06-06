@@ -3,44 +3,42 @@ services:
     build: .
     container_name: marin-hs02
     restart: unless-stopped
-    # Full unrestricted access inside the container
-    privileged: true
+    # Security hardening: removed unconfined security options
     user: root
-    # No security profiles — full Linux capabilities
-    security_opt:
-      - seccomp:unconfined
-      - apparmor:unconfined
-    # Capabilities so iptables, mount, raw sockets, etc. all work
     cap_add:
-      - ALL
-    # Host networking — Marin sees the host network stack directly
-    network_mode: host
-    # No memory/cpu limits — she gets everything
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_PTRACE
+    # Bridge mode for isolation
+    network_mode: bridge
+    ports:
+      - "5069:5069"
+      - "5080:5080"
+      - "5070:5070"
+    # Linux host-gateway for Ollama access
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     deploy:
       resources:
-        limits: {}
-        reservations: {}
-    # Environment
+        limits:
+          memory: 4G
+          cpus: '4'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
     env_file:
       - .env
     environment:
-      # Reach host Ollama from container
-      - OLLAMA_BASE_URL=http://127.0.0.1:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
-      # Security — Docker-aware bypass
       - OWNER_USER=Bayazid
       - MARIN_ROLE=owner
       - DOCKER_CONTAINER=1
-      # Disable Python buffering
       - PYTHONUNBUFFERED=1
     volumes:
-      # Sync the whole project directory for development and execution consistency
       - .:/app
-      # Host filesystem — READ-ONLY reference so she can see the whole system
-      - /:/host:ro
-      # Docker socket — so she can manage containers
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5069"]
