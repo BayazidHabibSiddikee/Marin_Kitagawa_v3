@@ -21,26 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     espeak \
     curl \
-    git \
-    build-essential \
-    sudo \
-    procps \
-    iproute2 \
-    iptables \
-    net-tools \
-    iputils-ping \
-    nmap \
-    wget \
-    vim \
-    nano \
-    htop \
-    lsof \
-    strace \
-    tcpdump \
-    netcat-openbsd \
-    dnsutils \
-    cron \
-    at \
+    ca-certificates \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 

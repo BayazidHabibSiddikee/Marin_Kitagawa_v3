@@ -337,8 +337,13 @@ Rules:
 
     try:
         llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.8)
-        resp = await asyncio.to_thread(llm.invoke, prompt)
-        text = resp.content.strip()
+        # Wrap the invoke in a timeout to prevent hanging the event loop
+        resp = await asyncio.wait_for(
+            asyncio.to_thread(llm.invoke, prompt),
+            timeout=30.0
+        )
+        txt = resp.content.strip()
+
         if text and len(text) > 10:
             _last_proactive_time[agent] = time.time()
             _streak_count[agent] = _streak_count.get(agent, 0) + 1
@@ -380,8 +385,13 @@ Habit status: {habit_ctx or 'no active habits'}.
 Rules: Under 2 sentences. Stay in character. No questions. Do NOT sign your name.
 """
             llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.7)
-            resp = await asyncio.to_thread(llm.invoke, prompt)
-            text = resp.content.strip()
+            # Wrap the invoke in a timeout to prevent hanging the event loop
+            resp = await asyncio.wait_for(
+                asyncio.to_thread(llm.invoke, prompt),
+                timeout=30.0
+            )
+            txt = resp.content.strip()
+
             if text:
                 await _broadcast(text, "greeting", agent)
         except Exception:

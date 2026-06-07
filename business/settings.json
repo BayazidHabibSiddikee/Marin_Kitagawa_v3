@@ -1,0 +1,22 @@
+{
+  "models": {
+    "default": "gemma4:31b-cloud",
+    "fast": "qwen2.5:0.5b",
+    "vision": "leo",
+    "embedding": "all-MiniLM-L6-v2"
+  },
+  "api_keys": {
+    "openai": "",
+    "anthropic": "",
+    "google": ""
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5069,
+    "ollama_base_url": "http://localhost:11434",
+    "openai_base_url": "https://api.openai.com/v1"
+  },
+  "email": {
+    "sender": ""
+  }
+}

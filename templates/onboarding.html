@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marin HS-02 — Onboarding</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --accent: #4db8a4;
+            --text: #e8ddd0;
+            --dim: #8a7d72;
+            --panel: #141419;
+            --border: #2d8a78;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Rajdhani', sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .form-container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--panel);
+            border: 1px solid rgba(77, 184, 164, 0.3);
+            padding: 30px;
+            border-radius: 4px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        h2 {
+            font-family: 'Cinzel', serif;
+            color: var(--accent);
+            text-align: center;
+            margin-bottom: 30px;
+            letter-spacing: 2px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--dim);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+        }
+
+        input {
+            width: 100%;
+            background: #000;
+            border: 1px solid var(--border);
+            padding: 12px;
+            color: #fff;
+            border-radius: 2px;
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 10px rgba(77, 184, 164, 0.2);
+        }
+
+        .btn-submit {
+            width: 100%;
+            background: var(--accent);
+            color: #000;
+            padding: 15px;
+            border: none;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .btn-submit:hover {
+            background: #5db882;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(77, 184, 164, 0.4);
+        }
+
+        .help-text {
+            font-size: 0.75rem;
+            color: var(--dim);
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <h2>System Configuration</h2>
+        <p style="text-align: center; color: var(--dim); margin-bottom: 30px;">Welcome, {{ username }}. Let's initialize your Marin profile.</p>
+        
+        <form action="/setup" method="post">
+            <div class="form-group">
+                <label>Display Name</label>
+                <input type="text" name="display_name" value="{{ username }}" required>
+                <div class="help-text">What should Marin call you?</div>
+            </div>
+
+            <div class="form-group">
+                <label>OpenRouter API Key</label>
+                <input type="password" name="openrouter_api_key" placeholder="sk-or-v1-...">
+                <div class="help-text">For God-tier models (Dolphin, Nemotron, etc.)</div>
+            </div>
+
+            <div class="form-group">
+                <label>OpenAI API Key (Optional)</label>
+                <input type="password" name="openai_api_key" placeholder="sk-...">
+            </div>
+
+            <div class="form-group">
+                <label>Google/Gemini API Key (Optional)</label>
+                <input type="password" name="google_api_key" placeholder="AIza...">
+            </div>
+
+            <div class="form-group">
+                <label>HuggingFace Token (Optional)</label>
+                <input type="password" name="hf_token" placeholder="hf_...">
+            </div>
+
+            <button type="submit" class="btn-submit">Complete Setup</button>
+        </form>
+    </div>
+</body>
+</html>

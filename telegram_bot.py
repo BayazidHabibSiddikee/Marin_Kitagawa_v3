@@ -244,7 +244,7 @@ async def _poll_loop():
                     _send_text(chat_id,
                         f"🤖 **STATUS**\n"
                         f"Quiet hours: {st['quiet_hours']}\n"
-                        f"Proactive msgs this session: {st['session_counts'].get('marin', 0)}"
+                        f"Proactive msgs this session: {st.get('streak_counts', {}).get('marin', 0)}"
                     )
                     continue
 
