@@ -5,22 +5,20 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 UNIQUE_DIR = BASE_DIR / "unique"
 
-def manage_vault(agent, action, filename=None, content=None, category="misc"):
+def manage_vault(agent, action, filename=None, content=None, category="misc", user_id="USR-MASTER"):
     """
     Manage agent-specific vaults in unique/
-    agent: 'bayazid' or 'marin'
-    action: 'write', 'read', 'list', 'delete'
+    Isolated by user_id.
     """
-    vault_name = "bayazid_vault" if agent == "bayazid" else "limoni_vault"
-    vault_path = UNIQUE_DIR / vault_name / category
+    # Root vault for this specific user
+    user_vault = UNIQUE_DIR / user_id / agent
+    vault_path = user_vault / category
     vault_path.mkdir(parents=True, exist_ok=True)
 
     if action == "list":
-        # List all files across all categories in the agent's vault
-        root_vault = UNIQUE_DIR / vault_name
         results = {}
-        for root, dirs, files in os.walk(root_vault):
-            rel_path = os.path.relpath(root, root_vault)
+        for root, dirs, files in os.walk(user_vault):
+            rel_path = os.path.relpath(root, user_vault)
             if files:
                 results[rel_path] = files
         return results

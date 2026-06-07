@@ -89,6 +89,7 @@ def execute_text_commands(text: str, base_dir: str):
     body = _convert_heredocs(body)
 
     raw_cmds = []
+    from marin_fier import is_cmd_allowed
     for m in _TEXT_CMD_PAT.finditer(body):
         cmd = _strip_md_trail(m.group(1))
         if cmd:
@@ -187,6 +188,7 @@ def extract_and_execute_commands(text: str, base_dir: str) -> str:
     body = re.sub(r'`([^`\n]+)`', r'\1', body)
 
     raw_cmds = []
+    from marin_fier import is_cmd_allowed
     for m in _TEXT_CMD_PAT.finditer(body):
         cmd = _strip_md_trail(m.group(1))
         if cmd and 'cat' not in cmd[:5]:

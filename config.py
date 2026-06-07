@@ -171,6 +171,17 @@ POMODORO_LONG_BREAK    = 15
 MEMORY_MAX_MESSAGES    = 50
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# GOOGLE OAUTH CONFIG
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
+
+# Secret key for sessions
+SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "marin-session-secret-999")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # APP LAUNCHER CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -280,7 +291,7 @@ def launch_app(name: str) -> str:
         return _open_url(WEB_APPS[key], name)
     if shutil.which(key):
         try:
-            subprocess.Popen([key], stdout=open('logs/tool_execution.log', 'a'), stderr=open('logs/tool_execution.log', 'a'), start_new_session=True)
+            subprocess.Popen([key], start_new_session=True)
             return f"Opening {name}~ ✨"
         except Exception as e:
             return f"Tried to open {name} but got: {e}"

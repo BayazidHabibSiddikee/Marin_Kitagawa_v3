@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HS-02 // SYSTEM HUB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=Cinzel:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<style>
+:root {
+  --bg:          #0a0a0f;
+  --bg2:         #0f0f1a;
+  --bg3:         #14141f;
+  --panel:       #12121e;
+  --border:      #1e1e35;
+  --purple:      #8b5cf6;
+  --violet:      #a78bfa;
+  --violet-dim:  #6d4fcc;
+  --text:        #d1d5db;
+  --text-dim:    #6b7280;
+  --text-muted:  #3f3f5a;
+  --danger:      #dc2626;
+  --gold:        #fbbf24;
+  --success:     #10b981;
+  --cyan:        #22d3ee;
+  --pink:        #e91e8c;
+  --scan-line:   rgba(139,92,246,0.04);
+  --acc:         var(--purple);
+  --acc-glow:    rgba(139,92,246,0.3);
+}
+body.marin-mode {
+  --purple:     #e91e8c;
+  --violet:     #ffb7c5;
+  --violet-dim: #c2185b;
+  --acc:        #e91e8c;
+  --acc-glow:   rgba(233,30,140,0.3);
+  --scan-line:  rgba(233,30,140,0.04);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+
+body {
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Rajdhani',sans-serif;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  transition: all .5s ease;
+}
+/* scan lines */
+body::before{
+  content:'';position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,var(--scan-line) 2px,var(--scan-line) 4px);
+  pointer-events:none;z-index:1000;
+}
+/* grain */
+body::after{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:999;opacity:.5;
+}
+
+/* ── TOPBAR ───────────────────────────────────────────────────────────────── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 18px;
+  background:var(--panel);
+  border-bottom:1px solid var(--border);
+  position:relative;z-index:10;flex-shrink:0;
+}
+.topbar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--purple),transparent);
+}
+.logo{
+  font-family:'Cinzel',serif;font-size:.9rem;font-weight:600;
+  letter-spacing:.12em;color:var(--violet);
+  text-shadow:0 0 20px var(--acc-glow);
+  display:flex;align-items:center;gap:10px;
+}
+.logo .badge{
+  font-family:'Share Tech Mono',monospace;font-size:.6rem;
+  background:linear-gradient(135deg,var(--purple),var(--violet));
+  color:#fff;padding:2px 8px;border-radius:2px;letter-spacing:.08em;
+}
+.topbar-center{
+  display:flex;gap:5px;
+}
+.agent-btn{
+  font-family:'Share Tech Mono',monospace;font-size:.68rem;
+  color:var(--text-dim);
+  border:1px solid var(--border);
+  background:none;padding:4px 12px;border-radius:3px;
+  cursor:pointer;letter-spacing:.06em;transition:all .2s;
+}
+.agent-btn:hover,.agent-btn.active{
+  color:var(--violet);border-color:var(--purple);
+  background:rgba(139,92,246,0.1);
+  box-shadow:0 0 12px var(--acc-glow);
+}
+.agent-btn.marin-btn:hover,.agent-btn.marin-btn.active{
+  color:#ffb7c5;border-color:#e91e8c;
+  background:rgba(233,30,140,0.1);
+  box-shadow:0 0 12px rgba(233,30,140,0.3);
+}
+.topbar-right{
+  display:flex;align-items:center;gap:14px;
+  font-family:'Share Tech Mono',monospace;font-size:.68rem;
+  color:var(--text-dim);
+}
+#live-clock{color:var(--violet);font-weight:600;}
+.status-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--success);box-shadow:0 0 8px var(--success);
+  animation:pulse 2s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── MAP CONTROLS STRIP ───────────────────────────────────────────────────── */
+.ctrl-strip{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:7px 16px;display:flex;align-items:center;gap:8px;flex-shrink:0;
+}
+.ctrl-strip input, .ctrl-strip select{
+  font-family:'Share Tech Mono',monospace;font-size:.72rem;
+  background:var(--bg3);border:1px solid var(--border);
+  color:var(--text);padding:6px 10px;border-radius:4px;outline:none;
+  transition:border-color .2s;
+}
+.ctrl-strip input:focus,.ctrl-strip select:focus{border-color:var(--purple);}
+.ctrl-strip input::placeholder{color:var(--text-muted);}
+.ctrl-input-wrap{position:relative;display:flex;align-items:center;}
+.ctrl-input-wrap i{
+  position:absolute;left:8px;font-size:.65rem;color:var(--text-muted);
+  pointer-events:none;
+}
+.ctrl-input-wrap input{padding-left:24px;}
+.ctrl-strip select option{background:var(--bg3);}
+.ctrl-btn{
+  font-family:'Share Tech Mono',monospace;font-size:.7rem;
+  background:linear-gradient(135deg,var(--purple),var(--violet-dim));
+  color:#fff;border:none;padding:7px 16px;border-radius:4px;
+  cursor:pointer;letter-spacing:.06em;transition:opacity .2s;white-space:nowrap;
+}
+.ctrl-btn:hover{opacity:.85;}
+.ctrl-btn.sec{
+  background:transparent;border:1px solid var(--border);color:var(--text-dim);
+}
+.ctrl-btn.sec:hover{border-color:var(--purple);color:var(--violet);}
+
+/* ── MAIN LAYOUT ──────────────────────────────────────────────────────────── */
+.main-area{flex:1;display:flex;overflow:hidden;}
+
+/* ── LEFT PANEL ───────────────────────────────────────────────────────────── */
+.left-panel{
+  width:330px;flex-shrink:0;display:flex;flex-direction:column;
+  border-right:1px solid var(--border);overflow:hidden;
+}
+
+/* upper left: weather + floods */
+.left-upper{
+  flex:0 0 auto;border-bottom:1px solid var(--border);
+  overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;
+  max-height:52%;
+}
+/* lower left: stock + crypto grid */
+.left-lower{
+  flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;
+}
+
+/* ── RIGHT PANEL: MAP ─────────────────────────────────────────────────────── */
+.right-panel{
+  flex:1;position:relative;background:#000;
+}
+.right-panel iframe{width:100%;height:100%;border:none;}
+#map-loader{
+  position:absolute;inset:0;background:rgba(10,10,15,.85);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;z-index:5;
+}
+#map-loader .spinner{
+  width:36px;height:36px;border:3px solid var(--border);
+  border-top-color:var(--purple);border-radius:50%;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#map-loader p{font-family:'Share Tech Mono',monospace;font-size:.7rem;color:var(--text-dim);}
+
+/* ── SECTION HEADERS ──────────────────────────────────────────────────────── */
+.sec-hdr{
+  font-family:'Share Tech Mono',monospace;font-size:.62rem;letter-spacing:.14em;
+  color:var(--text-muted);text-transform:uppercase;padding:0 2px 4px;
+  border-bottom:1px solid var(--border);margin-bottom:4px;
+  display:flex;align-items:center;gap:6px;
+}
+.sec-hdr i{font-size:.65rem;color:var(--purple);}
+.sec-hdr .badge-sm{
+  margin-left:auto;font-size:.58rem;padding:1px 6px;
+  background:rgba(139,92,246,.15);border:1px solid var(--border);
+  border-radius:2px;color:var(--violet);letter-spacing:.04em;
+}
+
+/* ── WEATHER WIDGET ───────────────────────────────────────────────────────── */
+.weather-main{
+  display:grid;grid-template-columns:1fr 1fr;gap:6px;
+}
+.w-cell{
+  background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:8px 10px;
+}
+.w-cell .label{
+  font-family:'Share Tech Mono',monospace;font-size:.58rem;
+  color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;
+  margin-bottom:3px;
+}
+.w-cell .val{
+  font-size:1.1rem;font-weight:700;color:var(--violet);
+  line-height:1;
+}
+.w-cell .unit{
+  font-size:.65rem;color:var(--text-dim);margin-left:2px;
+}
+.w-icon{font-size:1.5rem;line-height:1;}
+.weather-cond{
+  grid-column:1/-1;
+  font-family:'Share Tech Mono',monospace;font-size:.65rem;
+  color:var(--cyan);letter-spacing:.06em;padding:4px 0;
+}
+
+/* ── FLOOD LIST ───────────────────────────────────────────────────────────── */
+.flood-list{display:flex;flex-direction:column;gap:4px;}
+.flood-item{
+  background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.2);
+  border-radius:4px;padding:6px 8px;font-size:.78rem;
+}
+.flood-item strong{color:#f87171;font-weight:600;}
+.flood-item span{color:var(--text-muted);font-size:.68rem;font-family:'Share Tech Mono',monospace;}
+.flood-empty{
+  font-family:'Share Tech Mono',monospace;font-size:.68rem;
+  color:var(--success);padding:4px 0;
+}
+
+/* ── MARKET GRID 3×3 ──────────────────────────────────────────────────────── */
+.market-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:5px;
+}
+.mcard{
+  background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:7px 8px;cursor:pointer;transition:border-color .2s,background .2s;
+  position:relative;overflow:hidden;
+}
+.mcard::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,var(--acc-glow),transparent);
+  opacity:0;transition:opacity .3s;
+}
+.mcard:hover{border-color:var(--purple);}
+.mcard:hover::before{opacity:1;}
+.mcard .ticker{
+  font-family:'Share Tech Mono',monospace;font-size:.62rem;
+  color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase;
+}
+.mcard .price{
+  font-family:'Share Tech Mono',monospace;font-size:.82rem;
+  font-weight:700;color:var(--text);margin-top:2px;
+}
+.mcard .change{font-size:.68rem;font-weight:600;margin-top:1px;}
+.mcard .change.up{color:var(--success);}
+.mcard .change.dn{color:var(--danger);}
+.mcard .change.neu{color:var(--text-dim);}
+.mcard-loading{color:var(--text-muted);font-size:.65rem;font-family:'Share Tech Mono',monospace;}
+
+/* ── PINS LIST ────────────────────────────────────────────────────────────── */
+.pins-list{display:flex;flex-direction:column;gap:4px;}
+.pin-item{
+  background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:6px 8px;font-size:.8rem;
+  border-left:2px solid var(--purple);
+  transition:border-left-color .2s;
+}
+.pin-item:hover{border-left-color:var(--gold);}
+.pin-item strong{color:var(--text);font-weight:600;}
+.pin-item .pin-addr{color:var(--text-dim);font-size:.68rem;font-family:'Share Tech Mono',monospace;}
+.pin-item .pin-meta{color:var(--text-muted);font-size:.65rem;}
+
+/* ── ROUTE CARD ───────────────────────────────────────────────────────────── */
+.route-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+  padding:8px 10px;display:flex;gap:16px;
+}
+.route-cell .label{
+  font-family:'Share Tech Mono',monospace;font-size:.58rem;
+  color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;
+}
+.route-cell .val{font-size:.95rem;font-weight:700;color:var(--cyan);}
+
+/* ── SCROLLBAR ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+::-webkit-scrollbar-thumb:hover{background:var(--purple);}
+
+/* ── TOAST ────────────────────────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:20px;right:20px;z-index:9999;
+  font-family:'Share Tech Mono',monospace;font-size:.72rem;
+  background:var(--panel);border:1px solid var(--purple);
+  color:var(--violet);padding:8px 16px;border-radius:4px;
+  box-shadow:0 0 20px var(--acc-glow);
+  transform:translateY(60px);opacity:0;
+  transition:all .3s ease;pointer-events:none;
+}
+#toast.show{transform:translateY(0);opacity:1;}
+
+/* ── REFRESH INDICATOR ────────────────────────────────────────────────────── */
+.auto-badge{
+  font-family:'Share Tech Mono',monospace;font-size:.58rem;
+  color:var(--text-muted);padding:2px 6px;
+  border:1px solid var(--border);border-radius:2px;
+  display:inline-flex;align-items:center;gap:4px;
+}
+.auto-badge .dot{
+  width:5px;height:5px;border-radius:50%;background:var(--success);
+  animation:pulse 2s infinite;
+}
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ──────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="logo">
+    <i class="fas fa-satellite-dish" style="color:var(--purple);font-size:1rem;"></i>
+    BAYAZID
+    <span class="badge">HS-02 HUB</span>
+  </div>
+
+  <div class="topbar-center">
+    <button class="agent-btn active" onclick="switchAgent('bayazid')" id="btn-bayazid">⚡ BAYAZID</button>
+    <button class="agent-btn marin-btn" onclick="switchAgent('marin')" id="btn-marin">🌸 MARIN</button>
+    <button class="agent-btn" onclick="switchAgent('arena')" id="btn-arena">⚔ ARENA</button>
+    <button class="agent-btn" onclick="openTab('chat')" id="btn-chat">💬 CHAT</button>
+    <button class="agent-btn" onclick="openTab('research')" id="btn-research">📚 RESEARCH</button>
+    <button class="agent-btn" onclick="openTab('terminal')" id="btn-terminal">💻 TERMINAL</button>
+    <button class="agent-btn" onclick="window.location.href='/codeflow'" id="btn-codeflow">🌊 FLOW</button>
+    </div>
+
+  <div class="topbar-right">
+    <div id="rag-status" class="auto-badge" style="margin-right:10px; cursor:pointer;" onclick="toggleRAG()">
+      <div class="dot" id="rag-dot" style="background:var(--text-muted);"></div> RAG: <span id="rag-text">OFF</span>
+    </div>
+    <span id="live-clock">--:--:--</span>
+    <span id="conn-status">LIVE</span>
+    <div class="status-dot"></div>
+  </div>
+</header>
+
+<!-- ── MAP CONTROL STRIP ───────────────────────────────────────────────────── -->
+<div class="ctrl-strip">
+  <div class="ctrl-input-wrap">
+    <i class="fas fa-circle-dot"></i>
+    <input type="text" id="inp-source" placeholder="Source city..." value="Dhaka" style="width:140px;">
+  </div>
+
+  <div class="ctrl-input-wrap">
+    <i class="fas fa-location-dot"></i>
+    <input type="text" id="inp-dest" placeholder="Destination..." style="width:140px;">
+  </div>
+
+  <select id="inp-category" style="width:170px;">
+    <option value="">— Pin places —</option>
+    <optgroup label="Food & Drink">
+      <option value="cafe">☕ Café</option>
+      <option value="restaurant">🍽️ Restaurant</option>
+      <option value="bar">🍺 Bar / Pub</option>
+      <option value="bakery">🥐 Bakery</option>
+    </optgroup>
+    <optgroup label="Healthcare">
+      <option value="hospital">🏥 Hospital</option>
+      <option value="pharmacy">💊 Pharmacy</option>
+      <option value="clinic">🩺 Clinic</option>
+    </optgroup>
+    <optgroup label="Religion">
+      <option value="mosque">🕌 Mosque</option>
+      <option value="temple">🛕 Temple</option>
+      <option value="church">⛪ Church</option>
+    </optgroup>
+    <optgroup label="Education">
+      <option value="school">🏫 School</option>
+      <option value="university">🎓 University</option>
+      <option value="library">📚 Library</option>
+    </optgroup>
+    <optgroup label="Transport & Finance">
+      <option value="bank">🏦 Bank</option>
+      <option value="atm">💳 ATM</option>
+      <option value="fuel">⛽ Fuel Station</option>
+    </optgroup>
+    <optgroup label="Leisure">
+      <option value="park">🌳 Park</option>
+      <option value="gym">🏋️ Gym</option>
+      <option value="cinema">🎬 Cinema</option>
+      <option value="tourist">🗺️ Tourist Attraction</option>
+    </optgroup>
+    <optgroup label="Shopping">
+      <option value="supermarket">🛒 Supermarket</option>
+      <option value="market">🏪 Market</option>
+      <option value="hotel">🏨 Hotel</option>
+    </optgroup>
+  </select>
+
+  <div class="ctrl-input-wrap">
+    <i class="fas fa-magnifying-glass"></i>
+    <input type="text" id="inp-limit" value="8" style="width:60px;" placeholder="Pins">
+  </div>
+
+  <button class="ctrl-btn" onclick="updateHub()">
+    <i class="fas fa-rotate"></i> UPDATE HUB
+  </button>
+  <button class="ctrl-btn sec" onclick="clearPins()">CLEAR PINS</button>
+
+  <div class="auto-badge" id="last-update-badge">
+    <div class="dot"></div> <span id="last-upd-time">—</span>
+  </div>
+</div>
+
+<!-- ── MAIN AREA ───────────────────────────────────────────────────────────── -->
+<div class="main-area">
+
+  <!-- ── LEFT PANEL ─────────────────────────────────────────────────────────── -->
+  <div class="left-panel">
+
+    <!-- UPPER LEFT: weather + route + floods -->
+    <div class="left-upper">
+
+      <!-- WEATHER -->
+      <div>
+        <div class="sec-hdr">
+          <i class="fas fa-cloud-sun"></i> WEATHER
+          <span class="badge-sm" id="weather-city-tag">—</span>
+        </div>
+        <div id="weather-block">
+          <div style="font-family:'Share Tech Mono',monospace;font-size:.68rem;color:var(--text-muted);">
+            Enter source city and click Update Hub...
+          </div>
+        </div>
+      </div>
+
+      <!-- ROUTE -->
+      <div id="route-section" style="display:none;">
+        <div class="sec-hdr"><i class="fas fa-route"></i> ROUTE</div>
+        <div class="route-card">
+          <div class="route-cell">
+            <div class="label">Distance</div>
+            <div class="val" id="r-dist">—</div>
+          </div>
+          <div class="route-cell">
+            <div class="label">Duration</div>
+            <div class="val" id="r-dur">—</div>
+          </div>
+          <div class="route-cell">
+            <div class="label">Via</div>
+            <div class="val" style="font-size:.72rem;" id="r-via">OSRM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLOOD ALERTS -->
+      <div>
+        <div class="sec-hdr">
+          <i class="fas fa-triangle-exclamation"></i> NASA EONET FLOODS
+          <span class="badge-sm" id="flood-count-badge">—</span>
+        </div>
+        <div id="flood-block">
+          <div class="flood-empty">Loading flood data...</div>
+        </div>
+      </div>
+
+      <!-- PINS LIST -->
+      <div id="pins-section" style="display:none;">
+        <div class="sec-hdr">
+          <i class="fas fa-map-pin"></i> PINS
+          <span class="badge-sm" id="pins-cat-tag">—</span>
+        </div>
+        <div class="pins-list" id="pins-block"></div>
+      </div>
+
+    </div>
+
+    <!-- LOWER LEFT: market grid (stocks + crypto, 3×3) -->
+    <div class="left-lower">
+      <div class="sec-hdr">
+        <i class="fas fa-chart-line"></i> MARKETS
+        <span class="badge-sm">LIVE</span>
+      </div>
+
+      <div style="font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--text-muted);letter-spacing:.1em;margin-bottom:3px;">STOCKS</div>
+      <div class="market-grid" id="stock-grid">
+        <!-- filled by JS -->
+      </div>
+
+      <div style="font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--text-muted);letter-spacing:.1em;margin:6px 0 3px;">CRYPTO</div>
+      <div class="market-grid" id="crypto-grid">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT PANEL: MAP / RESEARCH / TERMINAL ──────────────────────────── -->
+  <div class="right-panel">
+    <!-- MAP TAB -->
+    <div id="tab-map" class="tab-content" style="height:100%;">
+      <div id="map-loader">
+        <div class="spinner"></div>
+        <p>INITIALISING HUB MAP...</p>
+      </div>
+      <iframe id="hub-map" src="about:blank" style="width:100%; height:100%; border:none;"></iframe>
+    </div>
+
+    <!-- RESEARCH TAB -->
+    <div id="tab-research" class="tab-content" style="display:none; height:100%; padding:20px; overflow-y:auto; background:var(--bg2);">
+      <div class="sec-hdr" style="font-size:1.2rem; margin-bottom:20px;">
+        <i class="fas fa-book-open"></i> RESEARCH HUB — PDF & WEB EXPLORER
+        <span style="font-size:0.7rem; color:var(--text-dim); margin-left:10px; font-family:'Share Tech Mono';">[ CAMOFOX ENGINE ]</span>
+      </div>
+      <div class="ctrl-strip" style="background:var(--panel); border-radius:8px; margin-bottom:20px; padding:15px;">
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button id="res-mode-pdf" class="ctrl-btn" style="padding:6px 14px; font-size:0.8rem;" onclick="setResMode('pdf')">
+            <i class="fas fa-file-pdf"></i> PDF SEARCH
+          </button>
+          <button id="res-mode-web" class="ctrl-btn" style="padding:6px 14px; font-size:0.8rem; background:transparent; border:1px solid var(--border); color:var(--text-dim);" onclick="setResMode('web')">
+            <i class="fas fa-globe"></i> WEB SEARCH
+          </button>
+        </div>
+        <div class="input-group" style="flex:1; display:flex; gap:10px;">
+          <div class="ctrl-input-wrap" style="flex:1;">
+            <i class="fas fa-search"></i>
+            <input type="text" id="res-search-query" placeholder="Search topics, books, papers..." style="width:100%;">
+          </div>
+          <button class="ctrl-btn" onclick="performResearchSearch()">
+            <i class="fas fa-search"></i> SEARCH
+          </button>
+        </div>
+      </div>
+      <div id="res-loader" style="display:none; text-align:center; padding:40px;">
+        <div class="spinner" style="margin: 0 auto;"></div>
+        <p style="margin-top:15px; font-family:'Share Tech Mono'; color:var(--text-dim);">SEARCHING VIA CAMOFOX...</p>
+      </div>
+      <div id="res-results" class="results-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:15px;">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- TERMINAL TAB -->
+    <div id="tab-terminal" class="tab-content" style="display:none; height:100%; background:#000; display:flex; flex-direction:column;">
+      <div class="sec-hdr" style="background:var(--panel); padding:8px 15px; margin-bottom:0;">
+        <i class="fas fa-terminal"></i> SYSTEM TERMINAL
+      </div>
+      <div id="term-output" style="flex:1; padding:15px; overflow-y:auto; font-family:'Share Tech Mono', monospace; font-size:0.85rem; color:var(--success); line-height:1.4;">
+        <div>HS-02 TERMINAL [READY]</div>
+        <div>Type 'help' for available commands.</div>
+      </div>
+      <div class="term-input-line" style="display:flex; align-items:center; background:#111; padding:5px 10px; border-top:1px solid var(--border);">
+        <span style="color:var(--purple); margin-right:10px; font-family:'Share Tech Mono';">$</span>
+        <input type="text" id="term-input" style="flex:1; background:none; border:none; color:#fff; font-family:'Share Tech Mono'; outline:none;" placeholder="Run system command...">
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ── TAB MANAGEMENT ──────────────────────────────────────────────────────────
+function openTab(t){
+  // If it's chat, navigate away
+  if(t === 'chat') {
+    window.location.href = '/chat?agent=bayazid';
+    return;
+  }
+  
+  // Hide all tab contents
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  
+  // Show target tab
+  const target = document.getElementById('tab-' + t);
+  if(target) {
+    target.style.display = (t === 'terminal') ? 'flex' : 'block';
+  }
+  
+  // Update buttons
+  ['research', 'terminal'].forEach(id => {
+    const b = document.getElementById('btn-' + id);
+    if(b) b.classList.remove('active');
+  });
+  const activeBtn = document.getElementById('btn-' + t);
+  if(activeBtn) activeBtn.classList.add('active');
+  
+  if(t === 'research') toast('Switched to Research Hub');
+  if(t === 'terminal') {
+    toast('System Terminal active');
+    document.getElementById('term-input').focus();
+  }
+}
+
+// ── CLOCK ──────────────────────────────────────────────────────────────────
+(function clockTick(){
+  const el = document.getElementById('live-clock');
+  const now = new Date();
+  el.textContent = now.toTimeString().slice(0,8);
+  setTimeout(clockTick, 1000);
+})();
+
+// ── AGENT SWITCH ───────────────────────────────────────────────────────────
+function switchAgent(a){
+  document.body.classList.toggle('marin-mode', a === 'marin');
+  
+  if(a === 'arena') {
+    window.location.href = '/arena';
+    return;
+  }
+  
+  if(a === 'bayazid' || a === 'marin') {
+    window.location.href = '/chat?agent=' + a;
+    return;
+  }
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+function toast(msg, dur=2500){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), dur);
+}
+
+// ── MARKET DATA ────────────────────────────────────────────────────────────
+const STOCKS  = ['AAPL','TSLA','META','MSFT','NVDA','AMZN','GOOGL','AMD','NFLX'];
+const CRYPTOS = [
+  {id:'bitcoin',     sym:'BTC'},
+  {id:'ethereum',    sym:'ETH'},
+  {id:'solana',      sym:'SOL'},
+  {id:'binancecoin', sym:'BNB'},
+  {id:'dogecoin',    sym:'DOGE'},
+  {id:'cardano',     sym:'ADA'},
+  {id:'ripple',      sym:'XRP'},
+  {id:'polkadot',    sym:'DOT'},
+  {id:'avalanche-2', sym:'AVAX'},
+];
+
+const _priceCache = {};
+
+function _fmtPrice(p){
+  if(p >= 1000) return '$'+p.toLocaleString('en',{maximumFractionDigits:0});
+  if(p >= 1)    return '$'+p.toFixed(2);
+  return '$'+p.toFixed(4);
+}
+
+function _changeClass(c){ return c > 0 ? 'up' : c < 0 ? 'dn' : 'neu'; }
+
+function buildMarketGrid(containerId, tickers, isStock){
+  const el = document.getElementById(containerId);
+  el.innerHTML = tickers.map((t,i) => {
+    const sym = isStock ? t : t.sym;
+    return `<div class="mcard" id="mc-${sym}" title="Click to open tracker" onclick="openTracker('${sym}','${isStock?'stock':'crypto'}')">
+      <div class="ticker">${sym}</div>
+      <div class="price mcard-loading" id="mp-${sym}">···</div>
+      <div class="change neu" id="mc-chg-${sym}">—</div>
+    </div>`;
+  }).join('');
+}
+
+async function fetchStockPrices(){
+  // Use Yahoo Finance via a CORS proxy or the app's own backend
+  // In standalone mode: call /api/market/quotes or fall back to mock
+  try {
+    const syms = STOCKS.join(',');
+    const r = await fetch(`/api/market/quotes?symbols=${syms}`);
+    if(!r.ok) throw new Error('no api');
+    const data = await r.json();
+    data.forEach(q => {
+      const prev = _priceCache[q.symbol];
+      _priceCache[q.symbol] = q.price;
+      const chgEl  = document.getElementById(`mc-chg-${q.symbol}`);
+      const priceEl= document.getElementById(`mp-${q.symbol}`);
+      if(priceEl) priceEl.textContent = _fmtPrice(q.price);
+      if(chgEl){
+        const chg = q.change_pct;
+        chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+        chgEl.className = 'change ' + _changeClass(chg);
+      }
+    });
+  } catch(_){
+    // Offline fallback — call tool directly
+    STOCKS.forEach(sym => {
+      const priceEl = document.getElementById(`mp-${sym}`);
+      if(priceEl && priceEl.textContent === '···'){
+        priceEl.textContent = '—';
+        priceEl.style.color = 'var(--text-muted)';
+      }
+    });
+  }
+}
+
+async function fetchCryptoPrices(){
+  try {
+    const ids = CRYPTOS.map(c=>c.id).join(',');
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+    );
+    if(!r.ok) throw new Error('coingecko fail');
+    const data = await r.json();
+    CRYPTOS.forEach(c => {
+      const d   = data[c.id];
+      if(!d) return;
+      const price = d.usd;
+      const chg   = d.usd_24h_change;
+      const priceEl = document.getElementById(`mp-${c.sym}`);
+      const chgEl   = document.getElementById(`mc-chg-${c.sym}`);
+      if(priceEl) priceEl.textContent = _fmtPrice(price);
+      if(chgEl){
+        chgEl.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+        chgEl.className = 'change ' + _changeClass(chg);
+      }
+      _priceCache[c.sym] = price;
+    });
+  } catch(e){
+    console.warn('Crypto fetch failed:', e);
+  }
+}
+
+function openTracker(sym, type){
+  // Signal to the backend / tool system
+  fetch('/api/tools/open', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      tool: type === 'stock' ? 'get_stock_info' : 'get_crypto_price',
+      params: type === 'stock' ? {company: sym} : {coin: sym.toLowerCase()}
+    })
+  }).catch(()=>{});
+  toast(`Opening ${sym} ${type} tracker...`);
+}
+
+// ── HUB UPDATE ─────────────────────────────────────────────────────────────
+async function updateHub(){
+  const source   = document.getElementById('inp-source').value.trim() || 'Dhaka';
+  const dest     = document.getElementById('inp-dest').value.trim();
+  const category = document.getElementById('inp-category').value;
+  const limit    = parseInt(document.getElementById('inp-limit').value) || 8;
+
+  document.getElementById('map-loader').style.display = 'flex';
+  toast('Updating hub...');
+
+  try {
+    const r = await fetch('/api/knowledge-hub/update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({location: source, query: category, destination: dest, limit})
+    });
+    if(!r.ok) {
+      const errData = await r.json().catch(()=>({}));
+      throw new Error(errData.error || `Server error: ${r.status}`);
+    }
+    const data = await r.json();
+    
+    if (data.error) {
+       throw new Error(data.error);
+    }
+
+    renderWeather(data.weather);
+    renderFloods(data.floods);
+    renderRoute(data.route);
+    renderPins(data.pins, category);
+    refreshMap(data.map_url);
+    document.getElementById('last-upd-time').textContent = new Date().toLocaleTimeString();
+    toast('Hub updated ✓');
+  } catch(err){
+    console.error(err);
+    toast('Update failed: ' + err.message, 5000);
+    // Offline demo mode if it was a network error or specific geocode error
+    if (err.message.includes('geocode') || err.message.includes('fetch')) {
+      renderWeatherDemo(source);
+    }
+    document.getElementById('map-loader').style.display = 'none';
+  }
+}
+
+// ── RENDER HELPERS ─────────────────────────────────────────────────────────
+const WMO_ICONS = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',
+  51:'🌦️',53:'🌦️',55:'🌧️',61:'🌧️',63:'🌧️',65:'🌧️',
+  71:'🌨️',73:'🌨️',75:'❄️',80:'🌦️',81:'🌧️',82:'⛈️',95:'⛈️'};
+const WMO_NAMES = {0:'Clear',1:'Mostly Clear',2:'Partly Cloudy',3:'Overcast',
+  45:'Fog',51:'Light Drizzle',53:'Drizzle',55:'Heavy Drizzle',
+  61:'Light Rain',63:'Rain',65:'Heavy Rain',71:'Light Snow',
+  73:'Snow',75:'Heavy Snow',80:'Rain Showers',81:'Heavy Showers',
+  82:'Violent Showers',95:'Thunderstorm'};
+
+function renderWeather(w){
+  if(!w || w.error) return;
+  document.getElementById('weather-city-tag').textContent = (w.city||'—').toUpperCase();
+  const icon = WMO_ICONS[w.weathercode] || '🌡️';
+  const cond = WMO_NAMES[w.weathercode] || 'Unknown';
+  document.getElementById('weather-block').innerHTML = `
+    <div class="weather-main">
+      <div class="w-cell">
+        <div class="label">Temperature</div>
+        <div class="val">${w.temperature}<span class="unit">°C</span></div>
+      </div>
+      <div class="w-cell">
+        <div class="label">Humidity</div>
+        <div class="val">${w.humidity ?? '—'}<span class="unit">%</span></div>
+      </div>
+      <div class="w-cell">
+        <div class="label">Wind Speed</div>
+        <div class="val">${w.windspeed}<span class="unit">km/h</span></div>
+      </div>
+      <div class="w-cell">
+        <div class="w-icon">${icon}</div>
+      </div>
+      <div class="weather-cond">${cond} &nbsp;|&nbsp; ${(w.time||'').slice(0,16)}</div>
+    </div>`;
+}
+
+function renderWeatherDemo(city){
+  document.getElementById('weather-city-tag').textContent = city.toUpperCase();
+  document.getElementById('weather-block').innerHTML = `
+    <div class="weather-main">
+      <div class="w-cell"><div class="label">Temperature</div><div class="val">32<span class="unit">°C</span></div></div>
+      <div class="w-cell"><div class="label">Humidity</div><div class="val">78<span class="unit">%</span></div></div>
+      <div class="w-cell"><div class="label">Wind</div><div class="val">14<span class="unit">km/h</span></div></div>
+      <div class="w-cell"><div class="w-icon">⛅</div></div>
+      <div class="weather-cond">Partly Cloudy &nbsp;|&nbsp; DEMO MODE</div>
+    </div>`;
+}
+
+function renderFloods(floods){
+  const el = document.getElementById('flood-block');
+  const badge = document.getElementById('flood-count-badge');
+  if(!floods || floods.length === 0 || floods[0]?.error){
+    badge.textContent = '0';
+    el.innerHTML = '<div class="flood-empty">✓ No active flood events</div>';
+    return;
+  }
+  badge.textContent = floods.length;
+  el.innerHTML = `<div class="flood-list">${floods.slice(0,6).map(f=>`
+    <div class="flood-item">
+      <strong>${f.title||'Unknown Event'}</strong><br>
+      <span>${(f.date||'').slice(0,10)}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderRoute(route){
+  const sec = document.getElementById('route-section');
+  if(!route || route.error){sec.style.display='none';return;}
+  sec.style.display = 'block';
+  document.getElementById('r-dist').textContent = route.distance_km + ' km';
+  document.getElementById('r-dur').textContent  = route.duration_mins + ' min';
+}
+
+function renderPins(pins, category){
+  const sec = document.getElementById('pins-section');
+  if(!pins || pins.length === 0){sec.style.display='none';return;}
+  sec.style.display = 'block';
+  document.getElementById('pins-cat-tag').textContent =
+    (category || 'places').toUpperCase();
+  document.getElementById('pins-block').innerHTML = pins.map(p=>`
+    <div class="pin-item">
+      <strong>${p.name}</strong>
+      ${p.address ? `<div class="pin-addr">${p.address}</div>` : ''}
+      ${p.opening ? `<div class="pin-meta">🕐 ${p.opening}</div>` : ''}
+      ${p.phone   ? `<div class="pin-meta">📞 ${p.phone}</div>` : ''}
+    </div>`).join('');
+}
+
+function refreshMap(url){
+  const frame = document.getElementById('hub-map');
+  const loader = document.getElementById('map-loader');
+  frame.onload = () => { loader.style.display = 'none'; };
+  frame.src = (url || '/static/generated/knowledge_hub_map.html') + '?t=' + Date.now();
+  setTimeout(()=>{ loader.style.display = 'none'; }, 6000); // safety timeout
+}
+
+function clearPins(){
+  document.getElementById('inp-category').value = '';
+  document.getElementById('pins-section').style.display = 'none';
+  toast('Pins cleared');
+}
+
+// ── RESEARCH SEARCH ────────────────────────────────────────────────────────
+let _resMode = 'pdf';
+function setResMode(mode) {
+  _resMode = mode;
+  const pdfBtn = document.getElementById('res-mode-pdf');
+  const webBtn = document.getElementById('res-mode-web');
+  const grad = 'linear-gradient(135deg,var(--purple),var(--violet))';
+  if (mode === 'pdf') {
+    pdfBtn.style.cssText = 'padding:6px 14px;font-size:0.8rem;';
+    webBtn.style.cssText = 'padding:6px 14px;font-size:0.8rem;background:transparent;border:1px solid var(--border);color:var(--text-dim);';
+    document.getElementById('res-search-query').placeholder = 'Search topics, books, papers...';
+  } else {
+    webBtn.style.cssText = 'padding:6px 14px;font-size:0.8rem;';
+    pdfBtn.style.cssText = 'padding:6px 14px;font-size:0.8rem;background:transparent;border:1px solid var(--border);color:var(--text-dim);';
+    document.getElementById('res-search-query').placeholder = 'Search the web via Camofox...';
+  }
+}
+
+async function performResearchSearch() {
+  const query = document.getElementById('res-search-query').value.trim();
+  const loader = document.getElementById('res-loader');
+  const resultsDiv = document.getElementById('res-results');
+
+  if (!query) {
+    toast('Please enter a search query');
+    return;
+  }
+
+  loader.style.display = 'block';
+  resultsDiv.innerHTML = '';
+
+  try {
+    const response = await fetch('/api/research/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query: query, mode: _resMode})
+    });
+    
+    if (!response.ok) throw new Error('Search failed');
+    const data = await response.json();
+    
+    if (data.results && data.results.length > 0) {
+      const icon = _resMode === 'pdf' ? 'fa-file-pdf' : 'fa-globe';
+      resultsDiv.innerHTML = data.results.map((r, i) => `
+        <div class="mcard" style="display:flex; flex-direction:column; gap:8px; padding:15px; height:auto;">
+          <div style="font-size:1.5rem; color:var(--purple);"><i class="fas ${icon}"></i></div>
+          <a href="${r.href || '#'}" target="_blank" class="ticker" style="font-size:0.9rem; color:var(--violet); text-decoration:none; display:block;">${r.title || 'Untitled'}</a>
+          <div class="pin-meta" style="font-size:0.75rem; color:var(--text-dim); line-height:1.4;">${(r.body || 'No description available').substring(0, 120)}...</div>
+          <div class="pin-meta" style="margin-top:auto; font-size:0.65rem; color:var(--text-muted);">
+            <i class="fas fa-spider"></i> CAMOFOX · RESULT ${i + 1}
+          </div>
+        </div>
+      `).join('');
+    } else {
+      resultsDiv.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted);">No results found for "${query}"</div>`;
+    }
+  } catch (err) {
+    resultsDiv.innerHTML = `<div style="grid-column:1/-1; color:var(--danger); text-align:center;">Error: ${err.message}</div>`;
+  } finally {
+    loader.style.display = 'none';
+  }
+}
+
+// ── TERMINAL LOGIC ─────────────────────────────────────────────────────────
+const termInput = document.getElementById('term-input');
+const termOutput = document.getElementById('term-output');
+
+termInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    const cmd = termInput.value.trim();
+    if (!cmd) return;
+    
+    termInput.value = '';
+    appendToTerminal(`<span style="color:var(--purple)">$</span> ${cmd}`);
+    
+    if (cmd.toLowerCase() === 'clear') {
+      termOutput.innerHTML = '';
+      return;
+    }
+    
+    if (cmd.toLowerCase() === 'help') {
+      appendToTerminal('Available: ls, cat, pwd, echo, git, python3, help, clear...');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/cmd/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({command: cmd})
+      });
+      const data = await response.json();
+      if (data.output) {
+        appendToTerminal(data.output.replace(/\n/g, '<br>'));
+      } else if (data.error) {
+        appendToTerminal(`<span style="color:var(--danger)">ERROR: ${data.error}</span>`);
+      }
+    } catch (err) {
+      appendToTerminal(`<span style="color:var(--danger)">Network error: ${err.message}</span>`);
+    }
+  }
+});
+
+function appendToTerminal(text) {
+  const div = document.createElement('div');
+  div.style.marginBottom = '8px';
+  div.innerHTML = text;
+  termOutput.appendChild(div);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+// ── RAG STATUS ─────────────────────────────────────────────────────────────
+async function updateRAGStatus() {
+  try {
+    const r = await fetch('/settings/rag');
+    const data = await r.json();
+    const dot = document.getElementById('rag-dot');
+    const txt = document.getElementById('rag-text');
+    
+    if (data.rag_running) {
+      dot.style.background = data.rag_enabled ? 'var(--success)' : 'var(--gold)';
+      txt.textContent = data.rag_enabled ? 'ACTIVE' : 'READY';
+      txt.style.color = data.rag_enabled ? 'var(--success)' : 'var(--gold)';
+    } else {
+      dot.style.background = 'var(--text-muted)';
+      txt.textContent = 'OFF';
+      txt.style.color = 'var(--text-dim)';
+    }
+  } catch(e) {}
+}
+
+async function toggleRAG() {
+  const txt = document.getElementById('rag-text').textContent;
+  const newState = (txt === 'OFF' || txt === 'READY') ? '1' : '0';
+  
+  try {
+    await fetch('/settings/rag', {
+      method: 'POST',
+      body: new URLSearchParams({enabled: newState})
+    });
+    updateRAGStatus();
+    toast(`RAG ${newState === '1' ? 'Enabled' : 'Disabled'}`);
+  } catch(e) {}
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', ()=>{
+  buildMarketGrid('stock-grid',  STOCKS,  true);
+  buildMarketGrid('crypto-grid', CRYPTOS, false);
+
+  fetchCryptoPrices();
+  fetchStockPrices();
+  updateRAGStatus();
+  
+  // Check for tab param
+  const urlParams = new URLSearchParams(window.location.search);
+  const tab = urlParams.get('tab');
+  if(tab) openTab(tab);
+
+  setInterval(fetchCryptoPrices, 60_000);   // crypto refreshes every 60s
+  setInterval(fetchStockPrices,  120_000);  // stocks every 2 min
+  setInterval(updateRAGStatus,   10_000);   // RAG status every 10s
+
+  // Load map immediately with defaults
+  if(!tab || tab === 'map') updateHub();
+});
+
+// ── KEYBOARD SHORTCUTS ─────────────────────────────────────────────────────
+document.querySelector('.ctrl-strip').addEventListener('keydown', e=>{
+  if(e.key === 'Enter') updateHub();
+});
+
+document.getElementById('res-search-query').addEventListener('keydown', e=>{
+  if(e.key === 'Enter') performResearchSearch();
+});
+</script>
+</body>
+</html>

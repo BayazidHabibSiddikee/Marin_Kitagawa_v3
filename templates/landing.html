@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwordFish Tools Hub — Marin HS-02</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --accent: #4db8a4;
+            --accent-dim: #2d8a78;
+            --text: #e8ddd0;
+            --dim: #8a7d72;
+            --panel: #141419;
+            --border: #2d8a78;
+            --card-bg: #1a1a20;
+            --card-hover: #22222a;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Rajdhani', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Hero Background */
+        .hero-bg {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(77, 184, 164, 0.05) 0%, transparent 70%);
+            z-index: -1;
+        }
+
+        .navbar {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10, 10, 12, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(77, 184, 164, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-family: 'Cinzel', serif;
+            font-size: 1.8rem;
+            letter-spacing: 2px;
+            color: var(--accent);
+            text-shadow: 0 0 10px rgba(77, 184, 164, 0.3);
+            text-decoration: none;
+        }
+
+        .btn-login {
+            display: inline-flex;
+            align-items: center;
+            background: white;
+            color: #000;
+            padding: 10px 20px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            border: 1px solid transparent;
+        }
+
+        .btn-login:hover {
+            background: var(--accent);
+            color: #000;
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(77, 184, 164, 0.4);
+        }
+
+        .btn-login img {
+            width: 18px;
+            margin-right: 10px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+            animation: fadeIn 1s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-family: 'Cinzel', serif;
+            font-size: 3.5rem;
+            margin-bottom: 10px;
+            letter-spacing: 4px;
+            color: var(--accent);
+        }
+
+        .tagline {
+            font-size: 1.2rem;
+            color: var(--dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .section-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.5rem;
+            color: var(--accent);
+            border-bottom: 1px solid rgba(77, 184, 164, 0.3);
+            padding-bottom: 10px;
+            margin: 40px 0 20px;
+            letter-spacing: 2px;
+        }
+
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .tool-card {
+            background: var(--card-bg);
+            border: 1px solid rgba(77, 184, 164, 0.1);
+            padding: 25px;
+            border-radius: 4px;
+            text-align: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            background: var(--card-hover);
+            border-color: var(--accent);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 15px rgba(77, 184, 164, 0.2);
+        }
+
+        .tool-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+            display: block;
+            filter: drop-shadow(0 0 5px rgba(77, 184, 164, 0.3));
+        }
+
+        .tool-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .tool-desc {
+            font-size: 0.85rem;
+            color: var(--dim);
+            line-height: 1.5;
+        }
+
+        .badge-pro {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--accent);
+            color: #000;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 2px 6px;
+            border-radius: 2px;
+            text-transform: uppercase;
+        }
+
+        .footer {
+            margin-top: 100px;
+            padding: 40px;
+            text-align: center;
+            border-top: 1px solid rgba(77, 184, 164, 0.2);
+            font-size: 0.8rem;
+            color: var(--dim);
+            letter-spacing: 1px;
+        }
+
+        .footer span {
+            color: var(--accent);
+        }
+
+        /* Login Required Overlay */
+        .login-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(10, 10, 12, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+            backdrop-filter: blur(2px);
+        }
+
+        .tool-card:hover .login-overlay {
+            opacity: 1;
+        }
+
+        .login-overlay .btn-small {
+            background: var(--accent);
+            color: #000;
+            padding: 8px 16px;
+            border-radius: 2px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero-bg"></div>
+    
+    <nav class="navbar">
+        <a href="/" class="logo">SWORDFISH</a>
+        <a href="/login" class="btn-login">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google">
+            Sign in to Access Tools
+        </a>
+    </nav>
+
+    <div class="container">
+        <header>
+            <h1>SWORDFISH TOOLS</h1>
+            <p class="tagline">The Ultimate Tool-First AI Operating System</p>
+        </header>
+
+        <div class="section-title">📄 PDF & Document Intelligence</div>
+        <div class="tool-grid">
+            <div class="tool-card">
+                <span class="tool-icon">📚</span>
+                <div class="tool-name">Merge PDFs</div>
+                <div class="tool-desc">Combine multiple files into a single document.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">✂️</span>
+                <div class="tool-name">Split PDF</div>
+                <div class="tool-desc">Extract specific pages from any PDF file.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">📝</span>
+                <div class="tool-name">Word ↔ PDF</div>
+                <div class="tool-desc">Seamless conversion between formats.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">📊</span>
+                <div class="tool-name">PDF → Excel</div>
+                <div class="tool-desc">AI-powered table extraction and structure detection.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🔍</span>
+                <div class="tool-name">PDF Analyzer</div>
+                <div class="tool-desc">AI analysis of structure, content, and key insights.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">💬</span>
+                <div class="tool-name">Document Q&A</div>
+                <div class="tool-desc">Chat with your documents using advanced RAG.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+        </div>
+
+        <div class="section-title">🎬 YouTube & Media Masters</div>
+        <div class="tool-grid">
+            <div class="tool-card">
+                <span class="tool-icon">⬇️</span>
+                <div class="tool-name">Video Downloader</div>
+                <div class="tool-desc">Download videos in 4K or extract MP3 audio.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">📜</span>
+                <div class="tool-name">Transcript Tool</div>
+                <div class="tool-desc">Extract text from videos for quick reading.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🎓</span>
+                <div class="tool-name">Video → Study</div>
+                <div class="tool-desc">Convert lectures into study notes and quizzes.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+        </div>
+
+        <div class="section-title">💡 Dynamic Learning & Research</div>
+        <div class="tool-grid">
+            <div class="tool-card">
+                <span class="tool-icon">📖</span>
+                <div class="tool-name">Book Downloader</div>
+                <div class="tool-desc">Search and download from millions of free titles.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🧠</span>
+                <div class="tool-name">Study Engine</div>
+                <div class="tool-desc">Create custom roadmaps and learning plans.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🔬</span>
+                <div class="tool-name">Research Paper</div>
+                <div class="tool-desc">Deep search across arXiv and Google Scholar.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+        </div>
+
+        <div class="section-title">📈 Financial Intelligence</div>
+        <div class="tool-grid">
+            <div class="tool-card">
+                <span class="tool-icon">💰</span>
+                <div class="tool-name">Market Pulse</div>
+                <div class="tool-desc">Real-time stock and crypto data tracking.</div>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🏦</span>
+                <div class="tool-name">Binance Trading</div>
+                <div class="tool-desc">Automated trading with risk management.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+            <div class="tool-card">
+                <span class="tool-icon">🏛️</span>
+                <div class="tool-name">The Arena</div>
+                <div class="tool-desc">Multi-agent debate for high-stakes decisions.</div>
+                <span class="badge-pro">Pro</span>
+                <div class="login-overlay"><a href="/login" class="btn-small">Login Required</a></div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            POWERED BY <span>MARIN HS-02</span> | DESIGNED BY <span>BAYAZID HS</span> | © 2025 SWORDFISH
+        </footer>
+    </div>
+</body>
+</html>

@@ -18,7 +18,7 @@ import ollama
 import httpx
 
 from config import DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL
-from database import init_db, migrate_from_json
+from database import init_db
 import database
 from utils.shared_logic import (
     timer, handle_timer_command, USER_CONTEXT
@@ -35,7 +35,6 @@ import asyncio
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    migrate_from_json()
     print("[Database] Initialized and migrated.")
 
     async def _daily_news_telegram():
@@ -93,19 +92,18 @@ async def lifespan(app: FastAPI):
     seed_from_db("marin")
     asyncio.create_task(proactive_broadcaster())
 
-    # Start Telegram bot (bidirectional chat)
-    try:
-        from telegram_bot import start_telegram_bot
-        asyncio.create_task(start_telegram_bot())
-        print("[Telegram] Bot task created.")
-    except (ImportError, AttributeError):
-        print("[Telegram] Bot startup function not found, skipping.")
+    # Start Telegram bot (managed by supervisord now)
+    # try:
+    #    from telegram_bot import start_telegram_bot
+    #    asyncio.create_task(start_telegram_bot())
+    #    print("[Telegram] Bot task created.")
+    # except (ImportError, AttributeError):
+    #    print("[Telegram] Bot startup function not found, skipping.")
 
     print("[Proactive] Engine started — broadcasts to web + Telegram.")
     print("[Telegram] Bot active — send messages to chat with Marin!")
     yield
 
-import os
 import secrets
 import threading
 import json
@@ -116,11 +114,31 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-# ... (imports)
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 
-from database import get_user_by_api_key, create_user, promote_user
+from config import (
+    DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CONF_URL, SESSION_SECRET_KEY
+)
+from database import init_db, get_user_by_api_key, create_user, promote_user
 
 app = FastAPI(title="Marin HS-02", lifespan=lifespan)
+
+# Session Middleware
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
+
+# OAuth Setup
+oauth = OAuth()
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    oauth.register(
+        name='google',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url=GOOGLE_CONF_URL,
+        client_kwargs={'scope': 'openid email profile'}
+    )
 
 # Basic Security Middleware
 API_SECRET = os.getenv("MARIN_API_SECRET")
@@ -133,46 +151,92 @@ if not API_SECRET:
 
 @app.middleware("http")
 async def verify_api_key(request: Request, call_next):
-    # Protected routes: /api/*, /message, /upload, /proactive/*
-    protected_prefixes = ("/api/", "/message", "/upload", "/proactive/")
+    # Protected routes
+    protected_prefixes = ("/api/", "/message", "/upload", "/proactive/", "/profile")
     
     path = request.url.path
+    
+    # 1. Bypass for landing and auth
+    if path in ("/", "/landing", "/login", "/auth", "/logout", "/setup"):
+        return await call_next(request)
+        
     if any(path.startswith(p) for p in protected_prefixes):
+        import hmac
+        # 2. Check Session First (for Web UI)
+        session_user = request.session.get("user")
+        if session_user:
+            request.state.user = session_user
+            return await call_next(request)
+            
+        # 3. Check Header API Key (for CLI/External)
         api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
         
-        # 1. Check Master Admin Key
-        if api_key == API_SECRET:
+        if api_key and API_SECRET and hmac.compare_digest(api_key, API_SECRET):
             request.state.user = {"user_id": "USR-MASTER", "username": "admin", "role": "owner"}
             return await call_next(request)
             
-        # 2. Check Database Users
         if api_key:
             user = get_user_by_api_key(api_key)
             if user:
                 request.state.user = user
                 return await call_next(request)
         
-        # 3. Auto-Register New Guest if no key or invalid key
-        # (Optional: only auto-register on certain routes or if enabled)
-        if path == "/message" and not api_key:
-            new_user = create_user(f"guest_{secrets.token_hex(4)}")
-            request.state.user = new_user
-            # We'll need to send the key back in the response headers or a specific field
-            response = await call_next(request)
-            response.headers["X-Set-API-Key"] = new_user["api_key"]
-            response.headers["X-User-ID"] = new_user["user_id"]
-            return response
-
-        # 4. Localhost loopback bypass (development only)
-        if request.client.host in ("127.0.0.1", "localhost", "::1"):
-            request.state.user = {"user_id": "USR-LOCAL", "username": "local", "role": "owner"}
-            return await call_next(request)
+        # 4. If no auth, redirect to landing for non-API routes
+        if not path.startswith("/api/"):
+            return RedirectResponse(url="/landing")
             
         return JSONResponse(status_code=403, content={"detail": "Unauthorized. Valid X-API-Key required."})
         
     return await call_next(request)
 
 # ── User Management Routes ──────────────────────────────────────────────────
+
+@app.get("/api/users")
+async def list_users(request: Request):
+    user = getattr(request.state, "user", {})
+    if user.get("role") != "owner":
+        return JSONResponse(status_code=403, content={"detail": "Only owners can list users."})
+    
+    import database
+    conn = database.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username, display_name, role, created_at, last_seen, is_active FROM users")
+    users = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return JSONResponse(users)
+
+@app.post("/api/users/create")
+async def api_create_user(request: Request, username: str = Form(...), display_name: str = Form(None), role: str = Form("guest")):
+    user = getattr(request.state, "user", {})
+    if user.get("role") != "owner":
+        return JSONResponse(status_code=403, content={"detail": "Only owners can create users."})
+        
+    new_user = create_user(username, display_name, role)
+    if "api_key" not in new_user:
+        return JSONResponse(status_code=400, content={"detail": "User already exists or creation failed."})
+        
+    return JSONResponse(new_user)
+
+@app.get("/api/users/me")
+async def get_me(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated."})
+    return JSONResponse(user)
+
+@app.delete("/api/users/{target_user_id}")
+async def api_deactivate_user(request: Request, target_user_id: str):
+    user = getattr(request.state, "user", {})
+    if user.get("role") != "owner":
+        return JSONResponse(status_code=403, content={"detail": "Only owners can deactivate users."})
+    
+    import database
+    conn = database.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET is_active = 0 WHERE user_id = ?", (target_user_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": f"User {target_user_id} deactivated."}
 
 @app.post("/api/users/promote")
 async def api_promote_user(request: Request, target_user_id: str, role: str):
@@ -385,6 +449,7 @@ def init_todo_db():
         );
         CREATE TABLE IF NOT EXISTS todos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT 'USR-00000000',
             title TEXT NOT NULL,
             category_id INTEGER,
             status TEXT DEFAULT 'todo',
@@ -395,6 +460,11 @@ def init_todo_db():
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
         );
     ''')
+    # Migration: Add user_id if missing
+    try:
+        db.execute("ALTER TABLE todos ADD COLUMN user_id TEXT DEFAULT 'USR-00000000'")
+    except sqlite3.OperationalError:
+        pass
     db.commit()
     db.close()
 
@@ -405,23 +475,27 @@ async def get_todo_page(request: Request):
     return templates.TemplateResponse(request=request, name="todo.html")
 
 @app.get("/api/todos")
-async def list_todos():
+async def list_todos(request: Request):
+    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
     db = get_todo_db()
     todos = db.execute(
         "SELECT t.*, c.name as category_name FROM todos t "
-        "LEFT JOIN categories c ON t.category_id = c.id ORDER BY t.id DESC"
+        "LEFT JOIN categories c ON t.category_id = c.id "
+        "WHERE t.user_id = ? ORDER BY t.id DESC",
+        (user_id,)
     ).fetchall()
     db.close()
     return JSONResponse([dict(r) for r in todos])
 
 @app.post("/api/todos")
 async def create_todo(request: Request):
+    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
     data = await request.json()
     db = get_todo_db()
     category_id = data.get("category_id")
     db.execute(
-        "INSERT INTO todos (title, category_id, priority, remind_daily) VALUES (?, ?, ?, ?)",
-        (data["title"], category_id or None, data.get("priority", "medium"), data.get("remind_daily", 0)),
+        "INSERT INTO todos (user_id, title, category_id, priority, remind_daily) VALUES (?, ?, ?, ?, ?)",
+        (user_id, data["title"], category_id or None, data.get("priority", "medium"), data.get("remind_daily", 0)),
     )
     db.commit()
     todo_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -435,8 +509,16 @@ async def create_todo(request: Request):
 
 @app.patch("/api/todos/{id}")
 async def update_todo(id: int, request: Request):
+    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
     data = await request.json()
     db = get_todo_db()
+    
+    # Security: check ownership
+    curr = db.execute("SELECT user_id FROM todos WHERE id = ?", (id,)).fetchone()
+    if not curr or curr["user_id"] != user_id:
+        db.close()
+        return JSONResponse(status_code=403, content={"detail": "Unauthorized to update this todo."})
+
     fields = []
     values = []
     for key in ("title", "status", "priority", "category_id", "remind_daily"):
@@ -460,8 +542,16 @@ async def update_todo(id: int, request: Request):
     return JSONResponse(dict(todo))
 
 @app.delete("/api/todos/{id}")
-async def delete_todo(id: int):
+async def delete_todo(id: int, request: Request):
+    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
     db = get_todo_db()
+    
+    # Security: check ownership
+    curr = db.execute("SELECT user_id FROM todos WHERE id = ?", (id,)).fetchone()
+    if not curr or curr["user_id"] != user_id:
+        db.close()
+        return JSONResponse(status_code=403, content={"detail": "Unauthorized to delete this todo."})
+
     db.execute("DELETE FROM todos WHERE id = ?", (id,))
     db.commit()
     db.close()
@@ -529,6 +619,47 @@ async def stats():
         "priority": {r["priority"]: r["count"] for r in priority},
     })
 
+@app.get("/api/keys")
+async def list_keys(request: Request):
+    user = getattr(request.state, "user", {})
+    user_id = user.get("user_id")
+    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    
+    import database
+    with database.get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT provider, api_key FROM user_api_keys WHERE user_id = ?", (user_id,))
+        keys = [{"provider": r["provider"], "api_key": r["api_key"][:6] + "..."} for r in cursor.fetchall()]
+        return JSONResponse(keys)
+
+@app.post("/api/keys")
+async def add_key(request: Request):
+    user = getattr(request.state, "user", {})
+    user_id = user.get("user_id")
+    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    
+    data = await request.json()
+    provider = data.get("provider")
+    api_key = data.get("api_key")
+    api_secret = data.get("api_secret")
+    
+    if not provider or not api_key:
+        return JSONResponse(status_code=400, content={"detail": "Provider and API Key are required."})
+        
+    import database
+    database.set_user_key(user_id, provider, api_key, api_secret)
+    return {"status": "success", "message": f"API Key for {provider} saved."}
+
+@app.delete("/api/keys/{provider}")
+async def remove_key(request: Request, provider: str):
+    user = getattr(request.state, "user", {})
+    user_id = user.get("user_id")
+    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    
+    import database
+    database.delete_user_key(user_id, provider)
+    return {"status": "success", "message": f"API Key for {provider} removed."}
+
 # ── VAULT API ─────────────────────────────────────────────────────────────
 
 @app.get("/vault", response_class=HTMLResponse)
@@ -539,33 +670,121 @@ async def vault_explorer_page(request: Request):
 async def vault_list_api(request: Request, agent: str):
     from tools.vault_manager import manage_vault
     user = getattr(request.state, "user", {})
-    # For now, guests can only list general categories
-    return JSONResponse(manage_vault(agent, "list"))
+    user_id = user.get("user_id", "USR-MASTER")
+    return JSONResponse(manage_vault(agent, "list", user_id=user_id))
 
 @app.post("/api/vault/read")
 async def vault_read_api(request: Request):
     from tools.vault_manager import manage_vault
     data = await request.json()
     user = getattr(request.state, "user", {})
+    user_id = user.get("user_id", "USR-MASTER")
     # Security: check if guest is trying to read private owner logs
     if user.get("role") == "guest" and "psychology" in data.get("category", ""):
         return JSONResponse(status_code=403, content={"detail": "Unauthorized vault access."})
-    return JSONResponse(manage_vault(data["agent"], "read", data["filename"], category=data["category"]))
+    return JSONResponse(manage_vault(data["agent"], "read", data["filename"], category=data["category"], user_id=user_id))
 
 @app.post("/api/vault/delete")
 async def vault_delete_api(request: Request):
     from tools.vault_manager import manage_vault
     user = getattr(request.state, "user", {})
+    user_id = user.get("user_id", "USR-MASTER")
     if user.get("role") != "owner":
         return JSONResponse(status_code=403, content={"detail": "Only owners can delete vault entries."})
     data = await request.json()
-    return JSONResponse(manage_vault(data["agent"], "delete", data["filename"], category=data["category"]))
+    return JSONResponse(manage_vault(data["agent"], "delete", data["filename"], category=data["category"], user_id=user_id))
+
+@app.get("/landing", response_class=HTMLResponse)
+async def get_landing(request: Request):
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+@app.get("/login")
+async def login(request: Request):
+    if not GOOGLE_CLIENT_ID:
+        # Fallback if no OAuth configured (DEV MODE)
+        user_data = create_user("developer_guest", display_name="Limon (Dev)", role="owner")
+        request.session["user"] = user_data
+        return RedirectResponse(url="/")
+        
+    redirect_uri = request.url_for('auth')
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth")
+async def auth(request: Request):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception as e:
+        return f"Auth error: {e}"
+        
+    user_info = token.get('userinfo')
+    if user_info:
+        email = user_info.get("email")
+        request.session["temp_user"] = {
+            "email": email,
+            "name": user_info.get("name"),
+            "picture": user_info.get("picture")
+        }
+        return RedirectResponse(url="/setup")
+    return "Auth failed."
+
+@app.get("/setup", response_class=HTMLResponse)
+async def get_setup(request: Request):
+    temp = request.session.get("temp_user")
+    if not temp:
+        return RedirectResponse(url="/landing")
+    return templates.TemplateResponse("onboarding.html", {"request": request, "username": temp["name"]})
+
+@app.post("/setup")
+async def post_setup(
+    request: Request,
+    display_name: str = Form(...),
+    openrouter_api_key: str = Form(None),
+    openai_api_key: str = Form(None),
+    google_api_key: str = Form(None),
+    hf_token: str = Form(None)
+):
+    temp = request.session.get("temp_user")
+    if not temp:
+        return RedirectResponse(url="/landing")
+        
+    user = create_user(temp["email"], display_name=display_name)
+    
+    # Send API Key via Email
+    from tools.email_sender import send_email
+    subject = "Your Marin HS-02 Access Key"
+    body = f"""
+Hello {display_name},
+
+Welcome to the kingdom. Your access to Marin HS-02 is ready.
+
+User ID: {user['user_id']}
+API Key: {user['api_key']}
+
+You can use this key for CLI access or API integrations.
+Keep this key secret.
+
+Welcome aboard,
+The Sentinel
+    """
+    send_email(temp["email"], subject, body)
+    
+    request.session["user"] = user
+    request.session.pop("temp_user")
+    return RedirectResponse(url="/")
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/landing")
 
 # ── PAGE ROUTES ───────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/landing")
+    return templates.TemplateResponse(request=request, name="index.html", context={"user": user})
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
@@ -626,8 +845,11 @@ async def handle_message(
         msg_with_timer = f"[Focus: {timer_status['task']} ({timer_status['elapsed_formatted']})]\n{message}"
     
     # Get authenticated user from request state (injected by middleware)
-    user = getattr(request, "state", None).user if hasattr(request, "state") else None
+    # Safely extract user dict
+    state_obj = getattr(request, "state", None)
+    user = getattr(state_obj, "user", None) if state_obj else None
     
+    # We pass the full user dict so Marin can do RBAC and per-user history
     return StreamingResponse(
         marin_main(msg_with_timer, image_path=image_path, user=user, game_context=game_context),
         media_type="text/plain"
@@ -855,5 +1077,4 @@ async def proactive_reset(agent: str = "marin"):
 if __name__ == "__main__":
     import uvicorn
     init_db()
-    migrate_from_json()
     uvicorn.run(app, host=HOST, port=PORT)

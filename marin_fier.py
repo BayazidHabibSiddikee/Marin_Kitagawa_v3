@@ -155,6 +155,30 @@ class WhatsAppInput(BaseModel):
     message_data: Optional[str] = Field(default=None, description="JSON string with sender, content, chat_name, is_group for 'process' action")
     limit: int = Field(default=10, description="Number of items to list")
 
+class YouTubeDownloadInput(BaseModel):
+    url: str = Field(description="The YouTube video URL to download.")
+    mode: str = Field(default="video", description="'video' for mp4, 'audio' for mp3.")
+    quality: str = Field(default="best", description="Quality: 'best', '720p', '480p', etc.")
+
+class BookDownloadInput(BaseModel):
+    query: str = Field(description="Search term for the book.")
+    action: str = Field(default="search", description="'search' or 'download'.")
+    book_url: Optional[str] = Field(default=None, description="URL to download the book from.")
+    title: Optional[str] = Field(default=None, description="Title of the book.")
+
+class PDFAnalyzeInput(BaseModel):
+    path: str = Field(description="Path to the local PDF file.")
+
+class BinanceInput(BaseModel):
+    action: str = Field(description="Action: 'balance', 'price', 'buy', 'sell', 'portfolio', 'history'")
+    symbol: str = Field(default="BTCUSDT", description="Trading pair, e.g., 'BTCUSDT', 'ETHUSDT'")
+    amount: Optional[float] = Field(default=None, description="Amount to buy or sell")
+    price: Optional[float] = Field(default=None, description="Limit price for trade")
+
+class MarketAnalysisInput(BaseModel):
+    topic: str = Field(description="Market or sector to analyze, e.g., 'crypto', 'tech stocks', 'inflation'")
+    depth: str = Field(default="standard", description="'quick' or 'deep' analysis")
+
 class FileInput(BaseModel):
     action: str = Field(description="Action: 'write', 'append', 'read', 'delete'")
     path: str = Field(description="Path to the file relative to project root")
@@ -1262,9 +1286,61 @@ _PLAN_PAT    = re.compile(r'\b(study\s+plan|learning\s+plan|roadmap|curriculum|s
 _REVIEW_PAT  = re.compile(r'\b(review\s+my\s+code|check\s+(my\s+)?code|fix\s+(this|my))\b')
 _DEBUG_PAT   = re.compile(r'\b(error|exception|bug|crash|traceback|not\s+working|failed|undefined)\b')
 
+# Business/Market
+_BINANCE_PAT = re.compile(r'\b(binance|trade|buy|sell|portfolio|balance|order|p&l|pnl)\b')
+_MARKET_PAT  = re.compile(r'\b(market|analyze|analysis|trend|bull|bear|outlook|forecast|economy|gdp|inflation)\b')
+_BOOK_PAT    = re.compile(r'\b(pdf|book|paper|textbook|research|thesis)\b')
+_YT_DL_PAT   = re.compile(r'\b(download|get|save)\s+(?:the\s+)?(youtube|video|audio|song|mp3|mp4)\b', re.IGNORECASE)
+_BOOK_DL_PAT = re.compile(r'\b(search|find|download|get|save)\s+(?:a\s+)?(book|textbook|pdf|epub)\b', re.IGNORECASE)
+_PDF_ANALYZE_PAT = re.compile(r'\b(analyze|summarize|read|explain)\s+(?:the\s+)?(pdf|document|paper)\b', re.IGNORECASE)
+
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
     lower = text.lower()
+
+    # PDF Analyze stage 1
+    if _PDF_ANALYZE_PAT.search(lower):
+        # Look for filename in query
+        m = re.search(r'([\w\-. ]+\.pdf)', text)
+        if m:
+            return {"intent": "pdf_analyze", "params": {"path": m.group(1)}, "confidence": 1.0}
+
+    # Book Download stage 1
+    if _BOOK_DL_PAT.search(lower):
+        action = "download" if any(x in lower for x in ("download", "get", "save")) else "search"
+        query = re.sub(_BOOK_DL_PAT, '', lower).strip()
+        if not query: query = lower
+        return {"intent": "book_download", "params": {"query": query, "action": action}, "confidence": 0.9}
+
+    # YouTube Download stage 1
+    if _YT_DL_PAT.search(lower):
+        m = re.search(r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_-]+)', text)
+        if m:
+            url = m.group(1)
+            mode = "audio" if any(x in lower for x in ("audio", "mp3", "song")) else "video"
+            return {"intent": "youtube_download", "params": {"url": url, "mode": mode}, "confidence": 1.0}
+
+    # Business/Market stage 1
+    if _BINANCE_PAT.search(lower):
+        action = "portfolio"
+        if "buy" in lower: action = "buy"
+        elif "sell" in lower: action = "sell"
+        elif "balance" in lower: action = "balance"
+        elif "history" in lower: action = "history"
+        
+        m_price = re.search(r'price\s*(?:of|for)?\s*([a-z0-9]+)', lower)
+        symbol = m_price.group(1).upper() + "USDT" if m_price else "BTCUSDT"
+        if not symbol.endswith("USDT") and len(symbol) <= 5: symbol += "USDT"
+        
+        return {"intent": "binance", "params": {"action": action, "symbol": symbol}, "confidence": 0.9}
+
+    if _MARKET_PAT.search(lower):
+        return {"intent": "market_analysis", "params": {"topic": lower}, "confidence": 0.9}
+
+    if _BOOK_PAT.search(lower) and re.search(r'\b(search|find|lookup)\b', lower):
+        topic = re.sub(r'\b(search|find|lookup|pdf|book|paper|textbook|research|thesis)\b', '', lower).strip()
+        if not topic: topic = lower
+        return {"intent": "search_pdfs", "params": {"topic": topic.title()}, "confidence": 1.0}
 
     #  Specialized Modes (High priority)
     if _QUIZ_PAT.search(lower):

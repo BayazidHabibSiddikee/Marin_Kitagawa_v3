@@ -759,7 +759,173 @@ def docker_tool(action: str, container: str = "", image: str = "", command: str 
     except Exception as e:
         return f"Docker orchestrator error: {e}"
 
-# ── Tool registry (kept for reference; Node B uses tools_by_name) ────────────
+@tool
+def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, price: float = None, user_id: str = "USR-MASTER") -> str:
+    """Execute trades or check balances on Binance.
+    
+    Actions:
+        - 'balance': Show asset balances.
+        - 'price': Show current price of a symbol.
+        - 'buy': Buy an asset (Market or Limit if price is set).
+        - 'sell': Sell an asset.
+        - 'portfolio': Show overall portfolio and recent trades.
+        - 'history': Show trade history for a symbol.
+        
+    Args:
+        action: 'balance', 'price', 'buy', 'sell', 'portfolio', or 'history'.
+        symbol: e.g., 'BTCUSDT', 'ETHUSDT'.
+        amount: Quantity to trade.
+        price: Optional limit price.
+        user_id: The ID of the user performing the trade.
+    """
+    from tools.binance_client import BinanceManager
+    from tools.portfolio_tracker import PortfolioTracker
+    
+    try:
+        if action == "portfolio":
+            tracker = PortfolioTracker(user_id)
+            return tracker.format_summary()
+        
+        mgr = BinanceManager(user_id)
+        if action == "balance":
+            return str(mgr.get_balance())
+        elif action == "price":
+            return str(mgr.get_symbol_price(symbol))
+        elif action == "buy":
+            if not amount: return "Specify amount to buy."
+            return str(mgr.execute_trade(symbol, "buy", amount, price))
+        elif action == "sell":
+            if not amount: return "Specify amount to sell."
+            return str(mgr.execute_trade(symbol, "sell", amount, price))
+        elif action == "history":
+            return str(mgr.get_history(symbol))
+            
+        return f"Unknown binance action: {action}"
+    except Exception as e:
+        return f"Binance error: {e}"
+
+@tool
+def pdf_analyze_tool(path: str) -> str:
+    """Analyze a PDF document for structure, type, and insights.
+    
+    Args:
+        path: Path to the PDF file.
+    """
+    from tools.pdf_analyzer import analyze_pdf
+    try:
+        res = analyze_pdf(path)
+        if res["ok"]:
+            toc_str = "\n".join(f"- {t[1]}" for t in res["toc"]) if res["toc"] else "No Table of Contents found."
+            return (
+                f"Analysis for {res['filename']}:\n"
+                f"- Type: {res['type']}\n"
+                f"- Pages: {res['page_count']}\n"
+                f"- TOC Preview:\n{toc_str}\n"
+                f"- Preview: {res['text_preview']}"
+            )
+        else:
+            return f"Analysis failed: {res['error']}"
+    except Exception as e:
+        return f"PDF analyzer error: {e}"
+
+@tool
+def book_download_tool(query: str, action: str = "search", book_url: str = None, title: str = None) -> str:
+    """Search or download free books.
+    
+    Args:
+        query: Search term for the book.
+        action: 'search' (to find books) or 'download' (requires book_url and title).
+        book_url: The URL to download from.
+        title: The book title for filename.
+    """
+    from tools.book_downloader import search_gutenberg, download_book
+    try:
+        if action == "download" and book_url and title:
+            res = download_book(book_url, title)
+            if res["ok"]:
+                return f"Successfully downloaded: {title}. File: {res['filename']} in static/downloads/"
+            else:
+                return f"Download failed: {res['error']}"
+        else:
+            results = search_gutenberg(query)
+            if not results: return f"No free books found for '{query}'."
+            
+            lines = [f"Found free books for '{query}':"]
+            for b in results[:5]:
+                lines.append(f"- {b['title']} by {b['author']} | [Download]({b['download_url']})")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Book tool error: {e}"
+
+@tool
+def youtube_download_tool(url: str, mode: str = "video", quality: str = "best") -> str:
+    """Download a YouTube video or extract audio.
+    
+    Args:
+        url: The YouTube video URL.
+        mode: 'video' (mp4) or 'audio' (mp3).
+        quality: e.g., 'best', '720p', '480p'.
+    """
+    from tools.youtube_downloader import download_video, download_audio
+    try:
+        if mode == "audio":
+            res = download_audio(url)
+        else:
+            # Map simplified quality to yt-dlp format
+            q_map = {"720p": "bestvideo[height<=720]+bestaudio/best", "480p": "bestvideo[height<=480]+bestaudio/best"}
+            dl_quality = q_map.get(quality, "best")
+            res = download_video(url, quality=dl_quality)
+            
+        if res["ok"]:
+            return f"Successfully downloaded {mode}: {res['title']}. File: {res['filename']} in static/downloads/"
+        else:
+            return f"Download failed: {res['error']}"
+    except Exception as e:
+        return f"YouTube tool error: {e}"
+
+@tool
+def business_analysis_tool(query: str, symbol: str = "BTCUSDT", user_id: str = "USR-MASTER") -> str:
+    """Analyze a trading opportunity using both Geopolitical and Quantitative agents.
+    Runs the full Arena Debate and returns the final recommendation.
+    
+    Args:
+        query: User's question or context (e.g., 'What will happen if Powell is hawkish?')
+        symbol: Trading pair to analyze (e.g., 'BTCUSDT')
+        user_id: ID of the user (injected automatically).
+    """
+    from tools.agents.business_agents.business_orchestrator import run_business_analysis, format_business_report
+    try:
+        res = run_business_analysis(query, symbol, user_id)
+        return format_business_report(res)
+    except Exception as e:
+        return f"Business Analysis Error: {e}"
+
+@tool
+def execute_trade_tool(symbol: str, side: str, amount: float, condition: str = None, target_price: float = None, user_id: str = "USR-MASTER") -> str:
+    """Execute a trade or set a conditional price alert on Binance.
+    
+    Args:
+        symbol: Trading pair (e.g., 'BTCUSDT')
+        side: 'buy' or 'sell'
+        amount: Quantity to trade
+        condition: Optional. 'below' or 'above' to trigger a trade at a specific price.
+        target_price: Optional. The target price for the condition.
+        user_id: ID of the user (injected automatically).
+    """
+    from tools.binance_client import BinanceManager
+    from tools.trade_executor import executor as trade_executor
+    
+    try:
+        if condition and target_price:
+            return trade_executor.add_alert(user_id, symbol, side, condition, target_price, amount)
+        else:
+            mgr = BinanceManager(user_id)
+            res = mgr.execute_trade(symbol, side, amount)
+            return str(res)
+    except Exception as e:
+        return f"Trade Execution Error: {e}"
+
+# ── Updated Tool registry ────────────────────────────────────────────────────
 
 ALL_TOOLS = [
     alarm_tool, timer_tool, math_plot_tool, map_tool,
@@ -769,7 +935,8 @@ ALL_TOOLS = [
     swordwatch_inspect, swordwatch_kill,
     habit_add, habit_complete, habit_list, habit_stats, habit_today, habit_delete,
     file_tool, model_tool, docker_tool,
-    stealth_browse_tool, forensics_tool, psychology_vault_tool
+    stealth_browse_tool, forensics_tool, psychology_vault_tool,
+    binance_tool, business_analysis_tool, execute_trade_tool, youtube_download_tool, book_download_tool
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -821,6 +988,11 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - stealth_browse_tool(query) — Stealth web research via Camoufox.
 - forensics_tool(action) — System health & threat detection.
 - psychology_vault_tool(action, data) — Track master's learning & book suggestions.
+- binance_tool(action, symbol, amount, price) — Binance portfolio & manual trading.
+- business_analysis_tool(query, symbol) — Runs The Arena Debate (Geopolitical vs Quantitative).
+- execute_trade_tool(symbol, side, amount, condition, target_price) — Safe execution or price-triggered automated trading.
+- youtube_download_tool(url, mode, quality) — Download YouTube videos or MP3 audio. Args: {"url": "...", "mode": "video|audio"}
+- book_download_tool(query, action, book_url, title) — Search or download free books. Args: {"query": "...", "action": "search|download"}
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
@@ -963,7 +1135,15 @@ def node_executor(state: AgentState) -> dict:
         return {"tool_outputs": tool_outputs}
 
     action = current_step.get("action", "respond")
-    args = current_step.get("args", {})
+    args = dict(current_step.get("args", {}))
+
+    # Inject user context into tool arguments if the tool supports it
+    if action in tools_by_name:
+        fn = tools_by_name[action]
+        # Check if 'user_id' is an expected argument for this tool
+        if hasattr(fn, "args_schema") and fn.args_schema and "user_id" in fn.args_schema.model_fields:
+             if "user_id" not in args or args["user_id"] in ("USR-MASTER", "USR-00000000"):
+                 args["user_id"] = state.get("user_id", "USR-00000000")
 
     if action == "respond":
         # Generate a direct response
