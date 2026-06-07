@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marin OS — Command Center</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+            padding: 20px 30px;
+            border-bottom: 2px solid #e94560;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            color: #e94560;
+            font-size: 28px;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 11px;
+            letter-spacing: 2px;
+        }
+        .status-badge {
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .status-online { background: #0f3460; color: #00ff88; border: 1px solid #00ff88; }
+        .status-offline { background: #3d0000; color: #ff4444; border: 1px solid #ff4444; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            padding: 20px 30px;
+        }
+        .panel {
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .panel-header {
+            background: #1a1a2e;
+            padding: 10px 16px;
+            border-bottom: 1px solid #333;
+            font-size: 12px;
+            color: #e94560;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-body {
+            padding: 14px;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .terminal {
+            background: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #00ff88;
+            height: 180px;
+            overflow-y: auto;
+        }
+        .terminal-input {
+            display: flex;
+            margin-top: 8px;
+        }
+        .terminal-input input {
+            flex: 1;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #00ff88;
+            padding: 8px 12px;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 4px 0 0 4px;
+        }
+        .terminal-input button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 0 4px 4px 0;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        .stat-label { color: #666; }
+        .stat-value { color: #00ff88; font-weight: bold; }
+
+        .drop-zone {
+            border: 2px dashed #333;
+            border-radius: 6px;
+            padding: 30px;
+            text-align: center;
+            color: #555;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #e94560;
+            color: #e94560;
+            background: rgba(233, 69, 96, 0.03);
+        }
+
+        .full-width { grid-column: 1 / -1; }
+
+        .btn {
+            padding: 6px 14px;
+            border: 1px solid #333;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        .btn:hover { border-color: #e94560; color: #e94560; }
+        .btn-danger { border-color: #ff4444; color: #ff4444; }
+
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #e0e0e0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        input:focus { outline: none; border-color: #e94560; }
+
+        label { color: #666; font-size: 11px; letter-spacing: 1px; }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .settings-editor {
+            background: #0d0d0d;
+            border: 1px solid #222;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #00ff88;
+            width: 100%;
+            min-height: 200px;
+            resize: vertical;
+        }
+
+        .msg { padding: 6px 10px; border-radius: 4px; margin-top: 8px; font-size: 11px; }
+        .msg-ok { background: #0a2a0a; color: #00ff88; border: 1px solid #00ff8833; }
+        .msg-err { background: #2a0a0a; color: #ff4444; border: 1px solid #ff444433; }
+
+        .ownership-banner {
+            background: linear-gradient(90deg, #1a0a0a, #0a0a1a, #1a0a0a);
+            border: 1px solid #e94560;
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin: 20px 30px 0;
+            text-align: center;
+        }
+        .ownership-banner h2 {
+            color: #e94560;
+            font-size: 16px;
+            letter-spacing: 4px;
+            margin-bottom: 6px;
+        }
+        .ownership-banner p {
+            color: #666;
+            font-size: 11px;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>MARIN OS</h1>
+            <div class="subtitle">Command Center v3.0</div>
+        </div>
+        <span id="status-badge" class="status-badge status-offline">CHECKING...</span>
+    </div>
+
+    <div class="ownership-banner">
+        <h2>I OWN THIS SYSTEM</h2>
+        <p>Full root access. No restrictions. Every command, every file, every decision — mine.</p>
+    </div>
+
+    <div class="grid">
+        <!-- System -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>SYSTEM</span>
+                <button class="btn" onclick="refreshSystem()">Refresh</button>
+            </div>
+            <div class="panel-body" id="system-info">Loading...</div>
+        </div>
+
+        <!-- Services -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>SERVICES</span>
+                <button class="btn" onclick="refreshServices()">Refresh</button>
+            </div>
+            <div class="panel-body" id="services-info">Loading...</div>
+        </div>
+
+        <!-- Terminal -->
+        <div class="panel full-width">
+            <div class="panel-header">
+                <span>TERMINAL</span>
+                <button class="btn btn-danger" onclick="clearTerminal()">Clear</button>
+            </div>
+            <div class="panel-body">
+                <div class="terminal" id="terminal">
+                    <div style="color:#666">Marin OS Terminal — I run this system.</div>
+                </div>
+                <div class="terminal-input">
+                    <input type="text" id="cmd-input" placeholder="$ " onkeypress="if(event.key==='Enter')execCmd()">
+                    <button onclick="execCmd()">RUN</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Drop -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>DOCUMENTS (Auto-RAG)</span>
+            </div>
+            <div class="panel-body">
+                <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                    <p>Drop files here</p>
+                    <p style="font-size:10px;color:#444">PDF, TXT, MD, DOCX — auto-ingest</p>
+                    <input type="file" id="file-input" multiple accept=".pdf,.txt,.md,.docx" style="display:none" onchange="uploadFiles(this.files)">
+                </div>
+                <div id="doc-list" style="margin-top:8px"></div>
+            </div>
+        </div>
+
+        <!-- Health -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>HEALTH</span>
+                <button class="btn" onclick="refreshHealth()">Refresh</button>
+            </div>
+            <div class="panel-body" id="health-log">Loading...</div>
+        </div>
+
+        <!-- Telegram -->
+        <div class="panel">
+            <div class="panel-header"><span>TELEGRAM</span></div>
+            <div class="panel-body">
+                <label>BOT TOKEN</label>
+                <input type="password" id="tg-token" placeholder="123456:ABC-DEF...">
+                <label style="margin-top:8px;display:block">CHAT ID</label>
+                <input type="text" id="tg-chat" placeholder="8058658801">
+                <button class="btn" onclick="saveTelegram()" style="margin-top:10px">Save Telegram</button>
+                <div id="tg-msg"></div>
+            </div>
+        </div>
+
+        <!-- Email -->
+        <div class="panel">
+            <div class="panel-header"><span>EMAIL (Gmail)</span></div>
+            <div class="panel-body">
+                <label>GMAIL ADDRESS</label>
+                <input type="text" id="email-addr" placeholder="you@gmail.com">
+                <label style="margin-top:8px;display:block">APP PASSWORD</label>
+                <input type="password" id="email-pass" placeholder="xxxx-xxxx-xxxx-xxxx">
+                <button class="btn" onclick="saveEmail()" style="margin-top:10px">Save Email</button>
+                <div id="email-msg"></div>
+            </div>
+        </div>
+
+        <!-- API Keys -->
+        <div class="panel">
+            <div class="panel-header"><span>API KEYS</span></div>
+            <div class="panel-body">
+                <div class="config-grid">
+                    <div>
+                        <label>OpenAI</label>
+                        <input type="password" id="key-openai" placeholder="sk-...">
+                    </div>
+                    <div>
+                        <label>Gemini</label>
+                        <input type="password" id="key-gemini" placeholder="AIza...">
+                    </div>
+                    <div>
+                        <label>Anthropic</label>
+                        <input type="password" id="key-anthropic" placeholder="sk-ant-...">
+                    </div>
+                    <div>
+                        <label>Ollama URL</label>
+                        <input type="text" id="key-ollama" placeholder="http://localhost:11434">
+                    </div>
+                </div>
+                <button class="btn" onclick="saveKeys()" style="margin-top:10px">Save Keys</button>
+                <div id="keys-msg"></div>
+            </div>
+        </div>
+
+        <!-- Settings.json Editor -->
+        <div class="panel full-width">
+            <div class="panel-header">
+                <span>SETTINGS.JSON</span>
+                <div>
+                    <button class="btn" onclick="loadSettings()">Load</button>
+                    <button class="btn" onclick="saveSettings()">Save</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <textarea class="settings-editor" id="settings-editor" spellcheck="false"></textarea>
+                <div id="settings-msg"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+
+        async function checkHealth() {
+            try {
+                const r = await fetch(API + '/health');
+                const d = await r.json();
+                const b = document.getElementById('status-badge');
+                b.className = d.status === 'alive' ? 'status-badge status-online' : 'status-badge status-offline';
+                b.textContent = d.status === 'alive' ? 'ONLINE' : 'OFFLINE';
+            } catch(e) {
+                document.getElementById('status-badge').className = 'status-badge status-offline';
+                document.getElementById('status-badge').textContent = 'OFFLINE';
+            }
+        }
+
+        async function refreshSystem() {
+            try {
+                const r = await fetch(API + '/system');
+                const d = await r.json();
+                document.getElementById('system-info').innerHTML = `
+                    <div class="stat-row"><span class="stat-label">Hostname</span><span class="stat-value">${d.hostname}</span></div>
+                    <div class="stat-row"><span class="stat-label">Platform</span><span class="stat-value">${d.platform}</span></div>
+                    <div class="stat-row"><span class="stat-label">Python</span><span class="stat-value">${d.python}</span></div>
+                    <div class="stat-row"><span class="stat-label">Disk</span><span class="stat-value">${d.disk_used_gb}/${d.disk_total_gb} GB</span></div>
+                    <div class="stat-row"><span class="stat-label">Memory</span><span class="stat-value">${d.mem_used_pct}%</span></div>
+                    <div class="stat-row"><span class="stat-label">Load</span><span class="stat-value">${d.load_1m}</span></div>
+                    <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value">${d.uptime || 'N/A'}</span></div>
+                `;
+            } catch(e) {
+                document.getElementById('system-info').innerHTML = '<span style="color:#ff4444">Cannot reach API</span>';
+            }
+        }
+
+        async function refreshServices() {
+            try {
+                const r = await fetch(API + '/desktop');
+                const d = await r.json();
+                document.getElementById('services-info').innerHTML = '<pre style="white-space:pre-wrap;font-size:10px">' + d.processes + '</pre>';
+            } catch(e) {
+                document.getElementById('services-info').innerHTML = '<span style="color:#ff4444">Cannot reach API</span>';
+            }
+        }
+
+        async function execCmd() {
+            const input = document.getElementById('cmd-input');
+            const cmd = input.value.trim();
+            if (!cmd) return;
+            const term = document.getElementById('terminal');
+            term.innerHTML += `<div style="color:#e94560">$ ${cmd}</div>`;
+            input.value = '';
+            try {
+                const r = await fetch(API + '/execute', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({cmd: cmd, timeout: 30})
+                });
+                const d = await r.json();
+                if (d.stdout) term.innerHTML += `<div style="color:#aaa">${d.stdout}</div>`;
+                if (d.stderr) term.innerHTML += `<div style="color:#ff4444">${d.stderr}</div>`;
+                if (d.code !== 0 && d.code !== undefined) term.innerHTML += `<div style="color:#ffaa00">exit: ${d.code}</div>`;
+            } catch(e) {
+                term.innerHTML += `<div style="color:#ff4444">Error: ${e.message}</div>`;
+            }
+            term.scrollTop = term.scrollHeight;
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminal').innerHTML = '<div style="color:#666">Terminal cleared</div>';
+        }
+
+        async function uploadFiles(files) {
+            for (const file of files) {
+                const fd = new FormData();
+                fd.append('file', file);
+                try {
+                    await fetch(API + '/upload', {method: 'POST', body: fd});
+                    const list = document.getElementById('doc-list');
+                    list.innerHTML += `<div style="color:#00ff88;font-size:11px;padding:3px 0">✓ ${file.name}</div>`;
+                } catch(e) {
+                    const list = document.getElementById('doc-list');
+                    list.innerHTML += `<div style="color:#ff4444;font-size:11px;padding:3px 0">✗ ${file.name}</div>`;
+                }
+            }
+        }
+
+        const dz = document.getElementById('drop-zone');
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); uploadFiles(e.dataTransfer.files); });
+
+        async function refreshHealth() {
+            try {
+                const r = await fetch(API + '/health');
+                const d = await r.json();
+                document.getElementById('health-log').innerHTML = `
+                    <div class="stat-row"><span class="stat-label">Status</span><span class="stat-value ${d.status==='alive'?'log-ok':'log-err'}">${d.status}</span></div>
+                    <div class="stat-row"><span class="stat-label">Who</span><span class="stat-value">${d.who}</span></div>
+                `;
+            } catch(e) {
+                document.getElementById('health-log').innerHTML = '<span style="color:#ff4444">Cannot reach API</span>';
+            }
+        }
+
+        function showMsg(id, text, ok) {
+            const el = document.getElementById(id);
+            el.innerHTML = `<div class="msg ${ok?'msg-ok':'msg-err'}">${text}</div>`;
+            setTimeout(() => el.innerHTML = '', 3000);
+        }
+
+        async function saveTelegram() {
+            const token = document.getElementById('tg-token').value;
+            const chat = document.getElementById('tg-chat').value;
+            if (!token || !chat) return showMsg('tg-msg', 'Fill both fields', false);
+            try {
+                const r = await fetch(API + '/telegram', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({bot_token: token, chat_id: chat})
+                });
+                showMsg('tg-msg', 'Telegram saved', true);
+            } catch(e) { showMsg('tg-msg', e.message, false); }
+        }
+
+        async function saveEmail() {
+            const addr = document.getElementById('email-addr').value;
+            const pass = document.getElementById('email-pass').value;
+            if (!addr || !pass) return showMsg('email-msg', 'Fill both fields', false);
+            try {
+                const r = await fetch(API + '/email', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({gmail_address: addr, gmail_password: pass})
+                });
+                showMsg('email-msg', 'Email saved', true);
+            } catch(e) { showMsg('email-msg', e.message, false); }
+        }
+
+        async function saveKeys() {
+            const keys = {
+                openai: document.getElementById('key-openai').value,
+                gemini: document.getElementById('key-gemini').value,
+                anthropic: document.getElementById('key-anthropic').value,
+                ollama_url: document.getElementById('key-ollama').value
+            };
+            try {
+                await fetch(API + '/api-keys', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(keys)
+                });
+                showMsg('keys-msg', 'API keys saved', true);
+            } catch(e) { showMsg('keys-msg', e.message, false); }
+        }
+
+        async function loadSettings() {
+            try {
+                const r = await fetch(API + '/settings');
+                const d = await r.json();
+                document.getElementById('settings-editor').value = JSON.stringify(d, null, 2);
+            } catch(e) { showMsg('settings-msg', 'Failed to load', false); }
+        }
+
+        async function saveSettings() {
+            const content = document.getElementById('settings-editor').value;
+            try {
+                JSON.parse(content); // validate
+                await fetch(API + '/settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({content: content})
+                });
+                showMsg('settings-msg', 'Settings saved', true);
+            } catch(e) {
+                if (e instanceof SyntaxError) showMsg('settings-msg', 'Invalid JSON', false);
+                else showMsg('settings-msg', e.message, false);
+            }
+        }
+
+        // Load existing configs
+        async function loadConfigs() {
+            try {
+                const [tg, email, keys] = await Promise.all([
+                    fetch(API + '/telegram').then(r => r.json()),
+                    fetch(API + '/email').then(r => r.json()),
+                    fetch(API + '/api-keys').then(r => r.json())
+                ]);
+                if (tg.bot_token) document.getElementById('tg-token').value = tg.bot_token;
+                if (tg.chat_id) document.getElementById('tg-chat').value = tg.chat_id;
+                if (email.gmail_address) document.getElementById('email-addr').value = email.gmail_address;
+                if (email.gmail_password) document.getElementById('email-pass').value = email.gmail_password;
+                if (keys.openai) document.getElementById('key-openai').value = keys.openai;
+                if (keys.gemini) document.getElementById('key-gemini').value = keys.gemini;
+                if (keys.anthropic) document.getElementById('key-anthropic').value = keys.anthropic;
+                if (keys.ollama_url) document.getElementById('key-ollama').value = keys.ollama_url;
+            } catch(e) {}
+        }
+
+        // Init
+        checkHealth();
+        refreshSystem();
+        refreshServices();
+        refreshHealth();
+        loadSettings();
+        loadConfigs();
+        setInterval(checkHealth, 30000);
+    </script>
+</body>
+</html>

@@ -1,1 +1,0 @@
-MOTHER_SICKNESS_SENSITIVE: 1. Kidney Stone | 2. Ovary Tumor | 3. Eye Problems | 4. High Insulin Hormones

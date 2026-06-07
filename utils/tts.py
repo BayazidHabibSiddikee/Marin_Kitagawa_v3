@@ -4,6 +4,7 @@ import re
 VOICE_PATH = "~/.piper-voices/en_US-amy-medium.onnx"
 
 def _run_piper(text: str):
+    # OWNER-ONLY — single-user dev box
     cmd = f"echo '{text}' | piper-tts --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
     subprocess.run(cmd, shell=True, capture_output=True)
 

@@ -1,7 +1,0 @@
-langgraph>=1.2.0
-langchain-core>=1.4.0
-# You'll need to install an LLM provider separately, e.g.:
-# langchain-openai for OpenAI models
-# or langchain-anthropic for Claude, etc.
-# For this demo we're using a rule-based approach, but for real LLM use:
-# langchain-openai

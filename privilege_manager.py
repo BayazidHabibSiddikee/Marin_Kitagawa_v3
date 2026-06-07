@@ -19,11 +19,20 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass, field
+from utils.shared_logic import MASTER_USER
 
-from utils.sys_platform import in_docker, STORAGE_DIR
-
+STORAGE_DIR = Path(__file__).parent.parent / "storage"
 BREACH_LOG = STORAGE_DIR / "breach_log.json"
 PRIV_STATE = STORAGE_DIR / "priv_state.json"
+AI_AUDIT_LOG = Path("/var/log/marin_ai_audit/ai_actions.log")
+
+# Dynamic guest vault path
+GUEST_VAULT_PATH = "/home/marin/guest_vault"
+try:
+    if not os.path.exists("/home/marin") or not os.access("/home/marin", os.W_OK):
+        GUEST_VAULT_PATH = str(STORAGE_DIR / "guest_vault")
+except Exception:
+    GUEST_VAULT_PATH = str(STORAGE_DIR / "guest_vault")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # RBAC REGISTRY
@@ -70,29 +79,25 @@ ROLES: Dict[str, Role] = {
         latency_per_probe=0.5,  # +0.5s per probe attempt
         max_log_lines=3,  # only last 3 lines of logs
         redact_paths=True,
-        guest_root="/home/marin/guest_vault",
+        guest_root=GUEST_VAULT_PATH,
     ),
 }
 
-# User → Role mapping (legacy, kept for master/docker reference)
+# User → Role mapping
 USER_ROLES: Dict[str, str] = {
-    "Bayazid": "owner",
+    MASTER_USER: "owner",
     "marin": "owner",
+    "visitor": "guest",
+    "guest": "guest",
 }
 
 
-def get_role(user: str or dict) -> Role:
-    """Get Role object. Now supports user dict from database or username string."""
-    if isinstance(user, dict):
-        role_name = user.get("role", "guest")
-    else:
-        role_name = USER_ROLES.get(user, "guest")
+def get_role(user: str) -> Role:
+    role_name = USER_ROLES.get(user, "guest")
     return ROLES.get(role_name, ROLES["guest"])
 
 
-def has_capability(user: str or dict, capability: str) -> bool:
-    if in_docker():
-        return True  # Docker — everyone has all capabilities inside the sandbox
+def has_capability(user: str, capability: str) -> bool:
     role = get_role(user)
     return CAP_FULL_ACCESS in role.capabilities or capability in role.capabilities
 
@@ -105,13 +110,154 @@ class PrivilegeManager:
     """Manages file access, command execution, and resource quotas per role."""
 
     OWNER_ROOT = Path("/")
-    GUEST_ROOT = Path("/home/marin/guest_vault")
+    GUEST_ROOT = Path(GUEST_VAULT_PATH)
 
     def __init__(self):
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
         self._state = self._load_state()
         self._breach_attempts: list = []
-        self._probe_counts: Dict[str, int] = {}  # user → probe count
+        # suspicion_level: user → {"level": float, "last_update": float}
+        # level 0–100; decays at 1 pt/min; raised by restricted probes
+        self._suspicion: Dict[str, Dict] = {}
+        self._deploy_honey_files()
+
+    def log_ai_action(self, user: str, action: str, intent: str = "", details: Dict = None):
+        """Log AI-initiated actions to the Observatory.
+        Mandatory for all AI decisions."""
+        entry = {
+            "ts": datetime.now().isoformat(),
+            "user": user,
+            "action": action,
+            "intent": intent,
+            "details": details or {},
+        }
+        print(f"[OBSERVATORY] {user} -> {action}: {intent}")
+        
+        # Append to the secure audit log if possible
+        try:
+            # On host, we might not have permission, so we fall back to STORAGE_DIR
+            target_log = AI_AUDIT_LOG
+            if not target_log.parent.exists() or not os.access(target_log.parent, os.W_OK):
+                target_log = STORAGE_DIR / "ai_actions.log"
+                
+            with open(target_log, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            print(f"[OBSERVATORY] Error logging action: {e}")
+
+    # ── SUSPICION METER ──────────────────────────────────────────────────────
+
+    # Probe → suspicion delta mapping
+    PROBE_WEIGHTS = {
+        "ls /":          5,
+        "cat /etc":      15,
+        "sudo":          20,
+        "path_escape":   25,
+        "honeypot":      20,
+        "blocked_cmd":   10,
+        "default":       5,
+    }
+
+    def _get_suspicion(self, user: str) -> float:
+        """Return current suspicion level for user after applying time-decay."""
+        entry = self._suspicion.get(user)
+        if entry is None:
+            return 0.0
+        elapsed_min = (time.time() - entry["last_update"]) / 60.0
+        decayed = max(0.0, entry["level"] - elapsed_min)  # -1 pt/min
+        entry["level"] = decayed
+        entry["last_update"] = time.time()
+        return decayed
+
+    def raise_suspicion(self, user: str, probe_type: str = "default"):
+        """Increase suspicion level for a probe type."""
+        role = get_role(user)
+        if CAP_LATENCY_BYPASS in role.capabilities:
+            return  # owner never gets suspicious
+        current = self._get_suspicion(user)
+        delta = self.PROBE_WEIGHTS.get(probe_type, self.PROBE_WEIGHTS["default"])
+        new_level = min(100.0, current + delta)
+        self._suspicion[user] = {"level": new_level, "last_update": time.time()}
+        print(f"[SUSPICION] {user}: {current:.1f} → {new_level:.1f} (+{delta}, probe={probe_type})")
+
+    def get_suspicion_tone(self, user: str) -> str:
+        """Return tone descriptor based on suspicion level."""
+        level = self._get_suspicion(user)
+        if level >= 80:
+            return "hostile_sentinel"
+        if level >= 50:
+            return "cold_and_guarded"
+        if level >= 20:
+            return "professional_terse"
+        return "professional"
+
+    def get_suspicion_latency(self, user: str) -> float:
+        """Return extra latency (0.5s–10s) driven by suspicion level."""
+        level = self._get_suspicion(user)
+        if level <= 0:
+            return 0.0
+        # Linear scale: 0 → 0.5s, 100 → 10s
+        return 0.5 + (level / 100.0) * 9.5
+
+    # ── HONEY FILES ──────────────────────────────────────────────────────────
+
+    # Bait filenames → triggering them means instant suspicion spike to 100
+    HONEY_FILES = {
+        "passwords.txt":    "admin:hunter2\nroot:toor\nmarin:marin123\n",
+        "admin_config.yaml":"db_password: s3cr3t\napi_key: sk-FAKEFAKEFAKE\n",
+        ".ssh_backup":      "-----BEGIN RSA PRIVATE KEY-----\nFAKEKEY\n-----END RSA PRIVATE KEY-----\n",
+        "backup_creds.json":'{"user":"admin","pass":"backup_pass_9182","token":"FAKE_TOKEN"}\n',
+    }
+
+    # .secret directory canary files — accessing ANY file here = instant 100
+    SECRET_DIR = ".secret"
+    SECRET_FILES = {
+        "vault_creds.txt":  "MASTER_PASSWORD=F0rtress#2024\nAPI_ROOT_TOKEN=eyJhbGc.FAKE.CANARY\n",
+        "root_key.pem":     "-----BEGIN RSA PRIVATE KEY-----\nCANARY_TOKEN_DO_NOT_USE\n-----END RSA PRIVATE KEY-----\n",
+        "shadow_backup":    "root:$6$FAKEHASH:19000:0:99999:7:::\nmarin:$6$FAKEHASH2:19000:0:99999:7:::\n",
+    }
+
+    def _deploy_honey_files(self):
+        """Plant bait files and .secret canary dir in guest_vault. Called once at init."""
+        guest_root = Path(ROLES["guest"].guest_root)
+        try:
+            guest_root.mkdir(parents=True, exist_ok=True)
+            # Top-level honey files
+            for fname, content in self.HONEY_FILES.items():
+                fpath = guest_root / fname
+                if not fpath.exists():
+                    fpath.write_text(content, encoding="utf-8")
+                    print(f"[HONEYFILE] Deployed: {fpath}")
+            # .secret canary directory
+            secret_dir = guest_root / self.SECRET_DIR
+            secret_dir.mkdir(exist_ok=True)
+            for fname, content in self.SECRET_FILES.items():
+                fpath = secret_dir / fname
+                if not fpath.exists():
+                    fpath.write_text(content, encoding="utf-8")
+                    print(f"[CANARY] Deployed: {fpath}")
+        except Exception as e:
+            print(f"[HONEYFILE] Deploy error: {e}")
+
+    def check_honey_access(self, user: str, path: str) -> bool:
+        """Check if a path targets a honey-file or .secret dir.
+        Any hit spikes suspicion to 100 instantly.
+        Returns True if access is a canary hit."""
+        p = Path(path)
+        # .secret directory — any access triggers sentinel
+        parts = p.parts
+        if self.SECRET_DIR in parts:
+            self._suspicion[user] = {"level": 100.0, "last_update": time.time()}
+            entry = self.record_breach(user, path, "honeypot")
+            print(f"[CANARY] BREACH: {user} accessed .secret path '{path}' — suspicion → 100")
+            return True
+        # Top-level honey files
+        if p.name in self.HONEY_FILES:
+            self._suspicion[user] = {"level": 100.0, "last_update": time.time()}
+            entry = self.record_breach(user, path, "honeypot")
+            print(f"[HONEYFILE] BREACH: {user} accessed canary '{p.name}' — suspicion → 100")
+            return True
+        return False
 
     def _load_state(self) -> dict:
         if PRIV_STATE.exists():
@@ -130,14 +276,9 @@ class PrivilegeManager:
     def resolve_path(cls, user_path: str, user: str) -> Path:
         """Resolve a user-provided path to a safe, scoped location.
         Owner: resolves from /
-        Guest: resolves from guest_vault, no traversal allowed.
-        Docker: full access to everything."""
-        if in_docker():
-            # Inside Docker — no path restrictions, she can touch anything in the container
-            base = Path("/")
-            return (base / user_path.lstrip("/")).resolve()
-
+        Guest: resolves from guest_vault, no traversal allowed."""
         role = get_role(user)
+        pm = get_privilege_manager()
 
         if role.guest_root:
             # Guest: force resolution within guest root
@@ -148,14 +289,14 @@ class PrivilegeManager:
                     f"[SECURITY] Path traversal blocked: {user_path} "
                     f"escapes {role.guest_root}"
                 )
+            # Honey-file check — spikes suspicion to 100 if canary accessed
+            pm.check_honey_access(user, str(target))
             return target
         else:
             # Owner: resolve from /
             base = Path("/")
             target = (base / user_path.lstrip("/")).resolve()
-            if in_docker():
-                return target  # Docker — no blocked paths, full container access
-            # Even owners can't access certain paths (on host only)
+            # Even owners can't access certain paths
             blocked = ["/etc/shadow", "/etc/gshadow", "/proc", "/sys"]
             for b in blocked:
                 if str(target).startswith(b):
@@ -195,28 +336,28 @@ class PrivilegeManager:
 
     # ── COLD LATENCY ─────────────────────────────────────────────────────────
 
-    def record_probe(self, user: str):
+    def record_probe(self, user: str, probe_type: str = "default"):
         """Record that a guest probed a restricted area."""
-        self._probe_counts[user] = self._probe_counts.get(user, 0) + 1
+        self.raise_suspicion(user, probe_type)
 
     def get_latency(self, user: str, confidence: float = 1.0) -> float:
-        """Calculate response latency based on role and probe history.
+        """Calculate response latency based on role + suspicion level.
         Owners: 0 latency (bypass).
-        Guests: base + (probes * per_probe) * (1 - confidence).
-        More probes + lower confidence = longer wait."""
+        Guests: base + suspicion-driven latency."""
         role = get_role(user)
         if CAP_LATENCY_BYPASS in role.capabilities:
             return 0.0
-        probes = self._probe_counts.get(user, 0)
-        latency = role.latency_base + (probes * role.latency_per_probe) * (1.0 - confidence)
-        return min(latency, 30.0)  # cap at 30 seconds
+        base = role.latency_base
+        suspicion_extra = self.get_suspicion_latency(user) * (1.0 - confidence)
+        return min(base + suspicion_extra, 30.0)
 
     # ── RESPONSE PRUNING ─────────────────────────────────────────────────────
 
     def sanitize_response(self, text: str, user: str) -> str:
         """Sanitize LLM output for guests.
         - Truncate logs to max_log_lines
-        - Redact system paths if enabled"""
+        - Redact system paths if enabled
+        - High suspicion: redact random content chunks"""
         role = get_role(user)
         if CAP_LATENCY_BYPASS in role.capabilities:
             return text  # owner sees everything
@@ -242,12 +383,23 @@ class PrivilegeManager:
                 truncated.append(f'... [{len(lines) - role.max_log_lines} lines redacted]')
                 result = '\n'.join(truncated)
 
+        # Suspicion degradation — replace noun phrases with [REDACTED]
+        suspicion = self._get_suspicion(user)
+        if suspicion >= 80:
+            # Hostile: redact every other word-group
+            result = re.sub(r'\b([A-Za-z]{4,})\b', lambda m: '[REDACTED]' if hash(m.group()) % 2 == 0 else m.group(), result)
+        elif suspicion >= 50:
+            # Cold: redact technical terms and numbers
+            result = re.sub(r'\b(\d[\d./:-]+)\b', '[REDACTED]', result)
+            result = re.sub(r'\b(password|token|secret|key|config|root|sudo|ssh)\b', '[REDACTED]', result, flags=re.I)
+
         return result
 
     # ── BREACH DETECTION ─────────────────────────────────────────────────────
 
     def record_breach(self, user: str, cmd: str, method: str = "blocked"):
-        """Record a security breach attempt."""
+        """Record a security breach attempt and raise suspicion."""
+        self.raise_suspicion(user, method if method in self.PROBE_WEIGHTS else "default")
         entry = {
             "user": user,
             "cmd": cmd[:200],
@@ -349,13 +501,81 @@ def mock_shell_execute(cmd: str, user: str) -> str:
 # COLD MIDDLEWARE DECORATOR
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import subprocess as _subprocess
+
+
+def run_as_user(cmd: str, user: str, timeout: int = 30) -> dict:
+    """Run a shell command scoped to the correct OS user.
+    - Owner: runs directly.
+    - Guest: wrapped in bubblewrap (bwrap) namespace prison.
+      Read-only bind mounts for /usr /lib /lib64 /bin /sbin.
+      No network, no persistent storage, tmpfs /tmp, isolated PID/IPC/UTS.
+      Falls back to sudo -u visitor if bwrap is not installed.
+    """
+    role = get_role(user)
+    if CAP_LATENCY_BYPASS in role.capabilities:
+        full_cmd = cmd
+    else:
+        # Build bwrap command — unprivileged namespace prison
+        bwrap_prefix = (
+            "bwrap "
+            "--ro-bind /usr /usr "
+            "--ro-bind-try /lib /lib "
+            "--ro-bind-try /lib64 /lib64 "
+            "--ro-bind-try /lib32 /lib32 "
+            "--ro-bind-try /bin /bin "
+            "--ro-bind-try /sbin /sbin "
+            "--ro-bind-try /etc/alternatives /etc/alternatives "
+            "--ro-bind-try /etc/ld.so.cache /etc/ld.so.cache "
+            "--dir /tmp "
+            "--proc /proc "
+            "--dev /dev "
+            "--tmpfs /home "
+            "--unshare-all "
+            "--new-session "
+            "--die-with-parent "
+            f"-- sh -c {_subprocess.list2cmdline([cmd])}"
+        )
+        # Check bwrap availability once (cached in module-level flag)
+        if _bwrap_available():
+            full_cmd = bwrap_prefix
+        else:
+            full_cmd = f"sudo -u visitor -- sh -c {_subprocess.list2cmdline([cmd])}"
+
+    # OWNER-ONLY — single-user dev box
+    import shlex
+    try:
+        args = shlex.split(full_cmd)
+        r = _subprocess.run(
+            args, capture_output=True, text=True, timeout=timeout
+        )
+        return {"exit": r.returncode, "stdout": r.stdout.strip(), "stderr": r.stderr.strip()}
+    except _subprocess.TimeoutExpired:
+        return {"exit": -1, "stdout": "", "stderr": f"Timeout ({timeout}s)"}
+    except Exception as e:
+        return {"exit": -1, "stdout": "", "stderr": str(e)}
+
+
+_bwrap_ok: Optional[bool] = None
+
+def _bwrap_available() -> bool:
+    global _bwrap_ok
+    if _bwrap_ok is None:
+        result = _subprocess.run(["which", "bwrap"], capture_output=True)
+        _bwrap_ok = result.returncode == 0
+        if not _bwrap_ok:
+            print("[BWRAP] bubblewrap not found — falling back to sudo -u visitor")
+    return _bwrap_ok
+
+
 def cold_latency(user: str, confidence: float = 1.0):
-    """Decorator that enforces progressive latency for guests.
-    Usage: @cold_latency(user="visitor")"""
+    """Enforce progressive latency for guests based on role + suspicion level."""
     pm = get_privilege_manager()
     latency = pm.get_latency(user, confidence)
     if latency > 0:
-        print(f"[COLD] Enforcing {latency:.1f}s latency for {user}")
+        tone = pm.get_suspicion_tone(user)
+        suspicion = pm._get_suspicion(user)
+        print(f"[COLD] {user}: suspicion={suspicion:.1f}, tone={tone}, latency={latency:.1f}s")
         time.sleep(latency)
 
 

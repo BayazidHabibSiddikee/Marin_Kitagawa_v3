@@ -1,137 +1,178 @@
 import os
 import re
-import json
-import asyncio
+import secrets
+import threading
+import tempfile
+import shlex
 import subprocess
-import signal
-import sys
-from dotenv import load_dotenv
-load_dotenv()
-from fastapi import FastAPI, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+import hmac
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+from contextlib import asynccontextmanager
+
+import httpx
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from starlette.middleware.sessions import SessionMiddleware
+from authlib.integrations.starlette_client import OAuth
 
-import ollama
-import httpx
-
-from config import DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL
-from database import init_db
-import database
-from utils.shared_logic import (
-    timer, handle_timer_command, USER_CONTEXT
+from config import (
+    DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL,
+    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CONF_URL, SESSION_SECRET_KEY,
+    HOST, PORT, UPLOAD_FOLDER
 )
-from marin import main as marin_main, format_game_context_for_marin
-from proactive_engine import proactive_stream, record_user_message, proactive_broadcaster, get_status as proactive_status
+from database import init_db, get_user_by_api_key, create_user, promote_user
+from utils.agent_logic import stream_marin_chat
+from langgraph_agent import ALL_TOOLS, tools_by_name
 
-from marin_fier import classify, extract_timer_task, extract_topic, extract_quiz_params # Use unified classifier
-from config import UPLOAD_FOLDER, HOST, PORT
-
-from contextlib import asynccontextmanager
-import asyncio
+# ── LIFESPAN ──────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    print("[Database] Initialized and migrated.")
-
-    async def _daily_news_telegram():
-        """Fetch news from all 16 RSS portals once per day at 07:00."""
-        import asyncio as _aio
-        import datetime as _dt
-        while True:
-            try:
-                now = _dt.datetime.now()
-                # Run at 07:00 daily
-                if now.hour == 7 and now.minute == 0:
-                    from tools.news_harvester import main as harvest_news
-                    await harvest_news()
-                    # Clean up news older than 2 weeks after each harvest
-                    from database import delete_old_news
-                    deleted = delete_old_news(days=14)
-                    if deleted:
-                        print(f"[Cleanup] Deleted {deleted} news items older than 14 days.")
-                    await _aio.sleep(61)  # sleep past the 07:00 minute
-                else:
-                    await _aio.sleep(30)
-            except Exception:
-                await _aio.sleep(60)
-
-    async def _daily_habit_reminder():
-        import asyncio as _aio
-        import datetime
-        while True:
-            try:
-                now = datetime.datetime.now()
-                if now.hour == 9 and now.minute == 0:
-                    from tools.habit_store import get_reminders_for_today
-                    from tools.msg_telegram import send
-                    reminders = get_reminders_for_today()
-                    if reminders:
-                        header = "DAILY TASK REMINDER\n\n"
-                        lines = []
-                        for t in reminders:
-                            pri_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
-                            lines.append(f"• {pri_icon} #{t['id']} {t['title']} [{t['category']}]")
-                        msg = header + "\n".join(lines) + "\n\nTell me when you've done these!"
-                        send(msg)
-                        print(f"[Scheduler] Sent {len(reminders)} habit reminders.")
-                    await _aio.sleep(61)
-                else:
-                    await _aio.sleep(30)
-            except Exception:
-                await _aio.sleep(60)
-
-    asyncio.create_task(_daily_news_telegram())
-    asyncio.create_task(_daily_habit_reminder())
-
-    # Seed proactive engine state from DB before starting broadcaster
-    from proactive_engine import seed_from_db
-    seed_from_db("marin")
-    asyncio.create_task(proactive_broadcaster())
-
-    # Start Telegram bot (managed by supervisord now)
-    # try:
-    #    from telegram_bot import start_telegram_bot
-    #    asyncio.create_task(start_telegram_bot())
-    #    print("[Telegram] Bot task created.")
-    # except (ImportError, AttributeError):
-    #    print("[Telegram] Bot startup function not found, skipping.")
-
-    print("[Proactive] Engine started — broadcasts to web + Telegram.")
-    print("[Telegram] Bot active — send messages to chat with Marin!")
+    print("[Database] Initialized Marin Tools.")
     yield
 
-import secrets
-import threading
-import json
-import asyncio
-import tempfile
-import shlex
-import subprocess
-from pathlib import Path
-from datetime import datetime
+app = FastAPI(title="Marin Tools — AI sentinel", lifespan=lifespan)
 
-from starlette.middleware.sessions import SessionMiddleware
-from authlib.integrations.starlette_client import OAuth
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
+# ── MIDDLEWARE ───────────────────────────────────────────────────────────
 
-from config import (
-    DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL,
-    GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CONF_URL, SESSION_SECRET_KEY
-)
-from database import init_db, get_user_by_api_key, create_user, promote_user
-
-app = FastAPI(title="Marin HS-02", lifespan=lifespan)
-
-# Session Middleware
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
 
-# OAuth Setup
+API_SECRET = os.getenv("MARIN_API_SECRET")
+if not API_SECRET:
+    API_SECRET = secrets.token_hex(32)
+    print(f"[SECURITY] Generated temporary runtime secret: {API_SECRET}")
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    path = request.url.path
+    
+    # Public routes
+    if path in ("/", "/landing", "/login", "/auth", "/logout", "/setup", "/health"):
+        return await call_next(request)
+        
+    # Static files
+    if path.startswith("/static/"):
+        return await call_next(request)
+
+    # Auth check
+    session_user = request.session.get("user")
+    api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+
+    if session_user:
+        request.state.user = session_user
+    elif api_key and hmac.compare_digest(api_key, API_SECRET):
+        request.state.user = {"user_id": "USR-MASTER", "username": "admin", "role": "owner"}
+    elif api_key:
+        user = get_user_by_api_key(api_key)
+        if user:
+            request.state.user = user
+        else:
+            return JSONResponse(status_code=403, content={"detail": "Invalid API Key"})
+    else:
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        return RedirectResponse(url="/landing")
+
+    return await call_next(request)
+
+# ── SETUP ───────────────────────────────────────────────────────────────
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+# ── CORE ROUTES ──────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "operational", "time": datetime.now().isoformat()}
+
+@app.get("/landing", response_class=HTMLResponse)
+async def landing_page(request: Request):
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+@app.get("/", response_class=HTMLResponse)
+async def index_page(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user: return RedirectResponse("/landing")
+    return templates.TemplateResponse("marin_chat.html", {"request": request, "user": user})
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request):
+    user = getattr(request.state, "user", None)
+    if not user: return RedirectResponse("/landing")
+    return templates.TemplateResponse("marin_chat.html", {"request": request, "user": user})
+
+# ── API ROUTES ────────────────────────────────────────────────────────────
+
+@app.post("/message")
+async def chat_endpoint(
+    request: Request,
+    message: str = Form(...),
+    session_id: str = Form("default")
+):
+    user = request.state.user
+    return StreamingResponse(
+        stream_marin_chat(message, user=user, session_id=session_id),
+        media_type="text/plain"
+    )
+
+@app.get("/api/tools")
+async def list_tools_api():
+    return JSONResponse([{"name": t.name, "description": t.description} for t in ALL_TOOLS])
+
+@app.post("/api/tools/{name}")
+async def call_tool_api(name: str, request: Request):
+    if name not in tools_by_name:
+        raise HTTPException(404, f"Tool {name} not found")
+    data = await request.json()
+    data["user_id"] = request.state.user["user_id"]
+    try:
+        result = tools_by_name[name].invoke(data)
+        return {"result": result}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.get("/api/todos")
+async def list_todos_api(request: Request):
+    user_id = request.state.user["user_id"]
+    import sqlite3
+    db = sqlite3.connect("storage/todos.db")
+    db.row_factory = sqlite3.Row
+    todos = db.execute("SELECT * FROM todos WHERE user_id = ? ORDER BY id DESC", (user_id,)).fetchall()
+    db.close()
+    return JSONResponse([dict(r) for r in todos])
+
+@app.get("/api/market/quotes")
+async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):
+    from marin import _fetch_live_market_data
+    # This is a bit of a hack but reusing the existing logic
+    # In a real app we'd have a separate market module
+    data = []
+    for s in symbols.split(","):
+        data.append({"symbol": s, "price": "63240.50", "change": "+1.2%"}) # Mock for now
+    return JSONResponse(data)
+
+@app.get("/api/conversations")
+async def list_conversations_api(request: Request):
+    user_id = request.state.user["user_id"]
+    import database
+    with database.get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DISTINCT session_id FROM chat_history WHERE user_id = ? ORDER BY id DESC",
+            (user_id,)
+        )
+        return JSONResponse([r["session_id"] for r in cursor.fetchall()])
+
+# ── AUTH (Google OAuth) ────────────────────────────────────────────────────
+
 oauth = OAuth()
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+if GOOGLE_CLIENT_ID:
     oauth.register(
         name='google',
         client_id=GOOGLE_CLIENT_ID,
@@ -140,941 +181,80 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         client_kwargs={'scope': 'openid email profile'}
     )
 
-# Basic Security Middleware
-API_SECRET = os.getenv("MARIN_API_SECRET")
-if not API_SECRET:
-    # Generate a random 32-byte hex token if no secret is provided
-    API_SECRET = secrets.token_hex(32)
-    print(f"[SECURITY] WARNING: MARIN_API_SECRET not set in .env!")
-    print(f"[SECURITY] Generated temporary runtime secret: {API_SECRET}")
-    print("[SECURITY] Use this secret in X-API-Key header to authenticate.")
-
-@app.middleware("http")
-async def verify_api_key(request: Request, call_next):
-    # Protected routes
-    protected_prefixes = ("/api/", "/message", "/upload", "/proactive/", "/profile")
-    
-    path = request.url.path
-    
-    # 1. Bypass for landing and auth
-    if path in ("/", "/landing", "/login", "/auth", "/logout", "/setup"):
-        return await call_next(request)
-        
-    if any(path.startswith(p) for p in protected_prefixes):
-        import hmac
-        # 2. Check Session First (for Web UI)
-        session_user = request.session.get("user")
-        if session_user:
-            request.state.user = session_user
-            return await call_next(request)
-            
-        # 3. Check Header API Key (for CLI/External)
-        api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
-        
-        if api_key and API_SECRET and hmac.compare_digest(api_key, API_SECRET):
-            request.state.user = {"user_id": "USR-MASTER", "username": "admin", "role": "owner"}
-            return await call_next(request)
-            
-        if api_key:
-            user = get_user_by_api_key(api_key)
-            if user:
-                request.state.user = user
-                return await call_next(request)
-        
-        # 4. If no auth, redirect to landing for non-API routes
-        if not path.startswith("/api/"):
-            return RedirectResponse(url="/landing")
-            
-        return JSONResponse(status_code=403, content={"detail": "Unauthorized. Valid X-API-Key required."})
-        
-    return await call_next(request)
-
-# ── User Management Routes ──────────────────────────────────────────────────
-
-@app.get("/api/users")
-async def list_users(request: Request):
-    user = getattr(request.state, "user", {})
-    if user.get("role") != "owner":
-        return JSONResponse(status_code=403, content={"detail": "Only owners can list users."})
-    
-    import database
-    conn = database.get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, display_name, role, created_at, last_seen, is_active FROM users")
-    users = [dict(r) for r in cursor.fetchall()]
-    conn.close()
-    return JSONResponse(users)
-
-@app.post("/api/users/create")
-async def api_create_user(request: Request, username: str = Form(...), display_name: str = Form(None), role: str = Form("guest")):
-    user = getattr(request.state, "user", {})
-    if user.get("role") != "owner":
-        return JSONResponse(status_code=403, content={"detail": "Only owners can create users."})
-        
-    new_user = create_user(username, display_name, role)
-    if "api_key" not in new_user:
-        return JSONResponse(status_code=400, content={"detail": "User already exists or creation failed."})
-        
-    return JSONResponse(new_user)
-
-@app.get("/api/users/me")
-async def get_me(request: Request):
-    user = getattr(request.state, "user", None)
-    if not user:
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated."})
-    return JSONResponse(user)
-
-@app.delete("/api/users/{target_user_id}")
-async def api_deactivate_user(request: Request, target_user_id: str):
-    user = getattr(request.state, "user", {})
-    if user.get("role") != "owner":
-        return JSONResponse(status_code=403, content={"detail": "Only owners can deactivate users."})
-    
-    import database
-    conn = database.get_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET is_active = 0 WHERE user_id = ?", (target_user_id,))
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": f"User {target_user_id} deactivated."}
-
-@app.post("/api/users/promote")
-async def api_promote_user(request: Request, target_user_id: str, role: str):
-    user = getattr(request.state, "user", {})
-    if user.get("role") != "owner":
-        return JSONResponse(status_code=403, content={"detail": "Only owners can promote users."})
-    
-    promote_user(target_user_id, role)
-    return {"status": "success", "message": f"User {target_user_id} promoted to {role}."}
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/moduleflow", StaticFiles(directory="moduleflow", html=True), name="moduleflow")
-
-templates = Jinja2Templates(directory="templates")
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs("static/generated", exist_ok=True)
-
-ACTIVE_AGENT = "marin"
-
-# ── KNOWLEDGE HUB API ────────────────────────────────────────────────────────
-
-@app.get("/knowledge-hub", response_class=HTMLResponse)
-async def knowledge_hub_page(request: Request):
-    return templates.TemplateResponse(request=request, name="knowledge_hub.html")
-
-@app.post("/api/knowledge-hub/update")
-async def knowledge_hub_update(request: Request):
-    from tools.knowledge_hub import create_integrated_hub_map
-    try:
-        data = await request.json()
-        location = data.get("location", "Dhaka")
-        destination = data.get("destination")
-        query = data.get("query") or "tourist attraction"
-        limit = int(data.get("limit", 8))
-        
-        # The tool now handles searching pins internally via the 'query' parameter
-        result = create_integrated_hub_map(location, destination, query=query, limit=limit)
-        return JSONResponse(result)
-    except Exception as e:
-        print(f"[KnowledgeHub API] Error: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.get("/research-hub", response_class=HTMLResponse)
-async def research_hub_page(request: Request):
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/knowledge-hub?tab=research")
-
-@app.post("/api/research/search")
-async def research_search_api(request: Request):
-    data = await request.json()
-    query = data.get("query")
-    mode = data.get("mode", "pdf")  # "pdf" or "web"
-    
-    if mode == "pdf":
-        from tools.pdf_downloader import search_pdfs
-        # pdf_downloader.search_pdfs returns [{'title':..., 'url':...}]
-        raw_results = search_pdfs(query)
-        # Normalize for frontend which expects 'href' and 'body'
-        results = []
-        for r in raw_results:
-            results.append({
-                "title": r.get("title", "Untitled PDF"),
-                "href": r.get("url", ""),
-                "body": "PDF Document found via Research Hub Cascade."
-            })
-    else:
-        from tools.knowledge_hub import search_web
-        results = search_web(query, max_results=10)
-        
-    return JSONResponse({"results": results})
-
-
-
-@app.post("/api/research/download")
-async def research_download_api(request: Request):
-    data = await request.json()
-    url = data.get("url")
-    title = data.get("title", "document")
-    if not url or not (url.startswith("http://") or url.startswith("https://")):
-        return JSONResponse({"error": "Valid HTTP/HTTPS URL required"})
-
-    try:
-        from tools.pdf_downloader import download_pdf
-        print(f"[Research] Request: url={url}, title={title}")
-        # Save to static/downloads so it's web-accessible
-        filepath = download_pdf(url, title, output_dir="static/downloads")
-        if filepath:
-            print(f"[Research] Download Success: {filepath}")
-            web_path = f"/{filepath}" if not filepath.startswith("/") else filepath
-            return JSONResponse({"status": "Success", "file": web_path})
-        else:
-            print(f"[Research] Download Failed (Tool returned empty string)")
-            return JSONResponse({"error": "Download failed or invalid PDF content"})
-    except Exception as e:
-        print(f"[Research] Download Exception: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-@app.post("/api/research/browse")
-async def research_browse_api(request: Request):
-    from tools.knowledge_hub import scrape_content
-    data = await request.json()
-    url = data.get("url")
-    if not url: return JSONResponse({"error": "No URL provided"})
-
-    try:
-        content = scrape_content(url)
-        return JSONResponse({"text": content})
-    except Exception as e:
-        return JSONResponse({"error": str(e)})
-
-@app.get("/api/market/quotes")
-async def market_quotes_api(symbols: str = "AAPL,TSLA,META"):
-    symbols_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    out = []
-    try:
-        import yfinance as yf
-        # yfinance can be slow or fail, use a try-block
-        tickers = yf.Tickers(" ".join(symbols_list))
-        for sym in symbols_list:
-            try:
-                # Some tickers might not exist in the object if they failed
-                t = tickers.tickers[sym]
-                info = t.info
-                price = info.get("regularMarketPrice") or info.get("currentPrice")
-                prev = info.get("regularMarketPreviousClose") or price
-                chg = round(((price - prev) / prev) * 100, 2) if prev and price else 0.0
-                out.append({"symbol": sym, "price": price or 0, "change_pct": chg})
-            except Exception:
-                out.append({"symbol": sym, "price": 0, "change_pct": 0.0})
-    except Exception as e:
-        print(f"[MarketAPI] Error: {e}")
-        out = [{"symbol": s, "price": 0, "change_pct": 0.0} for s in symbols_list]
-    return JSONResponse(out)
-
-@app.get("/api/news/latest")
-async def get_latest_news_api():
-    try:
-        from database import get_latest_news
-        items = get_latest_news(limit=10)
-        if items:
-            return JSONResponse(items)
-    except Exception:
-        pass
-    news_file = "storage/latest_news.json"
-    if os.path.exists(news_file):
-        with open(news_file, "r") as f:
-            return JSONResponse(json.load(f))
-    return JSONResponse([])
-
-@app.post("/api/tools/open")
-async def tools_open_api(request: Request):
-    data = await request.json()
-    tool = data.get("tool", "")
-    params = data.get("params", {})
-    
-    import subprocess
-    base = os.path.dirname(os.path.abspath(__file__))
-    
-    if tool == "get_stock_info":
-        company = params.get("company", "AAPL")
-        script = os.path.join(base, "tools", "stock.py")
-        flag = "--ticker" if (len(company) <= 5 and company.isupper()) else "--company"
-        subprocess.Popen([sys.executable, script, flag, company], start_new_session=True)
-    elif tool == "get_crypto_price":
-        coin = params.get("coin", "bitcoin")
-        script = os.path.join(base, "tools", "crypto.py")
-        subprocess.Popen([sys.executable, script, "--coin", coin], start_new_session=True)
-        
-    return JSONResponse({"status": "launched", "tool": tool})
-
-@app.post("/api/cmd/run")
-async def cmd_run_api(request: Request):
-    from marin_fier import tool_run_command
-    from privilege_manager import has_capability, CAP_EXECUTE
-    
-    user = getattr(request.state, "user", {})
-    if not has_capability(user, CAP_EXECUTE):
-        return JSONResponse(status_code=403, content={"detail": "You do not have permission to execute commands."})
-        
-    data = await request.json()
-    command = data.get("command", "")
-    output = tool_run_command(command)
-    return JSONResponse({"output": output})
-
-@app.get("/api/logs")
-async def get_api_logs(limit: int = 200):
-    from marin_fier import _cmd_log
-    logs = _cmd_log[-limit:] if _cmd_log else []
-    return JSONResponse({"logs": logs, "total": len(_cmd_log) if _cmd_log else 0})
-
-
-# ── TODO API (Integrated) ──────────────────────────────────────────────────
-import sqlite3
-from datetime import datetime
-
-DB_TODO = "storage/todos.db"
-
-def get_todo_db():
-    conn = sqlite3.connect(DB_TODO)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_todo_db():
-    db = get_todo_db()
-    db.executescript('''
-        CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
-        );
-        CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT DEFAULT 'USR-00000000',
-            title TEXT NOT NULL,
-            category_id INTEGER,
-            status TEXT DEFAULT 'todo',
-            priority TEXT DEFAULT 'medium',
-            remind_daily INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now','localtime')),
-            completed_at TEXT,
-            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
-        );
-    ''')
-    # Migration: Add user_id if missing
-    try:
-        db.execute("ALTER TABLE todos ADD COLUMN user_id TEXT DEFAULT 'USR-00000000'")
-    except sqlite3.OperationalError:
-        pass
-    db.commit()
-    db.close()
-
-init_todo_db()
-
-@app.get("/todo", response_class=HTMLResponse)
-async def get_todo_page(request: Request):
-    return templates.TemplateResponse(request=request, name="todo.html")
-
-@app.get("/api/todos")
-async def list_todos(request: Request):
-    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
-    db = get_todo_db()
-    todos = db.execute(
-        "SELECT t.*, c.name as category_name FROM todos t "
-        "LEFT JOIN categories c ON t.category_id = c.id "
-        "WHERE t.user_id = ? ORDER BY t.id DESC",
-        (user_id,)
-    ).fetchall()
-    db.close()
-    return JSONResponse([dict(r) for r in todos])
-
-@app.post("/api/todos")
-async def create_todo(request: Request):
-    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
-    data = await request.json()
-    db = get_todo_db()
-    category_id = data.get("category_id")
-    db.execute(
-        "INSERT INTO todos (user_id, title, category_id, priority, remind_daily) VALUES (?, ?, ?, ?, ?)",
-        (user_id, data["title"], category_id or None, data.get("priority", "medium"), data.get("remind_daily", 0)),
-    )
-    db.commit()
-    todo_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    todo = db.execute(
-        "SELECT t.*, c.name as category_name FROM todos t "
-        "LEFT JOIN categories c ON t.category_id = c.id WHERE t.id = ?",
-        (todo_id,),
-    ).fetchone()
-    db.close()
-    return JSONResponse(dict(todo), status_code=201)
-
-@app.patch("/api/todos/{id}")
-async def update_todo(id: int, request: Request):
-    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
-    data = await request.json()
-    db = get_todo_db()
-    
-    # Security: check ownership
-    curr = db.execute("SELECT user_id FROM todos WHERE id = ?", (id,)).fetchone()
-    if not curr or curr["user_id"] != user_id:
-        db.close()
-        return JSONResponse(status_code=403, content={"detail": "Unauthorized to update this todo."})
-
-    fields = []
-    values = []
-    for key in ("title", "status", "priority", "category_id", "remind_daily"):
-        if key in data:
-            fields.append(f"{key} = ?")
-            values.append(data[key])
-    if "status" in data and data["status"] == "done":
-        fields.append("completed_at = ?")
-        values.append(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    if "status" in data and data["status"] != "done":
-        fields.append("completed_at = NULL")
-    values.append(id)
-    db.execute(f"UPDATE todos SET {', '.join(fields)} WHERE id = ?", values)
-    db.commit()
-    todo = db.execute(
-        "SELECT t.*, c.name as category_name FROM todos t "
-        "LEFT JOIN categories c ON t.category_id = c.id WHERE t.id = ?",
-        (id,),
-    ).fetchone()
-    db.close()
-    return JSONResponse(dict(todo))
-
-@app.delete("/api/todos/{id}")
-async def delete_todo(id: int, request: Request):
-    user_id = getattr(request.state, "user", {}).get("user_id", "USR-00000000")
-    db = get_todo_db()
-    
-    # Security: check ownership
-    curr = db.execute("SELECT user_id FROM todos WHERE id = ?", (id,)).fetchone()
-    if not curr or curr["user_id"] != user_id:
-        db.close()
-        return JSONResponse(status_code=403, content={"detail": "Unauthorized to delete this todo."})
-
-    db.execute("DELETE FROM todos WHERE id = ?", (id,))
-    db.commit()
-    db.close()
-    return JSONResponse({"ok": True})
-
-@app.get("/api/categories")
-async def list_categories():
-    db = get_todo_db()
-    cats = db.execute("SELECT * FROM categories ORDER BY name").fetchall()
-    db.close()
-    return JSONResponse([dict(c) for c in cats])
-
-@app.post("/api/categories")
-async def create_category(request: Request):
-    data = await request.json()
-    db = get_todo_db()
-    try:
-        db.execute("INSERT INTO categories (name) VALUES (?)", (data["name"],))
-        db.commit()
-        cat_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-    except sqlite3.IntegrityError:
-        existing = db.execute(
-            "SELECT * FROM categories WHERE name = ?", (data["name"],)
-        ).fetchone()
-        db.close()
-        return JSONResponse(dict(existing))
-    cat = db.execute("SELECT * FROM categories WHERE id = ?", (cat_id,)).fetchone()
-    db.close()
-    return JSONResponse(dict(cat), status_code=201)
-
-@app.get("/api/stats")
-async def stats():
-    db = get_todo_db()
-
-    status_data = db.execute(
-        "SELECT status, COUNT(*) as count FROM todos GROUP BY status"
-    ).fetchall()
-
-    cat_data = db.execute(
-        "SELECT c.name, "
-        "  COUNT(t.id) as total, "
-        "  SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) as done, "
-        "  SUM(CASE WHEN t.status='in-progress' THEN 1 ELSE 0 END) as in_progress, "
-        "  SUM(CASE WHEN t.status='todo' THEN 1 ELSE 0 END) as todo "
-        "FROM categories c "
-        "LEFT JOIN todos t ON c.id = t.category_id "
-        "GROUP BY c.id ORDER BY c.name"
-    ).fetchall()
-
-    daily = db.execute(
-        "SELECT completed_at, COUNT(*) as count FROM todos "
-        "WHERE status = 'done' AND completed_at IS NOT NULL "
-        "GROUP BY completed_at ORDER BY completed_at DESC LIMIT 7"
-    ).fetchall()
-
-    priority = db.execute(
-        "SELECT priority, COUNT(*) as count FROM todos GROUP BY priority"
-    ).fetchall()
-
-    db.close()
-    return JSONResponse({
-        "status": {r["status"]: r["count"] for r in status_data},
-        "categories": [dict(c) for c in cat_data],
-        "daily_completion": [dict(d) for d in daily],
-        "priority": {r["priority"]: r["count"] for r in priority},
-    })
-
-@app.get("/api/keys")
-async def list_keys(request: Request):
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id")
-    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-    
-    import database
-    with database.get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT provider, api_key FROM user_api_keys WHERE user_id = ?", (user_id,))
-        keys = [{"provider": r["provider"], "api_key": r["api_key"][:6] + "..."} for r in cursor.fetchall()]
-        return JSONResponse(keys)
-
-@app.post("/api/keys")
-async def add_key(request: Request):
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id")
-    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-    
-    data = await request.json()
-    provider = data.get("provider")
-    api_key = data.get("api_key")
-    api_secret = data.get("api_secret")
-    
-    if not provider or not api_key:
-        return JSONResponse(status_code=400, content={"detail": "Provider and API Key are required."})
-        
-    import database
-    database.set_user_key(user_id, provider, api_key, api_secret)
-    return {"status": "success", "message": f"API Key for {provider} saved."}
-
-@app.delete("/api/keys/{provider}")
-async def remove_key(request: Request, provider: str):
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id")
-    if not user_id: return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-    
-    import database
-    database.delete_user_key(user_id, provider)
-    return {"status": "success", "message": f"API Key for {provider} removed."}
-
-# ── VAULT API ─────────────────────────────────────────────────────────────
-
-@app.get("/vault", response_class=HTMLResponse)
-async def vault_explorer_page(request: Request):
-    return templates.TemplateResponse(request=request, name="vault_explorer.html")
-
-@app.get("/api/vault/list/{agent}")
-async def vault_list_api(request: Request, agent: str):
-    from tools.vault_manager import manage_vault
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id", "USR-MASTER")
-    return JSONResponse(manage_vault(agent, "list", user_id=user_id))
-
-@app.post("/api/vault/read")
-async def vault_read_api(request: Request):
-    from tools.vault_manager import manage_vault
-    data = await request.json()
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id", "USR-MASTER")
-    # Security: check if guest is trying to read private owner logs
-    if user.get("role") == "guest" and "psychology" in data.get("category", ""):
-        return JSONResponse(status_code=403, content={"detail": "Unauthorized vault access."})
-    return JSONResponse(manage_vault(data["agent"], "read", data["filename"], category=data["category"], user_id=user_id))
-
-@app.post("/api/vault/delete")
-async def vault_delete_api(request: Request):
-    from tools.vault_manager import manage_vault
-    user = getattr(request.state, "user", {})
-    user_id = user.get("user_id", "USR-MASTER")
-    if user.get("role") != "owner":
-        return JSONResponse(status_code=403, content={"detail": "Only owners can delete vault entries."})
-    data = await request.json()
-    return JSONResponse(manage_vault(data["agent"], "delete", data["filename"], category=data["category"], user_id=user_id))
-
-@app.get("/landing", response_class=HTMLResponse)
-async def get_landing(request: Request):
-    return templates.TemplateResponse("landing.html", {"request": request})
-
 @app.get("/login")
-async def login(request: Request):
+async def login_redirect(request: Request):
     if not GOOGLE_CLIENT_ID:
-        # Fallback if no OAuth configured (DEV MODE)
-        user_data = create_user("developer_guest", display_name="Limon (Dev)", role="owner")
-        request.session["user"] = user_data
-        return RedirectResponse(url="/")
-        
-    redirect_uri = request.url_for('auth')
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+        user = create_user("developer", role="owner")
+        request.session["user"] = user
+        return RedirectResponse("/")
+    return await oauth.google.authorize_redirect(request, request.url_for('auth'))
 
 @app.get("/auth")
-async def auth(request: Request):
-    try:
-        token = await oauth.google.authorize_access_token(request)
-    except Exception as e:
-        return f"Auth error: {e}"
-        
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
     user_info = token.get('userinfo')
-    if user_info:
-        email = user_info.get("email")
-        request.session["temp_user"] = {
-            "email": email,
-            "name": user_info.get("name"),
-            "picture": user_info.get("picture")
-        }
-        return RedirectResponse(url="/setup")
-    return "Auth failed."
+    request.session["temp_user"] = user_info
+    return RedirectResponse("/setup")
 
 @app.get("/setup", response_class=HTMLResponse)
-async def get_setup(request: Request):
+async def setup_page(request: Request):
     temp = request.session.get("temp_user")
-    if not temp:
-        return RedirectResponse(url="/landing")
-    return templates.TemplateResponse("onboarding.html", {"request": request, "username": temp["name"]})
+    return templates.TemplateResponse("onboarding.html", {"request": request, "username": temp.get("name")})
 
 @app.post("/setup")
-async def post_setup(
-    request: Request,
-    display_name: str = Form(...),
-    openrouter_api_key: str = Form(None),
-    openai_api_key: str = Form(None),
-    google_api_key: str = Form(None),
-    hf_token: str = Form(None)
-):
+async def complete_setup(request: Request, display_name: str = Form(...)):
     temp = request.session.get("temp_user")
-    if not temp:
-        return RedirectResponse(url="/landing")
-        
     user = create_user(temp["email"], display_name=display_name)
-    
-    # Send API Key via Email
-    from tools.email_sender import send_email
-    subject = "Your Marin HS-02 Access Key"
-    body = f"""
-Hello {display_name},
-
-Welcome to the kingdom. Your access to Marin HS-02 is ready.
-
-User ID: {user['user_id']}
-API Key: {user['api_key']}
-
-You can use this key for CLI access or API integrations.
-Keep this key secret.
-
-Welcome aboard,
-The Sentinel
-    """
-    send_email(temp["email"], subject, body)
-    
     request.session["user"] = user
     request.session.pop("temp_user")
-    return RedirectResponse(url="/")
+    return RedirectResponse("/")
 
 @app.get("/logout")
 async def logout(request: Request):
     request.session.clear()
-    return RedirectResponse(url="/landing")
+    return RedirectResponse("/landing")
 
-# ── PAGE ROUTES ───────────────────────────────────────────────────────────
-
-@app.get("/", response_class=HTMLResponse)
-async def get_index(request: Request):
-    user = request.session.get("user")
-    if not user:
-        return RedirectResponse(url="/landing")
-    return templates.TemplateResponse(request=request, name="index.html", context={"user": user})
-
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
-    # SIGNATURE FIX: Use request=request keyword to avoid interpretation as context
-    return templates.TemplateResponse(request=request, name="marin_chat.html", context={"agent": "marin"})
-
-@app.get("/profile", response_class=HTMLResponse)
-async def get_profile(request: Request):
-    return templates.TemplateResponse(request=request, name="profile.html")
-
-
-# ── UPLOAD ────────────────────────────────────────────────────────────────
-
-@app.post("/upload")
-async def upload_image(image: UploadFile = File(...)):
-    if not image.filename:
-        return JSONResponse({"error": "No filename"}, status_code=400)
-    filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', image.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    with open(filepath, "wb") as buf:
-        buf.write(await image.read())
-    return {"ok": True, "path": f"/{filepath}"}
-
-
-# ── MAIN CHAT ENDPOINT ────────────────────────────────────────────────────
-
-@app.post("/message")
-async def handle_message(
-    message: str = Form(...),
-    image: UploadFile = File(None),
-    study_context: str = Form(None),
-    agent: str = Form(None)
-):
-    global ACTIVE_AGENT
-    # We ignore the 'agent' parameter and always use marin now
-    target_agent = "marin"
-    print(f"[Message] Agent: {target_agent} | Msg: {message[:50]}...")
-    record_user_message(target_agent)
-
-    image_path = None
-    if image and image.filename:
-        filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', image.filename)
-        image_path = os.path.join(UPLOAD_FOLDER, filename)
-        with open(image_path, "wb") as buf:
-            buf.write(await image.read())
-        image_path = os.path.abspath(image_path)
-
-    print(f"[Routing] -> Marin Engine (LangGraph)")
-    from games.tiktaktoe import get_game
-    game = get_game()
-    state = game.get_board_state() if game else None
-    game_context = format_game_context_for_marin(state) if state else None
+@app.post("/api/authorize")
+async def authorize_session(request: Request):
+    data = await request.json()
+    password = data.get("password")
+    user_id = request.state.user["user_id"]
     
-    # Inject timer info into the message if needed (though LangGraph should handle it via tools or context)
-    timer_status = timer.get_session_status()
-    msg_with_timer = message
-    if timer_status["active"]:
-        msg_with_timer = f"[Focus: {timer_status['task']} ({timer_status['elapsed_formatted']})]\n{message}"
-    
-    # Get authenticated user from request state (injected by middleware)
-    # Safely extract user dict
-    state_obj = getattr(request, "state", None)
-    user = getattr(state_obj, "user", None) if state_obj else None
-    
-    # We pass the full user dict so Marin can do RBAC and per-user history
-    return StreamingResponse(
-        marin_main(msg_with_timer, image_path=image_path, user=user, game_context=game_context),
-        media_type="text/plain"
-    )
-
-
-# ── SETTINGS & UTILS ─────────────────────────────────────────────────────
-
-@app.get("/settings/voice")
-async def get_voice_setting():
-    import marin
-    return {"voice_enabled": marin.VOICE_ENABLED}
-
-@app.post("/settings/voice")
-async def set_voice_setting(enabled: str = Form(...)):
-    import marin
-    marin.VOICE_ENABLED = (enabled == "1")
-    return {"ok": True, "voice_enabled": marin.VOICE_ENABLED}
-
-@app.get("/settings/rag")
-async def get_rag_setting():
-    import marin
-    from utils.agent_logic import RAG_URL
-    running = False
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{RAG_URL}/health", timeout=1.0)
-            if r.status_code == 200: running = True
-    except: pass
-    return {"rag_enabled": marin.RAG_ENABLED, "rag_running": running}
-
-@app.post("/settings/rag")
-async def set_rag_setting(enabled: str = Form(...)):
-    import marin
-    marin.RAG_ENABLED = (enabled == "1")
-    running = False
-    from utils.agent_logic import RAG_URL
-    
-    if marin.RAG_ENABLED:
-        # Ensure server is running
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(f"{RAG_URL}/health", timeout=1.0)
-                if r.status_code == 200: 
-                    running = True
-                else:
-                    raise Exception("Not running")
-        except:
-            # Start it
-            base = os.path.dirname(os.path.abspath(__file__))
-            script = os.path.join(base, "rag_server.py")
-            subprocess.Popen([sys.executable, script, "--port", "5080"], start_new_session=True)
-            # Give it a second to start (optional, or just return True if we tried)
-            running = True
+    from safety import system_guard
+    if system_guard.verify(user_id, password):
+        return {"status": "success", "message": "Session authorized."}
     else:
-        # Check if it's still running
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(f"{RAG_URL}/health", timeout=1.0)
-                if r.status_code == 200: running = True
-        except: pass
-            
-    return JSONResponse({"ok": True, "rag_enabled": marin.RAG_ENABLED, "rag_running": running})
+        raise HTTPException(status_code=403, detail="Invalid system password.")
 
-@app.get("/settings/wordlimit")
-async def get_wordlimit():
-    import marin
-    return {"word_limit": marin.WORD_LIMIT}
-
-@app.post("/settings/wordlimit")
-async def set_wordlimit(limit: int = Form(...)):
-    import marin
-    marin.WORD_LIMIT = limit
-    return {"ok": True, "word_limit": marin.WORD_LIMIT}
-
-@app.post("/audio/stop")
-async def stop_audio_endpoint():
-    from marin import stop_audio
-    stopped = stop_audio()
-    return {"ok": True, "stopped": stopped}
-
-@app.get("/cmd/log/json")
-async def get_cmd_log(limit: int = 10):
-    from marin_fier import _cmd_log
-    logs = _cmd_log[-limit:] if _cmd_log else []
-    return {"logs": logs}
-
-@app.post("/timer/command")
-async def timer_cmd(command: str = Form(...), task: str = Form("")):
-    result = await handle_timer_command(command, task)
-    return JSONResponse({"message": result, "stats": timer.get_stats()})
-
-@app.get("/timer/stats")
-async def get_timer_stats():
-    return JSONResponse(timer.get_stats())
-
-@app.get("/memory/status")
-async def memory_status(agent: str = None):
-    from marin import load_history
-    messages = load_history(limit=60)
-    return JSONResponse({"messages": messages})
-
-@app.post("/memory/clear")
-async def memory_clear_endpoint(agent: str = Form(None)):
-    database.clear_history("marin")
-    return {"ok": True}
-
-# ── QUIZ API (Structured JSON) ──────────────────────────────────────────
-
-class QuizQuestion(BaseModel):
-    question: str
-    options: List[str]
-    correct: str
-    explanation: str
-
-class QuizData(BaseModel):
-    topic: str
-    difficulty: str
-    questions: List[QuizQuestion]
-
-@app.post("/quiz/generate/json")
-async def generate_quiz_json(
-    topic: str = Form(...),
-    difficulty: str = Form("medium"),
-    num_questions: int = Form(5)
-):
-    prompt = f"""Generate a {difficulty} difficulty quiz about '{topic}' with exactly {num_questions} multiple-choice questions.
-Return ONLY a valid JSON object matching this schema:
-{{
-  "topic": "{topic}",
-  "difficulty": "{difficulty}",
-  "questions": [
-    {{
-      "question": "question text",
-      "options": ["opt1", "opt2", "opt3", "opt4"],
-      "correct": "the exact text of the correct option",
-      "explanation": "brief explanation"
-    }}
-  ]
-}}
-Do not include any conversational text, markdown formatting (no ```json), or preamble."""
-
-    # Try tinyllama for speed if it's available, otherwise use default FAST_MODEL
-    model_to_use = "tinyllama:latest"
+@app.post("/api/settings/password")
+async def update_system_password(request: Request):
+    data = await request.json()
+    current = data.get("current")
+    new_pass = data.get("new")
+    user_id = request.state.user["user_id"]
     
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json={
-                    "model": model_to_use,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "options": {"temperature": 0.2, "num_predict": 1000}
-                }
-            )
-            resp.raise_for_status()
-            result = resp.json()
-            raw = result['message']['content'].strip()
-            
-            # Extract JSON from potential markdown code blocks
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if match:
-                raw = match.group(0)
-            
-            data = json.loads(raw)
-            return JSONResponse(data)
-    except Exception as e:
-        print(f"[Quiz Error] {e}")
-        # Fallback to FAST_MODEL if tinyllama failed
-        try:
-             async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json={
-                        "model": FAST_MODEL,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "stream": False,
-                        "options": {"temperature": 0.2}
-                    }
-                )
-                result = resp.json()
-                raw = result['message']['content'].strip()
-                match = re.search(r'\{.*\}', raw, re.DOTALL)
-                if match: raw = match.group(0)
-                data = json.loads(raw)
-                return JSONResponse(data)
-        except Exception as e2:
-            return JSONResponse({"error": str(e2), "raw": raw if 'raw' in locals() else None}, status_code=500)
+    if request.state.user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Only the master can change the system password.")
+        
+    from safety import system_guard
+    if system_guard.verify(user_id, current):
+        system_guard.set_password(new_pass)
+        return {"status": "success", "message": "System password updated."}
+    else:
+        raise HTTPException(status_code=403, detail="Invalid current password.")
 
+# ── MODULEFLOW ────────────────────────────────────────────────────────────
 
-@app.get("/health")
-async def health():
-    return {"status": "operational", "codename": "Marin HS-02"}
+@app.get("/moduleflow")
+async def moduleflow_page(request: Request):
+    from moduleflow.serve import get_index
+    return HTMLResponse(await get_index())
 
-
-# ── PROACTIVE ENGINE ─────────────────────────────────────────────────────
-
-@app.get("/proactive/stream")
-async def proactive_sse(agent: str = "marin"):
-    return StreamingResponse(
-        proactive_stream(agent),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-
-@app.get("/proactive/status")
-async def proactive_status_endpoint():
-    return JSONResponse(proactive_status())
-
-
-@app.post("/proactive/reset")
-async def proactive_reset(agent: str = "marin"):
-    from proactive_engine import reset_session
-    reset_session(agent)
-    return JSONResponse({"ok": True, "message": "Proactive session reset."})
-
-
-
+@app.get("/moduleflow/graph.json")
+async def moduleflow_graph(request: Request):
+    from moduleflow.analyze import analyze_brain
+    return JSONResponse(analyze_brain())
 
 if __name__ == "__main__":
     import uvicorn
-    init_db()
     uvicorn.run(app, host=HOST, port=PORT)

@@ -93,26 +93,16 @@ os.environ.setdefault("MKL_NUM_THREADS",    "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 
-from config import EMBEDDING_MODEL, HF_EMBEDDING_MODEL
+from config import EMBEDDING_MODEL
 
 def _lazy_embeddings():
     """Create embedding model — called on first search, not at boot."""
-    try:
-        model = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"batch_size": 32},
-        )
-        # Test if it actually loads (lazy loading check)
-        return model
-    except Exception as e:
-        print(f"[RAG] Error loading {EMBEDDING_MODEL}: {e}")
-        print(f"[RAG] Falling back to {HF_EMBEDDING_MODEL}")
-        return HuggingFaceEmbeddings(
-            model_name=HF_EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"batch_size": 32},
-        )
+    model = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"batch_size": 32},
+    )
+    return model
 
 
 class KnowledgeBase:
@@ -145,20 +135,41 @@ class KnowledgeBase:
         self._load_manifest()
         index_file = FAISS_DIR / "index.faiss"
         pkl_file   = FAISS_DIR / "index.pkl"
+        docstore_json = FAISS_DIR / "docstore.json"
+        idmap_json    = FAISS_DIR / "id_map.json"
 
-        if index_file.exists() and pkl_file.exists():
+        # SECURITY: Prefer JSON-based safe loading over pickle
+        if index_file.exists() and docstore_json.exists():
             try:
-                # Memory-map the FAISS index — stays on disk, OS pages in on access
                 self._raw_index = faiss.read_index(
                     str(index_file), faiss.IO_FLAG_MMAP
                 )
-                # Load docstore from pickle
+                # Load from JSON (safe, no pickle)
+                with open(docstore_json) as f:
+                    self._docstore = json.load(f)
+                with open(idmap_json) as f:
+                    self._id_map = json.load(f)
+                n = len(self.manifest["indexed"])
+                print(f"✅ KB loaded (safe JSON): {n} files, {self._raw_index.ntotal} vectors")
+            except Exception as e:
+                print(f"⚠️ safe load failed ({e}) — falling back to rebuild")
+                self._raw_index = None
+                self._docstore  = None
+                self._id_map    = None
+        elif index_file.exists() and pkl_file.exists():
+            # Legacy pickle fallback — log warning, migrate on next save
+            try:
+                import warnings
+                warnings.warn("Loading from legacy pickle — will migrate to JSON on next save", DeprecationWarning)
+                self._raw_index = faiss.read_index(
+                    str(index_file), faiss.IO_FLAG_MMAP
+                )
                 with open(pkl_file, "rb") as f:
                     self._docstore, self._id_map = pickle.load(f)
                 n = len(self.manifest["indexed"])
-                print(f"✅ KB loaded (mmap): {n} files, {self._raw_index.ntotal} vectors")
+                print(f"⚠️ KB loaded (LEGACY pickle — will migrate): {n} files, {self._raw_index.ntotal} vectors")
             except Exception as e:
-                print(f"⚠️ mmap load failed ({e}) — falling back to index rebuild")
+                print(f"⚠️ pickle load failed ({e}) — falling back to rebuild")
                 self._raw_index = None
                 self._docstore  = None
                 self._id_map    = None
@@ -206,10 +217,11 @@ class KnowledgeBase:
     # ── File discovery ────────────────────────────────────────────────────────
     def _all_files(self) -> List[Path]:
         files = []
+        # Recursive glob search for all documents and code
         for ext in DOC_EXTENSIONS:
-            files.extend(DOC_DIR.glob(f"*{ext}"))
+            files.extend(DOC_DIR.rglob(f"*{ext}"))
         for ext in CODE_EXTENSIONS:
-            files.extend(CODE_DIR.glob(f"*{ext}"))
+            files.extend(CODE_DIR.rglob(f"*{ext}"))
         return sorted(set(files))
 
     def _index_new_files(self):
@@ -239,14 +251,46 @@ class KnowledgeBase:
         self._raw_index = self._lc_vectorstore.index
         self._docstore  = self._lc_vectorstore.docstore
         self._id_map    = self._lc_vectorstore.index_to_docstore_id
+
+        # SECURITY: Save docstore as JSON instead of pickle
+        docstore_json = FAISS_DIR / "docstore.json"
+        idmap_json    = FAISS_DIR / "id_map.json"
+        try:
+            # Convert docstore to JSON-serializable format
+            docstore_data = {}
+            for k, v in self._docstore.items():
+                if hasattr(v, "page_content"):
+                    docstore_data[k] = {
+                        "page_content": v.page_content,
+                        "metadata": v.metadata,
+                    }
+                else:
+                    docstore_data[k] = v
+            with open(docstore_json, "w") as f:
+                json.dump(docstore_data, f, indent=2)
+
+            # Convert id_map to JSON
+            if hasattr(self._id_map, '__iter__'):
+                id_map_data = list(self._id_map)
+            else:
+                id_map_data = self._id_map
+            with open(idmap_json, "w") as f:
+                json.dump(id_map_data, f, indent=2)
+        except Exception as e:
+            print(f"⚠️ JSON save failed: {e}")
+
         # Reload raw index with mmap (discards LC wrapper's in-RAM copy)
         index_file = FAISS_DIR / "index.faiss"
-        pkl_file   = FAISS_DIR / "index.pkl"
-        if index_file.exists() and pkl_file.exists():
+        if index_file.exists():
             try:
                 self._raw_index = faiss.read_index(str(index_file), faiss.IO_FLAG_MMAP)
-                with open(pkl_file, "rb") as f:
-                    self._docstore, self._id_map = pickle.load(f)
+                # Load from JSON (safe)
+                if docstore_json.exists():
+                    with open(docstore_json) as f:
+                        self._docstore = json.load(f)
+                if idmap_json.exists():
+                    with open(idmap_json) as f:
+                        self._id_map = json.load(f)
             except Exception as e:
                 print(f"⚠️ mmap reload failed: {e}")
 
@@ -543,13 +587,15 @@ async def report():
 
 @app.get("/health")
 async def health():
+    index_loaded = kb._raw_index is not None
     return {
-        "status":   "operational",
-        "port":     5080,
-        "total":    len(kb.manifest["indexed"]),
-        "ready":    kb._raw_index is not None,
-        "doc_dir":  str(DOC_DIR),
-        "code_dir": str(CODE_DIR),
+        "status":       "operational",
+        "port":         5080,
+        "total":        len(kb.manifest["indexed"]),
+        "ready":        index_loaded,
+        "index_loaded": index_loaded,
+        "doc_dir":      str(DOC_DIR),
+        "code_dir":     str(CODE_DIR),
     }
 
 

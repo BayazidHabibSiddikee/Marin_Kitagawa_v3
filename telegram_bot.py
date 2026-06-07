@@ -93,21 +93,12 @@ def _process_message_sync(chat_id: int, user_text: str, user_name: str):
         try:
             async def _run():
                 # Import here to avoid circular imports at module level
-                from marin import main as marin_main, format_game_context_for_marin
-
-                # Get game context if available
-                game_context = None
-                try:
-                    from games.tiktaktoe import get_game
-                    game = get_game()
-                    state = game.get_board_state() if game else None
-                    game_context = format_game_context_for_marin(state) if state else None
-                except Exception:
-                    pass
+                from marin import main as marin_main
+                from utils.shared_logic import MASTER_USER
 
                 # Collect full response from streaming
                 full_response = []
-                async for chunk in marin_main(user_text, game_context=game_context):
+                async for chunk in marin_main(user_text, user=MASTER_USER):
                     if chunk and not chunk.startswith("__"):
                         full_response.append(chunk)
 
@@ -244,7 +235,7 @@ async def _poll_loop():
                     _send_text(chat_id,
                         f"🤖 **STATUS**\n"
                         f"Quiet hours: {st['quiet_hours']}\n"
-                        f"Proactive msgs this session: {st.get('streak_counts', {}).get('marin', 0)}"
+                        f"Proactive msgs this session: {st['session_counts'].get('marin', 0)}"
                     )
                     continue
 

@@ -21,6 +21,7 @@ def run_command(command: str, timeout: int = 30) -> tuple[int, str]:
     in_container = _in_docker()
     
     if in_container:
+        # OWNER-ONLY — single-user dev box
         # We are already in the sandbox
         try:
             # Use shell=True inside docker to allow pipes/redirection

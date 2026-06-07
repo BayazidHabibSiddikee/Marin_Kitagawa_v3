@@ -1,11 +1,28 @@
 import os
 import re
 import time
+import subprocess
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 import database
 
-# ── User Context ──────────────────────────────────────────────────────────────
+# ── Dynamic Owner Detection ──────────────────────────────────────────────────
+def detect_owner() -> str:
+    """Detect the master user of the system. 
+    In live mode, it's 'marin'. In installed mode, it's the UID 1000 user."""
+    try:
+        # OWNER-ONLY — single-user dev box
+        # Get the first non-root user with UID 1000
+        output = subprocess.check_output(
+            ["getent", "passwd", "1000"], capture_output=False
+        ).decode().strip()
+        user = output.split(":")[0]
+        return user if user else "marin"
+    except Exception:
+        return os.getenv("USER", "marin")
+
+MASTER_USER = detect_owner()
+OWNER_USER = MASTER_USER
 USER_CONTEXT = """
 User: 
 Location: Rajshahi, Bangladesh

@@ -25,13 +25,7 @@ VAULT_META = VAULT_DIR / "vault_meta.json"
 def _derive_key() -> bytes:
     """Derive a Fernet key from machine-specific attributes."""
     import socket
-    import getpass
-    try:
-        _user = os.getlogin()
-    except Exception:
-        _user = getpass.getuser()
-
-    secret = f"{socket.gethostname()}-{_user}-marin-os-vault"
+    secret = f"{socket.gethostname()}-{os.getlogin()}-marin-os-vault"
     digest = hashlib.sha256(secret.encode()).digest()
     return base64.urlsafe_b64encode(digest)
 

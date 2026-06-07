@@ -1,17 +1,194 @@
 #!/usr/bin/env python3
-# config.py — Marin HS-02 Enhanced Configuration with Model Routing & Docker Control
+# config.py — Marin /  HS-02 shared constants  (Linux-native)
 
 import os
 import shutil
 import subprocess
-import json
 from dotenv import load_dotenv
-from typing import Dict, List, Optional
 load_dotenv()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODEL ROUTING & TIER CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════════════════
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ── APP LAUNCHER ───────────────────────────────────────────────────────────────
+# Each entry is a list of candidate commands tried left-to-right.
+# The first one found on PATH (via shutil.which) is used.
+# Use 'xdg-open <path>' for file-manager / default-app fallbacks.
+APPS: dict[str, list[str]] = {
+    # Browsers
+    "chrome":           ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"],
+    "brave":            ["brave-browser", "brave"],
+    "firefox":          ["firefox", "firefox-esr"],
+    "edge":             ["microsoft-edge", "microsoft-edge-stable"],
+    "opera":            ["opera"],
+
+    # Editors / IDEs
+    "vscode":           ["code"],
+    "vs code":          ["code"],
+    "nvim":             ["nvim"],
+    "neovim":           ["nvim"],
+    "vim":              ["vim"],
+    "nano":             ["nano"],
+    "gedit":            ["gedit"],
+    "kate":             ["kate"],
+    "sublime":          ["subl", "sublime_text"],
+    "atom":             ["atom"],
+
+    # Terminals
+    "terminal":         ["ghostty", "konsole", "xterm", "alacritty", "kitty", "tilix"],
+    "konsole":          ["konsole"],
+    "alacritty":        ["alacritty"],
+    "kitty":            ["kitty"],
+
+    # File managers
+    "file manager":     ["nautilus", "dolphin", "thunar", "nemo", "pcmanfm"],
+    "files":            ["nautilus", "dolphin", "thunar", "nemo"],
+
+    # System tools
+    "task manager":     ["gnome-system-monitor", "ksysguard", "htop", "btop"],
+    "calculator":       ["gnome-calculator", "kcalc", "galculator", "qalculate-gtk"],
+    "text editor":      ["gedit", "kate", "mousepad", "xed"],
+    "settings":         ["gnome-control-center", "systemsettings5", "xfce4-settings-manager"],
+    "screenshot":       ["gnome-screenshot", "spectacle", "flameshot"],
+
+    # Multimedia
+    "vlc":              ["vlc"],
+    "mpv":              ["mpv"],
+    "rhythmbox":        ["rhythmbox"],
+    "spotify":          ["spotify"],
+    "obs":              ["obs"],
+    "audacity":         ["audacity"],
+    "gimp":             ["gimp"],
+    "inkscape":         ["inkscape"],
+
+    # Office
+    "libreoffice":      ["libreoffice"],
+    "writer":           ["libreoffice", "--writer"],   # handled specially below
+    "calc":             ["libreoffice", "--calc"],
+    "impress":          ["libreoffice", "--impress"],
+
+    # Dev tools
+    "postman":          ["postman"],
+    "dbeaver":          ["dbeaver"],
+    "docker":           ["docker"],
+    "virtualbox":       ["virtualbox"],
+
+    # Communication
+    "discord":          ["discord", "Discord"],
+    "telegram":         ["telegram-desktop", "Telegram"],
+    "slack":            ["slack"],
+    "zoom":             ["zoom"],
+    "teams":            ["teams", "teams-for-linux"],
+    "whatsapp":         ["whatsapp-for-linux"],
+}
+
+WEB_APPS: dict[str, str] = {
+    "claude":           "https://claude.ai",
+    "chatgpt":          "https://chat.openai.com",
+    "gemini":           "https://gemini.google.com",
+    "youtube":          "https://www.youtube.com",
+    "github":           "https://github.com",
+    "stackoverflow":    "https://stackoverflow.com",
+    "google":           "https://www.google.com",
+    "gmail":            "https://mail.google.com",
+    "drive":            "https://drive.google.com",
+    "notion":           "https://www.notion.so",
+    "telegram":         "https://web.telegram.org/k/",
+    "discord":          "https://discord.com/app",
+    "reddit":           "https://www.reddit.com",
+    "twitter":          "https://twitter.com",
+    "linkedin":         "https://www.linkedin.com",
+    "leetcode":         "https://leetcode.com",
+    "colab":            "https://colab.research.google.com",
+    "kaggle":           "https://www.kaggle.com",
+}
+
+
+def _find_cmd(candidates: list[str]) -> list[str] | None:
+    """Return the first usable command from candidates as a list ready for Popen."""
+    # Handle multi-token entries like ["libreoffice", "--writer"]
+    if len(candidates) >= 2 and candidates[0].startswith("libreoffice"):
+        if shutil.which("libreoffice"):
+            return candidates   # return as-is, e.g. ["libreoffice", "--writer"]
+        return None
+    for cmd in candidates:
+        if shutil.which(cmd):
+            return [cmd]
+    return None
+
+
+def launch_app(name: str) -> str:
+    """
+    Launch a desktop app or open a web app in the default browser.
+    Returns a human-readable status string (for Marin to speak).
+    """
+    key = name.lower().strip()
+
+    # 1. Try desktop APPS dict
+    if key in APPS:
+        cmd = _find_cmd(APPS[key])
+        if cmd:
+            try:
+                subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,     # detach fully from parent
+                )
+                return f"Opening {name}~ ✨"
+            except Exception as e:
+                return f"Found {name} but couldn't launch it: {e}"
+        else:
+            # App listed but not installed — fall through to web fallback
+            if key in WEB_APPS:
+                return _open_url(WEB_APPS[key], name)
+            return (
+                f"I couldn't find {name} installed on your system. "
+                f"Try: sudo apt install {APPS[key][0]}"
+            )
+
+    # 2. Try WEB_APPS dict
+    if key in WEB_APPS:
+        return _open_url(WEB_APPS[key], name)
+
+    # 3. Last resort: try xdg-open with the raw name (might work for .desktop files)
+    if shutil.which(key):
+        try:
+            subprocess.Popen(
+                [key],
+                stdout=open('logs/tool_execution.log', 'a'),
+                stderr=open('logs/tool_execution.log', 'a'),
+                start_new_session=True,
+            )
+            return f"Opening {name}~ ✨"
+        except Exception as e:
+            return f"Tried to open {name} but got: {e}"
+
+    return f"I don't know how to open '{name}' yet. Add it to config.py!"
+
+
+def _open_url(url: str, label: str) -> str:
+    """Open a URL with xdg-open (Linux default browser)."""
+    try:
+        subprocess.Popen(
+            ["xdg-open", url],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return f"Opening {label} in your browser~ 🌐"
+    except FileNotFoundError:
+        # xdg-open not found — try python's webbrowser as last resort
+        import webbrowser
+        webbrowser.open(url)
+        return f"Opening {label}~ 🌐"
+    except Exception as e:
+        return f"Couldn't open {label}: {e}"
+
+
+import json
+from typing import Dict, List, Optional
+
+# ── MODEL CONFIG ───────────────────────────────────────────────────────────────
 
 # Local models (Ollama) - ONLY these two for fast/smart chat
 LOCAL_MODELS = [
@@ -20,7 +197,6 @@ LOCAL_MODELS = [
 ]
 
 # Cloud Free Models (OpenRouter)
-# DEFAULT: cognitivecomputations/dolphin-mistral-24b-venice-edition:free (Uncensored)
 CLOUD_FREE_MODELS = {
     "default": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
     "reasoning": [
@@ -43,16 +219,12 @@ CLOUD_FREE_MODELS = {
     ]
 }
 
-# Image Generation Models (Sourceful)
+# Image Generation Models
 IMAGE_MODELS = {
     "primary": "sourceful/riverflow-v2.5-pro:free",
     "fast": "sourceful/riverflow-v2.5-fast:free",
     "fallback": "moondream"
 }
-
-# Embedding Model
-HF_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-EMBEDDING_MODEL_SPEC = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 
 # Model tiers used by agent logic
 MODEL_TIERS = {
@@ -78,16 +250,22 @@ TASK_ROUTING = {
     "complex_tasks": [
         "agent_control", "complex_reasoning", "research", "planning", 
         "orchestration", "architecture", "design", "autonomous"
-    ]
+  ]
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SETTINGS LOADER
-# ═══════════════════════════════════════════════════════════════════════════════
+def get_model_for_task(task_type: str, force_tier: Optional[str] = None) -> str:
+    """Get optimal model for a given task type."""
+    import random
+    tier = force_tier or task_type
+    models = MODEL_TIERS.get(tier, [])
+    if not models:
+        return DEFAULT_MODEL
+    return random.choice(models)
 
+# ── CONFIG LOADER ──────────────────────────────────────────────────────────────
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
-def load_settings() -> Dict:
+def load_settings():
     if not os.path.exists(SETTINGS_PATH):
         return {}
     try:
@@ -99,324 +277,49 @@ def load_settings() -> Dict:
 
 _settings = load_settings()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MULTI-API KEY MANAGEMENT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# API Keys from settings or environment
-# Can be a string or a list of strings for rotation
-_KEYS = _settings.get("api_keys", {})
-
-def get_api_key(provider: str) -> Optional[str]:
-    """Get an API key for a provider. Supports single keys or lists (random rotation)."""
-    import random
-    
-    # Check settings first, then environment
-    keys = _KEYS.get(provider) or os.getenv(f"{provider.upper()}_API_KEY")
-    
-    if not keys:
-        # Fallback for specific environment naming conventions
-        if provider == "google": keys = os.getenv("GEMINI_API_KEY")
-        elif provider == "openai": keys = os.getenv("OPENAI_API_KEY")
-        elif provider == "anthropic": keys = os.getenv("ANTHROPIC_API_KEY")
-        elif provider == "openrouter": keys = os.getenv("OPENROUTER_API_KEY")
-
-    if isinstance(keys, list) and keys:
-        return random.choice(keys)
-    return keys
-
-# API Keys (for quick access)
-OPENROUTER_API_KEY = get_api_key("openrouter")
-GEMINI_API_KEY = get_api_key("google")
-OPENAI_API_KEY = get_api_key("openai")
-ANTHROPIC_API_KEY = get_api_key("anthropic")
-HF_TOKEN = get_api_key("huggingface") or os.getenv("HF_TOKEN")
-if HF_TOKEN:
-    os.environ["HF_TOKEN"] = HF_TOKEN
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODEL CONFIGURATION (with settings.json fallback)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 DEFAULT_MODEL = _settings.get("models", {}).get("default", CLOUD_FREE_MODELS["default"])
 FAST_MODEL    = _settings.get("models", {}).get("fast", LOCAL_MODELS[0])
 VISION_MODEL  = _settings.get("models", {}).get("vision", IMAGE_MODELS["fallback"])
-EMBEDDING_MODEL = _settings.get("models", {}).get("embedding", HF_EMBEDDING_MODEL)
+EMBEDDING_MODEL = _settings.get("models", {}).get("embedding", "all-MiniLM-L6-v2")
 
-# Ollama & API endpoints
-OLLAMA_BASE_URL = _settings.get("server", {}).get("ollama_base_url", "http://localhost:11434")
-OPENAI_BASE_URL = _settings.get("server", {}).get("openai_base_url", "https://api.openai.com/v1")
-OPENROUTER_BASE_URL = _settings.get("server", {}).get("openrouter_base_url", "https://openrouter.ai/api/v1")
-
-os.environ["OLLAMA_HOST"] = OLLAMA_BASE_URL
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SERVER CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
-HOST            = _settings.get("server", {}).get("host", "0.0.0.0")
-PORT            = _settings.get("server", {}).get("port", 5069)
-RAG_PORT        = _settings.get("server", {}).get("rag_port", 5080)
-MODULEFLOW_PORT = 5070
-TODO_PORT       = 5000
-UPLOAD_FOLDER   = "static/uploads"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SESSION CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# ── SESSION CONFIG ─────────────────────────────────────────────────────────────
 POMODORO_WORK_MINUTES  = 25
 POMODORO_BREAK_MINUTES = 5
 POMODORO_LONG_BREAK    = 15
 MEMORY_MAX_MESSAGES    = 50
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# GOOGLE OAUTH CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
+# ── SERVER ─────────────────────────────────────────────────────────────────────
+HOST            = _settings.get("server", {}).get("host", "0.0.0.0")
+PORT            = _settings.get("server", {}).get("port", 5069)
+RAG_PORT        = _settings.get("server", {}).get("rag_port", 5080)
+OLLAMA_BASE_URL  = _settings.get("server", {}).get("ollama_base_url", "http://localhost:11434")
+OPENAI_BASE_URL  = _settings.get("server", {}).get("openai_base_url", "https://api.openai.com/v1")
+OPENROUTER_BASE_URL = _settings.get("server", {}).get("openrouter_base_url", "https://openrouter.ai/api/v1")
+UPLOAD_FOLDER   = "static/uploads"
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_CONF_URL = 'https://accounts.google.com/.well-known/openid-configuration'
+# ── API KEYS (from encrypted vault, fallback to settings.json) ────────────────
+try:
+    from vault import vault_get, get_vault
+    _vault = get_vault()
+    # Migrate from settings.json on first run
+    _vault.migrate_from_settings(os.path.join(BASE_DIR, "settings.json"))
+    API_KEYS = {}
+    for _provider in ["openai", "gemini", "anthropic", "deepseek", "openrouter"]:
+        _key = vault_get(f"{_provider}_api_key")
+        if _key:
+            API_KEYS[_provider] = {"api_key": _key}
+    # Also load from settings for any providers not yet migrated
+    for _k, _v in _settings.get("api_keys", {}).items():
+        if _k not in API_KEYS:
+            API_KEYS[_k] = _v
+except ImportError:
+    API_KEYS = _settings.get("api_keys", {})
 
-# Secret key for sessions
-SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY", "marin-session-secret-999")
+OPENROUTER_API_KEY = API_KEYS.get("openrouter", {}).get("api_key") or os.getenv("OPENROUTER_API_KEY")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# APP LAUNCHER CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
-APPS: Dict[str, List[str]] = {
-    "chrome":           ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"],
-    "brave":            ["brave-browser", "brave"],
-    "firefox":          ["firefox", "firefox-esr"],
-    "edge":             ["microsoft-edge", "microsoft-edge-stable"],
-    "opera":            ["opera"],
-    "vscode":           ["code"],
-    "vs code":          ["code"],
-    "nvim":             ["nvim"],
-    "neovim":           ["nvim"],
-    "vim":              ["vim"],
-    "nano":             ["nano"],
-    "gedit":            ["gedit"],
-    "kate":             ["kate"],
-    "sublime":          ["subl", "sublime_text"],
-    "atom":             ["atom"],
-    "terminal":         ["ghostty", "konsole", "xterm", "alacritty", "kitty", "tilix"],
-    "konsole":          ["konsole"],
-    "alacritty":        ["alacritty"],
-    "kitty":            ["kitty"],
-    "file manager":     ["nautilus", "dolphin", "thunar", "nemo", "pcmanfm"],
-    "files":            ["nautilus", "dolphin", "thunar", "nemo"],
-    "task manager":     ["gnome-system-monitor", "ksysguard", "htop", "btop"],
-    "calculator":       ["gnome-calculator", "kcalc", "galculator", "qalculate-gtk"],
-    "text editor":      ["gedit", "kate", "mousepad", "xed"],
-    "settings":         ["gnome-control-center", "systemsettings5", "xfce4-settings-manager"],
-    "screenshot":       ["gnome-screenshot", "spectacle", "flameshot"],
-    "vlc":              ["vlc"],
-    "mpv":              ["mpv"],
-    "rhythmbox":        ["rhythmbox"],
-    "spotify":          ["spotify"],
-    "obs":              ["obs"],
-    "audacity":         ["audacity"],
-    "gimp":             ["gimp"],
-    "inkscape":         ["inkscape"],
-    "libreoffice":      ["libreoffice"],
-    "writer":           ["libreoffice", "--writer"],
-    "calc":             ["libreoffice", "--calc"],
-    "impress":          ["libreoffice", "--impress"],
-    "postman":          ["postman"],
-    "dbeaver":          ["dbeaver"],
-    "docker":           ["docker"],
-    "virtualbox":       ["virtualbox"],
-    "discord":          ["discord", "Discord"],
-    "telegram":         ["telegram-desktop", "Telegram"],
-    "slack":            ["slack"],
-    "zoom":             ["zoom"],
-    "teams":            ["teams", "teams-for-linux"],
-    "whatsapp":         ["whatsapp-for-linux"],
-    "claude code":      ["claude"],
-    "gemini cli":       ["gemini"],
-    "opencode":         ["opencode"],
-    "kiro":             ["kiro-cli"],
-}
-
-WEB_APPS: Dict[str, str] = {
-    "claude":           "https://claude.ai",
-    "chatgpt":          "https://chat.openai.com",
-    "gemini":           "https://gemini.google.com",
-    "youtube":          "https://www.youtube.com",
-    "github":           "https://github.com",
-    "stackoverflow":    "https://stackoverflow.com",
-    "google":           "https://www.google.com",
-    "gmail":            "https://mail.google.com",
-    "drive":            "https://drive.google.com",
-    "notion":           "https://www.notion.so",
-    "telegram":         "https://web.telegram.org/k/",
-    "discord":          "https://discord.com/app",
-    "reddit":           "https://www.reddit.com",
-    "twitter":          "https://twitter.com",
-    "linkedin":         "https://www.linkedin.com",
-    "leetcode":         "https://leetcode.com",
-    "colab":            "https://colab.research.google.com",
-    "kaggle":           "https://www.kaggle.com",
-    "openrouter":       "https://openrouter.ai",
-    "huggingface":      "https://huggingface.co",
-}
-
-def _find_cmd(candidates: List[str]) -> Optional[List[str]]:
-    if len(candidates) >= 2 and candidates[0].startswith("libreoffice"):
-        if shutil.which("libreoffice"):
-            return candidates
-        return None
-    for cmd in candidates:
-        if shutil.which(cmd):
-            return [cmd]
-    return None
-
-def launch_app(name: str) -> str:
-    key = name.lower().strip()
-    if key in APPS:
-        cmd = _find_cmd(APPS[key])
-        if cmd:
-            try:
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-                return f"Opening {name}~ ✨"
-            except Exception as e:
-                return f"Found {name} but couldn't launch it: {e}"
-        else:
-            if key in WEB_APPS:
-                return _open_url(WEB_APPS[key], name)
-            return f"I couldn't find {name} installed. Try: sudo apt install {APPS[key][0]}"
-    if key in WEB_APPS:
-        return _open_url(WEB_APPS[key], name)
-    if shutil.which(key):
-        try:
-            subprocess.Popen([key], start_new_session=True)
-            return f"Opening {name}~ ✨"
-        except Exception as e:
-            return f"Tried to open {name} but got: {e}"
-    return f"I don't know how to open '{name}' yet. Add it to config.py!"
-
-def _open_url(url: str, label: str) -> str:
-    try:
-        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        return f"Opening {label} in your browser~ 🌐"
-    except FileNotFoundError:
-        import webbrowser
-        webbrowser.open(url)
-        return f"Opening {label}~ 🌐"
-    except Exception as e:
-        return f"Couldn't open {label}: {e}"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# EMAIL & EXTERNAL SERVICES
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# ── EMAIL ──────────────────────────────────────────────────────────────────────
 EMAIL_SENDER = _settings.get("email", {}).get("sender", os.getenv("EMAIL_SENDER", os.getenv("GMAIL_ADDRESS", "")))
-EMAILS: Dict[str, str] = {}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DOCKER & CONTAINER ORCHESTRATION CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
-DOCKER_SOCKET = "/var/run/docker.sock"
-DOCKER_ENABLED = os.path.exists(DOCKER_SOCKET)
-
-# Marin's managed container labels
-MARIN_CONTAINER_LABEL = "marin.managed=true"
-MARIN_OWNER_LABEL = "marin.owner=bayazid"
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PROACTIVE ENGINE INTERVALS (Updated as requested)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-PROACTIVE_INTERVALS = {
-    "idle_checks": [1800, 7200, 25200, 172800],  # 30min, 2hr, 7hr, 2d
-    "active_user_multiplier": 0.5,  # Halve intervals when user is active
-    "inactive_user_multiplier": 2.0,  # Double intervals when user is inactive
-    "quiet_hours": {"start": 0, "end": 7.5},  # Midnight to 7:30 AM
+EMAILS: dict[str, str] = {
+    # "name": "email@example.com"
+    # Add your contacts here
 }
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# HEALTH CHECK & FORENSICS CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
-HEALTH_CHECK_INTERVAL = 600  # 10 minutes
-MAX_FORENSICS_PER_HOUR = 5
-FORENSIC_WINDOW_SECONDS = 3600
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MCP / AGENT DISCOVERY CONFIG
-# ═══════════════════════════════════════════════════════════════════════════════
-
-MCP_AGENTS = {
-    "claude": "Claude Code",
-    "gemini": "Gemini CLI",
-    "opencode": "OpenCode",
-    "kiro-cli": "Kiro CLI",
-    "aider": "Aider",
-    "cursor": "Cursor",
-    "windsurf": "Windsurf",
-    "copilot": "GitHub Copilot CLI",
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# API PROVIDERS LIST (for .bashrc)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-API_PROVIDERS = {
-    "openrouter": "OpenRouter (free models + paid)",
-    "gemini": "Google Gemini (free tier available)",
-    "openai": "OpenAI GPT models",
-    "anthropic": "Anthropic Claude models",
-    "telegram": "Telegram Bot API",
-    "ollama": "Local Ollama (free, offline)",
-    "huggingface": "HuggingFace Inference API",
-    "replicate": "Replicate API",
-    "together": "Together.ai",
-    "perplexity": "Perplexity API",
-    "groq": "Groq (fast inference)",
-    "cerebras": "Cerebras (fast inference)",
-    "fireworks": "Fireworks AI",
-    "deepinfra": "DeepInfra",
-    "anthropic-direct": "Anthropic Direct API",
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# UTILITY FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def get_available_providers() -> List[str]:
-    """Get list of API providers that have keys configured."""
-    available = ["ollama"]  # Always available locally
-    providers_with_keys = ["google", "openai", "anthropic", "openrouter"]
-    for p in providers_with_keys:
-        if get_api_key(p):
-            available.append(p)
-    return list(set(available))
-
-def classify_task(user_input: str) -> str:
-    """Classify user input to determine model tier."""
-    text = user_input.lower().strip()
-    for tier, keywords in TASK_ROUTING.items():
-        for keyword in keywords:
-            if keyword in text:
-                return tier
-    # Default to standard for ambiguous queries
-    return "standard_tasks"
-
-def get_model_for_task(task_type: str, force_tier: Optional[str] = None) -> str:
-    """Get optimal model for a given task type."""
-    tier = force_tier or task_type
-    models = MODEL_TIERS.get(tier, [])
-    
-    if not models:
-        return DEFAULT_MODEL
-    
-    import random
-    return random.choice(models)
-
-def get_api_providers_comment() -> str:
-    """Generate comment string for .bashrc with all available providers."""
-    providers_str = ", ".join(sorted(API_PROVIDERS.keys()))
-    return f"# Available API providers: {providers_str}"

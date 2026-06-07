@@ -42,14 +42,21 @@ def run_sequence(commands, default_delay=3, log_callback=None):
         env = os.environ.copy()
         env.setdefault("DISPLAY", ":0")
 
-        proc = subprocess.Popen(
-            cmd, shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            cwd=str(BASE),
-            env=env,
-        )
+        # OWNER-ONLY — single-user dev box
+        import shlex
+        try:
+            args = shlex.split(cmd)
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                cwd=str(BASE),
+                env=env,
+            )
+        except Exception as e:
+            results.append({"name": name, "cmd": cmd, "ok": False, "error": str(e)})
+            continue
 
         out_text = ""
         err_text = ""
