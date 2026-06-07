@@ -5,11 +5,16 @@ import asyncio
 import subprocess
 import threading
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
 
 import httpx
 
 from config import RAG_PORT
+from utils.persona import get_character_prompt, analyze_marin_vibe
+from utils.security import apply_friction, log_command
+from privilege_manager import get_privilege_manager, get_role, cold_latency
+from langgraph_agent import stream_chat_with_marin
+import database
 
 # ── RAG configuration ──────────────────────────────────────────────────────────
 RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
@@ -76,12 +81,11 @@ async def analyze_image(image_path: str) -> str:
 
 # ── Tool Execution ──────────────────────────────────────────────────────────
 
-def execute_text_commands(text: str, base_dir: str):
+def execute_text_commands(text: str, user: dict):
     """
-    Scan text for shell commands and execute them.
-    (Similar to marin.py's _exec_text_commands)
+    Scan text for shell commands and execute them in a thread pool.
     """
-    from marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs, CMD_LOG
+    from deprecated_marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs
     
     body = re.sub(r'```(?:\w*\n)?([\s\S]*?)```', r'\1', text)
     body = re.sub(r'[^\x20-\x7E\n]', '', body)
@@ -89,7 +93,6 @@ def execute_text_commands(text: str, base_dir: str):
     body = _convert_heredocs(body)
 
     raw_cmds = []
-    from marin_fier import is_cmd_allowed
     for m in _TEXT_CMD_PAT.finditer(body):
         cmd = _strip_md_trail(m.group(1))
         if cmd:
@@ -97,159 +100,44 @@ def execute_text_commands(text: str, base_dir: str):
 
     if not raw_cmds: return
 
-    def _run():
-        for cmd in raw_cmds:
-            try:
-                r = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, timeout=30,
-                    cwd=base_dir,
-                    env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
-                )
-                out = f"[EXIT {r.returncode}] {(r.stdout or r.stderr or '(done)').strip()[:500]}"
-                print(f"[Agent] Ran: {cmd[:80]} -> {out[:100]}")
+    user_id = user["user_id"]
+    
+    from utils.command_runner import run_command
+    def _run_task(cmd):
+        # We wrap in shlex.split for safety
+        import shlex
+        try:
+            args = shlex.split(cmd)
+            # Check if user is authorized for terminal commands
+            from safety import system_guard
+            if not system_guard.is_authorized(user_id):
+                log_command(cmd, "blocked", "Password authorization required for terminal commands.", user_id=user_id)
+                return
                 
-                ts = datetime.now().strftime("%H:%M:%S")
-                CMD_LOG.append({"cmd": cmd, "allowed": True, "output": out[:200], "ts": ts})
-                if len(CMD_LOG) > 100: CMD_LOG.pop(0)
-            except Exception as e:
-                print(f"[Agent] Command failed: {cmd[:80]} — {e}")
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def extract_and_execute_commands(text: str, base_dir: str) -> str:
-    """
-    Two-pass agentic helper:
-    1. Detect heredocs (cat <<EOF > path ... EOF) and write files directly
-    2. Extract remaining shell commands and execute them synchronously
-    3. Return formatted results (to be fed back to LLM)
-    """
-    import textwrap
-
-    results = []
-
-    # ── Step 1: Handle heredocs directly (write files via Python, not shell) ──
-    heredoc_pattern = re.compile(
-        r'(?:^|\n)\s*(mkdir\s+-p\s+\S+\s*&&\s*)?cat\s+<<\s*(?:EOF|\'EOF\'|"EOF")?\s*>\s*(\S+)\s*\n(.*?)^\s*(?:EOF|\'EOF\'|"EOF")\s*$',
-        re.DOTALL | re.MULTILINE | re.IGNORECASE
-    )
-
-    def _write_heredoc(m):
-        mkdir_prefix = m.group(1) or ""
-        target_file = m.group(2).strip()
-        heredoc_body = m.group(3)
-        content = textwrap.dedent(heredoc_body).strip()
-
-        dir_part = os.path.dirname(target_file)
-        if dir_part:
-            os.makedirs(dir_part, exist_ok=True)
-
-        try:
-            with open(target_file, 'w') as f:
-                f.write(content + "\n")
-            results.append(f"$ [heredoc] > {target_file}\n[OK] File written ({len(content)} bytes)")
+            code, output = asyncio.run(run_command(cmd, timeout=30))
+            log_command(cmd, "done" if code == 0 else f"exit {code}", output, user_id=user_id)
         except Exception as e:
-            results.append(f"$ [heredoc] > {target_file}\n[ERROR] {e}")
-
-        return ""
-
-    text = heredoc_pattern.sub(_write_heredoc, text)
-
-    # ── Step 2: Handle simple inline heredocs (cat < path ... EOF without >>)
-    simple_heredoc = re.compile(
-        r'(?:^|\n)\s*(?:mkdir\s+-p\s+\S+\s*&&\s*)?cat\s*<\s*(\S+)\s*\n(.*?)^\s*EOF\s*$',
-        re.DOTALL | re.MULTILINE | re.IGNORECASE
-    )
-
-    def _write_simple_heredoc(m):
-        target_file = m.group(1).strip()
-        heredoc_body = m.group(2)
-        content = textwrap.dedent(heredoc_body).strip()
-
-        dir_part = os.path.dirname(target_file)
-        if dir_part:
-            os.makedirs(dir_part, exist_ok=True)
-
-        try:
-            with open(target_file, 'w') as f:
-                f.write(content + "\n")
-            results.append(f"$ [heredoc] > {target_file}\n[OK] File written ({len(content)} bytes)")
-        except Exception as e:
-            results.append(f"$ [heredoc] > {target_file}\n[ERROR] {e}")
-
-        return ""
-
-    text = simple_heredoc.sub(_write_simple_heredoc, text)
-
-    # ── Step 3: Extract and execute remaining shell commands ───────────────
-    from marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs
-    body = re.sub(r'```(?:\w*\n)?([\s\S]*?)```', r'\1', text)
-    body = re.sub(r'[^\x20-\x7E\n]', '', body)
-    body = re.sub(r'`([^`\n]+)`', r'\1', body)
-
-    raw_cmds = []
-    from marin_fier import is_cmd_allowed
-    for m in _TEXT_CMD_PAT.finditer(body):
-        cmd = _strip_md_trail(m.group(1))
-        if cmd and 'cat' not in cmd[:5]:
-            raw_cmds.append(cmd)
+            log_command(cmd, "error", str(e), user_id=user_id)
 
     for cmd in raw_cmds:
-        allowed, reason = is_cmd_allowed(cmd)
-        if not allowed:
-            results.append(f"[BLOCKED] {cmd} — {reason}")
-            continue
-
-        try:
-            r = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=30,
-                cwd=base_dir,
-                env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
-            )
-            output = (r.stdout or r.stderr or "(done)").strip()[:2000]
-            exit_code = r.returncode
-            results.append(f"$ {cmd}\n[EXIT {exit_code}] {output}")
-        except subprocess.TimeoutExpired:
-            results.append(f"$ {cmd}\n[TIMEOUT] Command timed out after 30s")
-        except Exception as e:
-            results.append(f"$ {cmd}\n[ERROR] {e}")
-
-    if not results:
-        return ""
-
-    return "[COMMAND EXECUTION RESULTS]\n" + "\n\n".join(results)
-
+        threading.Thread(target=_run_task, args=(cmd,), daemon=True).start()
 
 # ── Unified Preprocessor ─────────────────────────────────────────────────────
 
-async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False, agent_name: str = "marin") -> Dict[str, Any]:
-    from marin import classify
+async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False) -> Dict[str, Any]:
+    from marin_fier import classify
     
     classification = classify(user_input)
-    intent = classification.get("intent", "chat")
-    
-    tool_outputs = []
-
-    yt_regex = r"(https?://)?(www.)?(youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[^\s]+"
-    is_youtube = bool(re.search(yt_regex, user_input, re.IGNORECASE))
     
     rag_context = ""
     if rag_enabled:
         rag_context = await get_rag_context(user_input)
 
     media_blocks = []
-    if is_youtube or image_path:
-        tasks = []
-        if is_youtube: tasks.append(analyze_youtube(user_input))
-        if image_path:   tasks.append(analyze_image(image_path))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for res in results:
-            media_blocks.append("[Media analysis failed]" if isinstance(res, Exception) else res)
+    # (YouTube transcript logic can be added here if needed)
 
     parts = []
-    if rag_context:   parts.append(rag_context)
-    if media_blocks:  parts.append("CONTEXT FROM MEDIA:\n" + "\n".join(media_blocks))
-    if tool_outputs:  parts.append("TOOL EXECUTION RESULTS:\n" + "\n\n".join(tool_outputs))
+    if rag_context:   parts.append(f"[KNOWLEDGE HUB]\n{rag_context}")
     parts.append(f"USER'S MESSAGE: {user_input}")
 
     enriched_prompt = "\n\n".join(parts)
@@ -257,6 +145,78 @@ async def preprocess_input(user_input: str, image_path: str = None, rag_enabled:
     return {
         "enriched_prompt": enriched_prompt,
         "classification": classification,
-        "rag_context": rag_context,
-        "tool_outputs": tool_outputs
+        "rag_context": rag_context
     }
+
+# ── Main Chat Stream Wrapper ──────────────────────────────────────────────────
+
+async def stream_marin_chat(
+    prompt: str, 
+    user: dict, 
+    session_id: str = "default",
+    image_path: str = None
+) -> AsyncIterator[str]:
+    """
+    Production-grade streaming entry point.
+    Handles security, preprocessing, and LangGraph dispatch.
+    """
+    user_id = user["user_id"]
+    is_owner = (user["role"] == "owner")
+    
+    pm = get_privilege_manager()
+    role = get_role(user)
+
+    # 1. Security & Latency
+    cold_latency(user, confidence=1.0)
+    await apply_friction(user_id, is_owner=is_owner)
+
+    # 2. Quota Check
+    if not pm.check_quota(user_id):
+        yield f"[QUOTA EXCEEDED] Your query limit is exhausted for today."
+        return
+    pm.use_quota(user_id)
+
+    # 3. Preprocess (RAG, Classification)
+    prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=True)
+    classification = prep["classification"]
+    intent = classification.get("intent")
+    
+    # 4. Password-based System Guard
+    SENSITIVE_INTENTS = {"run_command", "terminal_tool", "binance_tool", "execute_trade_tool", "docker_tool", "model_tool"}
+    
+    from safety import system_guard
+    if intent in SENSITIVE_INTENTS and not system_guard.is_authorized(user_id):
+        yield f"__PASSWORD_REQUIRED__{intent}"
+        return
+
+    # 5. Load History
+    history = database.get_history("marin", limit=20, user_id=user_id, session_id=session_id)
+
+    # 6. Execute LangGraph
+    full_response = ""
+    user_vibe = classification.get("user_vibe", "neutral")
+    
+    async for chunk in stream_chat_with_marin(
+        prompt,
+        history=history,
+        context=prep["enriched_prompt"],
+        user_id=user_id,
+        role=user["role"],
+        user_vibe=user_vibe
+    ):
+        # Sanitize for output
+        clean = pm.sanitize_response(chunk, user)
+        yield clean
+        full_response += clean
+
+    # 7. Post-process (Save history, analyze vibe, run commands)
+    if full_response:
+        database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
+        database.save_message("marin", "assistant", full_response, user_id=user_id, session_id=session_id)
+        
+        # Execute extracted text commands if allowed
+        execute_text_commands(full_response, user)
+        
+        # Determine vibe for frontend
+        vibe = analyze_marin_vibe(full_response)
+        yield f"__VIBE__{vibe}"

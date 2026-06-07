@@ -80,10 +80,12 @@ def is_available(cmd: str) -> bool:
 
 def launch(cmd: str):
     """Launch a command detached from this process."""
+    # OWNER-ONLY — single-user dev box trust boundary
+    import shlex
     try:
+        args = shlex.split(cmd)
         subprocess.Popen(
-            cmd,
-            shell=True,
+            args,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,

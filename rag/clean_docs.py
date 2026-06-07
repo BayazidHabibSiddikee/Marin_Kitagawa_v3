@@ -2,6 +2,7 @@
 # clean_docs.py — removes PDFs that PyPDFLoader can't load (unsuitable for FAISS)
 
 import os
+import sys
 from langchain_community.document_loaders import PyPDFLoader
 
 DOC_DIR = "doc"
@@ -15,7 +16,7 @@ def is_bad_pdf(path):
     except Exception as e:
         return str(e)
 
-def clean():
+def clean(force: bool = False):
     if not os.path.exists(DOC_DIR):
         print(f"[!] Directory '{DOC_DIR}' not found.")
         return
@@ -49,14 +50,17 @@ def clean():
     for pdf, reason in bad:
         print(f"  - {pdf} ({reason})")
 
-    confirm = input("\nDelete these files? [y/N]: ").strip().lower()
-    if confirm == "y":
-        for pdf, _ in bad:
-            os.remove(os.path.join(DOC_DIR, pdf))
-            print(f"  [deleted] {pdf}")
-        print(f"\n[✓] Removed {len(bad)} bad PDFs.")
-    else:
-        print("[!] Aborted. Nothing deleted.")
+    if not force:
+        confirm = input("\nDelete these files? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print("[!] Aborted. Nothing deleted.")
+            return
+
+    for pdf, _ in bad:
+        os.remove(os.path.join(DOC_DIR, pdf))
+        print(f"  [deleted] {pdf}")
+    print(f"\n[✓] Removed {len(bad)} bad PDFs.")
 
 if __name__ == "__main__":
-    clean()
+    force = "--force" in sys.argv
+    clean(force=force)

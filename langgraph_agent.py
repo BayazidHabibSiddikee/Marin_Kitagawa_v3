@@ -17,7 +17,7 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
-from langchain_community.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 import subprocess
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -805,6 +805,105 @@ def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, pri
         return f"Binance error: {e}"
 
 @tool
+def batch_convert_tool(directory: str, action: str = "pdf") -> str:
+    """Convert multiple files in a directory.
+    
+    Args:
+        directory: Path to the folder.
+        action: 'pdf' (convert all docx/xlsx to pdf) or 'text' (extract text from all pdfs).
+    """
+    from tools.batch_converter import batch_convert_to_pdf, batch_extract_text
+    try:
+        if action == "text":
+            res = batch_extract_text(directory)
+            return f"Processed {len(res['extracted'])} PDFs. Extracted text to .txt files."
+        else:
+            res = batch_convert_to_pdf(directory)
+            return f"Successfully converted {len(res['converted'])} files to PDF."
+    except Exception as e:
+        return f"Batch tool error: {e}"
+
+@tool
+def learn_topic_tool(topic: str, user_id: str = "USR-MASTER", session_id: str = "default") -> str:
+    """The 'God-Tier' learning sequence. 
+    Searches for books, downloads them, creates a study plan, and indexes the material.
+    
+    Args:
+        topic: The subject you want to master (e.g., 'Numerical Methods').
+        user_id: ID of the user (injected automatically).
+        session_id: Current conversation thread ID (injected automatically).
+    """
+    from tools.learn_workflow import execute_learn_workflow
+    import asyncio
+    try:
+        # Since this is an async tool call in a sync environment
+        return asyncio.run(execute_learn_workflow(topic, user_id, session_id))
+    except Exception as e:
+        return f"Learning workflow error: {e}"
+
+@tool
+def research_paper_tool(query: str, action: str = "search", paper_url: str = None, title: str = None) -> str:
+    """Search or download research papers from arXiv.
+    
+    Args:
+        query: Search term for the paper.
+        action: 'search' or 'download' (requires paper_url and title).
+        paper_url: The URL to download from.
+        title: The paper title for filename.
+    """
+    from tools.research_paper import search_arxiv, download_paper
+    try:
+        if action == "download" and paper_url and title:
+            res = download_paper(paper_url, title)
+            if res["ok"]:
+                return f"Successfully downloaded paper: {title}. File: {res['filename']} in static/downloads/"
+            else:
+                return f"Download failed: {res['error']}"
+        else:
+            results = search_arxiv(query)
+            if not results: return f"No research papers found for '{query}'."
+            
+            lines = [f"Found research papers for '{query}':"]
+            for p in results:
+                lines.append(f"- {p['title']} | [PDF]({p['download_url']})")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"Research tool error: {e}"
+
+@tool
+def study_engine_tool(topic: str, action: str = "plan", level: str = "beginner") -> str:
+    """Create roadmaps, learning plans, or quizzes on any topic.
+    
+    Args:
+        topic: The subject to learn or be tested on.
+        action: 'plan' (for a roadmap) or 'quiz' (for testing).
+        level: 'beginner', 'intermediate', or 'advanced'.
+    """
+    from tools.study_engine import create_study_plan, generate_quiz
+    try:
+        if action == "quiz":
+            res = generate_quiz(topic)
+            if res["ok"]:
+                q_list = [f"Quiz for {topic}:"]
+                for q in res["quiz"]["questions"]:
+                    q_list.append(f"{q['id']}. {q['question']}")
+                    q_list.append(f"   Options: {', '.join(q['options'])}")
+                return "\n".join(q_list)
+        else:
+            res = create_study_plan(topic, level)
+            if res["ok"]:
+                p = res["plan"]
+                lines = [f"Study Plan for {topic} ({level}):"]
+                for phase in p["phases"]:
+                    lines.append(f"\n### {phase['name']}")
+                    lines.append(f"Objectives: {', '.join(phase['objectives'])}")
+                    lines.append(f"Chapters: {', '.join(phase['chapters'])}")
+                return "\n".join(lines)
+        return "Study engine failed to process request."
+    except Exception as e:
+        return f"Study engine error: {e}"
+
+@tool
 def pdf_analyze_tool(path: str) -> str:
     """Analyze a PDF document for structure, type, and insights.
     
@@ -932,11 +1031,12 @@ ALL_TOOLS = [
     news_tool, weather_tool, stock_tool, crypto_tool,
     screenshot_tool, generate_image_tool, terminal_tool, vault_access, rag_search,
     pdf_download_tool, msg_telegram, email_send, app_launch, app_list,
-    swordwatch_inspect, swordwatch_kill,
     habit_add, habit_complete, habit_list, habit_stats, habit_today, habit_delete,
     file_tool, model_tool, docker_tool,
     stealth_browse_tool, forensics_tool, psychology_vault_tool,
-    binance_tool, business_analysis_tool, execute_trade_tool, youtube_download_tool, book_download_tool
+    binance_tool, business_analysis_tool, execute_trade_tool,
+    youtube_download_tool, book_download_tool, pdf_analyze_tool, study_engine_tool, 
+    batch_convert_tool, research_paper_tool, learn_topic_tool
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -975,6 +1075,7 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - stock_tool(symbol: str) — Stock price.
 - crypto_tool(coin: str) — Crypto price.
 - screenshot_tool() — Capture screen.
+- generate_image_tool(prompt: str) — Generate AI image.
 - terminal_tool(command: str) — Run command in Docker sandbox.
 - vault_access(category: str, query: str) — Search vault.
 - rag_search(query: str) — Search books/knowledge.
@@ -988,11 +1089,13 @@ AVAILABLE TOOLS (Executor can call these — plan steps using their names):
 - stealth_browse_tool(query) — Stealth web research via Camoufox.
 - forensics_tool(action) — System health & threat detection.
 - psychology_vault_tool(action, data) — Track master's learning & book suggestions.
-- binance_tool(action, symbol, amount, price) — Binance portfolio & manual trading.
-- business_analysis_tool(query, symbol) — Runs The Arena Debate (Geopolitical vs Quantitative).
-- execute_trade_tool(symbol, side, amount, condition, target_price) — Safe execution or price-triggered automated trading.
-- youtube_download_tool(url, mode, quality) — Download YouTube videos or MP3 audio. Args: {"url": "...", "mode": "video|audio"}
-- book_download_tool(query, action, book_url, title) — Search or download free books. Args: {"query": "...", "action": "search|download"}
+- youtube_download_tool(url, mode, quality) — Download YouTube videos or MP3 audio.
+- book_download_tool(query, action, book_url, title) — Search or download free books.
+- pdf_analyze_tool(path) — Analyze a PDF document for structure and insights.
+- study_engine_tool(topic, action, level) — Create roadmaps, learning plans, or quizzes.
+- batch_convert_tool(directory, action) — Convert files or extract text in bulk.
+- research_paper_tool(query, action, paper_url, title) — Search or download arXiv papers.
+- learn_topic_tool(topic) — God-tier learning sequence (find books, create plan, index).
 """
 
 STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the user's request and build a step-by-step execution plan.
@@ -1120,8 +1223,24 @@ def node_executor(state: AgentState) -> dict:
     task_type = classify_task(user_input)
     executor = get_orchestrated_executor(task_type)
 
+    # ── SPECIAL BUSINESS PATH ──
+    # If the strategist planned a business analysis, run the Arena
+    if any(p.get("action") == "business_analysis_tool" for p in plan) and "business_analysis_tool" not in tool_outputs:
+        from tools.agents.business_agents.business_orchestrator import run_business_analysis, format_business_report
+        symbol = "BTCUSDT" # Default
+        for p in plan:
+            if p.get("action") == "business_analysis_tool":
+                symbol = p.get("args", {}).get("symbol", "BTCUSDT")
+                break
+        
+        print(f"[Arena] Activating Trading Arena for {symbol}...")
+        analysis = run_business_analysis(user_input, symbol, state.get("user_id", "USR-MASTER"))
+        report = format_business_report(analysis)
+        tool_outputs["business_analysis_tool"] = report
+        return {"tool_outputs": tool_outputs}
+
     # Determine current step
-    completed_steps = len(tool_outputs)
+    completed_steps = len([k for k in tool_outputs.keys() if not k.startswith("__")])
     current_step = plan[completed_steps] if completed_steps < len(plan) else None
 
     if current_step is None:
@@ -1137,13 +1256,17 @@ def node_executor(state: AgentState) -> dict:
     action = current_step.get("action", "respond")
     args = dict(current_step.get("args", {}))
 
-    # Inject user context into tool arguments if the tool supports it
+    # Inject user and session context into tool arguments if the tool supports it
     if action in tools_by_name:
         fn = tools_by_name[action]
-        # Check if 'user_id' is an expected argument for this tool
-        if hasattr(fn, "args_schema") and fn.args_schema and "user_id" in fn.args_schema.model_fields:
-             if "user_id" not in args or args["user_id"] in ("USR-MASTER", "USR-00000000"):
-                 args["user_id"] = state.get("user_id", "USR-00000000")
+        # Check if 'user_id' or 'session_id' are expected arguments for this tool
+        if hasattr(fn, "args_schema") and fn.args_schema:
+             if "user_id" in fn.args_schema.model_fields:
+                 if "user_id" not in args or args["user_id"] in ("USR-MASTER", "USR-00000000"):
+                     args["user_id"] = state.get("user_id", "USR-00000000")
+             if "session_id" in fn.args_schema.model_fields:
+                 if "session_id" not in args or args["session_id"] == "default":
+                     args["session_id"] = state.get("session_id", "default")
 
     if action == "respond":
         # Generate a direct response

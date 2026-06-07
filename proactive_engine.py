@@ -230,13 +230,12 @@ def _get_time_context() -> str:
 # ── Proactive Message Generator ───────────────────────────────────────────
 
 async def _generate_proactive(agent: str) -> str | None:
-    """Generate a context-aware proactive message using the LLM."""
+    """Generate a context-aware proactive message using the local LLM."""
     if not _can_fire(agent):
         return None
 
     try:
-        from langchain_ollama import ChatOllama
-        from config import DEFAULT_MODEL, OLLAMA_BASE_URL
+        from local_llm import stream_local_chat
         from marin import get_character_prompt
     except ImportError:
         return None
@@ -336,14 +335,12 @@ Rules:
 """
 
     try:
-        llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.8)
-        # Wrap the invoke in a timeout to prevent hanging the event loop
-        resp = await asyncio.wait_for(
-            asyncio.to_thread(llm.invoke, prompt),
-            timeout=30.0
-        )
-        txt = resp.content.strip()
-
+        messages = [{"role": "system", "content": prompt}]
+        text = ""
+        async for chunk in stream_local_chat(messages, max_tokens=200):
+            text += chunk
+        
+        text = text.strip()
         if text and len(text) > 10:
             _last_proactive_time[agent] = time.time()
             _streak_count[agent] = _streak_count.get(agent, 0) + 1
@@ -369,8 +366,7 @@ async def proactive_broadcaster(agent: str = "marin"):
     now = datetime.now().time()
     if not _is_quiet_hours():
         try:
-            from langchain_ollama import ChatOllama
-            from config import DEFAULT_MODEL, OLLAMA_BASE_URL
+            from local_llm import stream_local_chat
             from marin import get_character_prompt
 
             greeting = _get_time_greeting()
@@ -384,14 +380,12 @@ Time: {greeting}. Context: {time_ctx}.
 Habit status: {habit_ctx or 'no active habits'}.
 Rules: Under 2 sentences. Stay in character. No questions. Do NOT sign your name.
 """
-            llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.7)
-            # Wrap the invoke in a timeout to prevent hanging the event loop
-            resp = await asyncio.wait_for(
-                asyncio.to_thread(llm.invoke, prompt),
-                timeout=30.0
-            )
-            txt = resp.content.strip()
-
+            messages = [{"role": "system", "content": prompt}]
+            text = ""
+            async for chunk in stream_local_chat(messages, max_tokens=100):
+                text += chunk
+            
+            text = text.strip()
             if text:
                 await _broadcast(text, "greeting", agent)
         except Exception:

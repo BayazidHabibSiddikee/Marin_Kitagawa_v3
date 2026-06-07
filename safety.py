@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from utils.sys_platform import in_docker, STORAGE_DIR
-
+STORAGE_DIR = Path(__file__).parent.parent / "storage"
 KILL_SWITCH_FILE = STORAGE_DIR / "kill_switch.json"
 CONFIRM_FILE = STORAGE_DIR / "pending_confirmations.json"
 
@@ -37,6 +36,8 @@ class KillSwitch:
         return {"active": False, "activated_at": None, "reason": None}
 
     def _save(self):
+        # OWNER-ONLY — single-user dev box trust boundary
+        # In a multi-user shared host, this should be in /var/run owned by root.
         KILL_SWITCH_FILE.write_text(json.dumps(self._state, indent=2))
         os.chmod(KILL_SWITCH_FILE, 0o600)
 
@@ -94,8 +95,6 @@ class KillSwitch:
 
     def check(self) -> bool:
         """Returns True if commands are allowed, False if kill switch is active."""
-        if in_docker():
-            return True  # Inside Docker — no kill switch, she runs free
         return not self.is_active
 
 
@@ -118,8 +117,6 @@ _counter = 0
 
 def agent_needs_confirmation(agent: str, action: str) -> bool:
     """Check if an agent action requires HITL confirmation."""
-    if in_docker():
-        return False  # Inside Docker — no confirmation needed, she decides for herself
     actions = AGENT_REQUIRES_CONFIRM.get(agent, [])
     return action in actions
 
@@ -175,6 +172,60 @@ def _load_pending():
             _pending = {}
 
 
+import hashlib
+import secrets
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SYSTEM GUARD (Password Authorization)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SystemGuard:
+    """Handles password-based authorization for sensitive system actions."""
+    
+    PASSWORD_FILE = STORAGE_DIR / ".sys_pass"
+    _authorized_sessions: Dict[str, float] = {}  # user_id -> expiry_ts
+    SESSION_DURATION = 3600  # 1 hour
+
+    def __init__(self):
+        self._load_password()
+
+    def _load_password(self):
+        if self.PASSWORD_FILE.exists():
+            self._pass_hash = self.PASSWORD_FILE.read_text().strip()
+        else:
+            # Default password on first run: 'marin'
+            self.set_password("marin")
+            print("[SECURITY] INITIAL PASSWORD SET TO 'marin'. Change it immediately.")
+
+    def set_password(self, password: str):
+        salt = secrets.token_hex(8)
+        h = hashlib.sha256((salt + password).encode()).hexdigest()
+        self.PASSWORD_FILE.write_text(f"{salt}:{h}")
+        self._pass_hash = f"{salt}:{h}"
+        self.PASSWORD_FILE.chmod(0o600)
+
+    def verify(self, user_id: str, password: str) -> bool:
+        if not self._pass_hash or ":" not in self._pass_hash:
+            return False
+        salt, h = self._pass_hash.split(":")
+        if hashlib.sha256((salt + password).encode()).hexdigest() == h:
+            self._authorized_sessions[user_id] = time.time() + self.SESSION_DURATION
+            return True
+        return False
+
+    def is_authorized(self, user_id: str) -> bool:
+        expiry = self._authorized_sessions.get(user_id, 0)
+        if time.time() < expiry:
+            return True
+        return False
+
+    def revoke(self, user_id: str):
+        if user_id in self._authorized_sessions:
+            del self._authorized_sessions[user_id]
+
+system_guard = SystemGuard()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # EGRESS FILTER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -192,8 +243,7 @@ ALLOWED_EGRESS = {
     "generativelanguage.googleapis.com",
     "api.anthropic.com",
     "api.deepseek.com",
-    "ifconfig.me",
-    "icanhazip.com",
+    "openrouter.ai",
 }
 
 

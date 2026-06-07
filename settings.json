@@ -1,22 +1,49 @@
 {
   "models": {
-    "default": "gemma4:31b-cloud",
-    "fast": "qwen2.5:0.5b",
+    "default": "local-dolphin",
+    "fast": "local-dolphin",
     "vision": "leo",
     "embedding": "all-MiniLM-L6-v2"
+  },
+  "providers": {
+    "ollama": {
+      "enabled": false,
+      "base_url": "http://localhost:11434"
+    },
+    "openai": {
+      "enabled": false,
+      "api_key": "",
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1"
+    },
+    "gemini": {
+      "enabled": false,
+      "api_key": "",
+      "model": "gemini-2.0-flash"
+    },
+    "anthropic": {
+      "enabled": false,
+      "api_key": "",
+      "model": "claude-sonnet-4-20250514"
+    }
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5069,
+    "rag_port": 5080
+  },
+  "email": {
+    "sender": ""
   },
   "api_keys": {
     "openai": "",
     "anthropic": "",
     "google": ""
   },
-  "server": {
-    "host": "0.0.0.0",
-    "port": 5069,
-    "ollama_base_url": "http://localhost:11434",
-    "openai_base_url": "https://api.openai.com/v1"
-  },
-  "email": {
-    "sender": ""
+  "personality": {
+    "mode": "bubbly",
+    "tone": "energetic",
+    "obedience": "loyal",
+    "system_type": "supportive_partner"
   }
 }
