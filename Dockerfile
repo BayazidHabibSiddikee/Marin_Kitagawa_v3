@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     ffmpeg \
     espeak \
+    vlc-bin \
+    libvlc-dev \
     curl \
     ca-certificates \
     supervisor \
