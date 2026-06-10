@@ -6,7 +6,7 @@ Part of the SwordFish Tools suite.
 
 import os
 from typing import List, Dict, Any
-from tools.office_tools import pdf_to_xlsx, xlsx_to_pdf, word_to_pdf, pdf_to_text
+from tools.office_tools import pdf_to_xlsx, xlsx_to_pdf, docx_to_pdf, pdf_to_text
 
 def batch_convert_to_pdf(directory: str) -> Dict[str, Any]:
     """Convert all supported files in a directory to PDF."""
@@ -19,7 +19,7 @@ def batch_convert_to_pdf(directory: str) -> Dict[str, Any]:
         if filename.endswith(".docx"):
             out = path.replace(".docx", ".pdf")
             try:
-                word_to_pdf(path, out)
+                docx_to_pdf(path, out)
                 results.append(out)
             except: pass
         elif filename.endswith(".xlsx"):

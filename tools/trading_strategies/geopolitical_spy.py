@@ -1,7 +1,17 @@
 import re
 from tools.trading_strategies.base_strategy import TradingStrategy
-from tools.agents.business_agents.leader_rag import query_leader, analyze_statement
 from duckduckgo_search import DDGS
+
+def query_leader(name: str) -> dict:
+    return {"name": name, "posture": "neutral"}
+
+def analyze_statement(name: str, statement: str) -> dict:
+    text = statement.lower()
+    if any(x in text for x in ["cut", "dovish", "stimulus", "support"]):
+        return {"sentiment": "dovish"}
+    if any(x in text for x in ["hike", "hawkish", "inflation", "tighten"]):
+        return {"sentiment": "hawkish"}
+    return {"sentiment": "neutral"}
 
 class GeopoliticalSpy(TradingStrategy):
     """'The Spy' Agent — News sentiment and leader posture analysis."""
