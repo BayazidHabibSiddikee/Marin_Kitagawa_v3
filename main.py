@@ -101,9 +101,17 @@ async def get_voice_setting():
 
 @app.post("/settings/voice")
 async def set_voice_setting(request: Request):
-    data = await request.json()
     import marin
-    marin.VOICE_ENABLED = data.get("voice_enabled", False)
+    # Support both JSON and Form data
+    if "application/json" in request.headers.get("content-type", ""):
+        data = await request.json()
+        enabled = data.get("voice_enabled", data.get("enabled"))
+    else:
+        form = await request.form()
+        enabled = form.get("enabled") == "1" or form.get("voice_enabled") == "1"
+    
+    marin.VOICE_ENABLED = bool(enabled)
+    print(f"[VOICE] Manual Override: {'ON' if marin.VOICE_ENABLED else 'OFF'}")
     return {"status": "success", "voice_enabled": marin.VOICE_ENABLED}
 
 @app.get("/settings/rag")
