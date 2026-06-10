@@ -14,8 +14,9 @@
     <script src="https://unpkg.com/@pixiv/three-vrm@2.0.3/lib/three-vrm.js"></script>
     <style>
         #vrm-container {
-            width: 40%;
-            min-width: 200px;
+            width: 35%;
+            min-width: 250px;
+            height: 100%;
             background: #0d0a08;
             position: relative;
             display: none;
@@ -26,16 +27,31 @@
         #vrm-canvas { width: 100%; height: 100%; display: block; }
         
         #vrm-resizer {
-            width: 4px;
+            width: 8px;
+            margin: 0 -4px;
             cursor: col-resize;
-            background: var(--border);
+            background: transparent;
             display: none;
             z-index: 100;
-            transition: background 0.2s;
+            position: relative;
+            height: 100%;
+            flex-shrink: 0;
         }
-        #vrm-resizer:hover, #vrm-resizer.resizing {
+        #vrm-resizer::after {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+            transition: all 0.2s;
+        }
+        #vrm-resizer:hover::after, #vrm-resizer.resizing::after {
             background: var(--teal);
-            width: 6px;
+            width: 4px;
+            left: 2px;
+            box-shadow: 0 0 10px var(--teal-glow);
         }
 
         .chat-wrapper {
@@ -44,6 +60,8 @@
             flex-direction: column;
             background: var(--ink);
             min-width: 300px;
+            height: 100%;
+            overflow: hidden;
         }
         :root {
             /* Deep, warm-cool palette pulled from the character */
@@ -938,6 +956,7 @@
             isResizing = true;
             resizer.classList.add('resizing');
             document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none'; // Disable selection
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', stopResizing);
         });
@@ -946,13 +965,19 @@
             if (!isResizing) return;
             const container = document.querySelector('.main-area');
             const containerRect = container.getBoundingClientRect();
-            const sidebarWidth = document.querySelector('.sidebar').offsetWidth;
             
-            let newWidth = e.clientX - containerRect.left - sidebarWidth;
+            // ClientX is absolute, find position relative to container
+            let relativeX = e.clientX - containerRect.left;
+            
+            // If sidebar is visible, we need to subtract its width (flex child)
+            const sidebar = document.querySelector('.sidebar');
+            const sidebarWidth = (window.getComputedStyle(sidebar).display !== 'none') ? sidebar.offsetWidth : 0;
+            
+            let newWidth = relativeX - sidebarWidth;
             
             // Constraints
             const minWidth = 200;
-            const maxWidth = containerRect.width - 400; // Leave space for chat
+            const maxWidth = containerRect.width - sidebarWidth - 300; // Leave space for chat
             
             if (newWidth < minWidth) newWidth = minWidth;
             if (newWidth > maxWidth) newWidth = maxWidth;
@@ -965,6 +990,7 @@
             isResizing = false;
             resizer.classList.remove('resizing');
             document.body.style.cursor = 'default';
+            document.body.style.userSelect = 'auto'; // Re-enable selection
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', stopResizing);
         }
