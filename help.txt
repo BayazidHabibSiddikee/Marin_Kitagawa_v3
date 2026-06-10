@@ -3,7 +3,7 @@ docker compose up -d --build     # detached mode
 docker compose down              # stop
 
 
-gemini --resume ae8616ad-93af-4f10-b261-fdd5710f72e4
+
 openclaude --resume 9d6461b1-fabf-4c64-b0d4-1bac8c232e7e
 opencode -s ses_1610a54faffeeJ456LAQmKWt0o
 

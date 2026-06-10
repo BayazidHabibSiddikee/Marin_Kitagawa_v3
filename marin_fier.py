@@ -130,5 +130,26 @@ def extract_timer_task(text: str) -> Optional[str]:
     m = re.search(r'(?:timer|countdown)\s+(?:for|on)?\s*(.+)', text, re.I)
     return m.group(1).strip() if m else None
 
-def extract_topic(text: str) -> str:
-    return text[:50]
+def is_cmd_allowed(cmd: str) -> Tuple[bool, str]:
+    """
+    Validates if a command is allowed to run.
+    Checks against blocked patterns and metacharacters.
+    """
+    # 1. Block dangerous characters (preventing simple escapes)
+    # Note: we allow spaces, dots, dashes, and basic alphanum
+    # We block pipes, ampersands, redirects, etc. for guests
+    # (The system prompt has more detailed rules)
+    forbidden = r'[;&|`$(){}!\n\r<>]'
+    if re.search(forbidden, cmd):
+        return False, "Command contains forbidden characters."
+
+    # 2. Block destructive commands
+    destructive = [
+        r'\brm\s+-rf\b', r'\bmkfs\b', r'\bdd\b', r'\bformat\b',
+        r'\bshutdown\b', r'\breboot\b', r'\bpasswd\b',
+    ]
+    for pattern in destructive:
+        if re.search(pattern, cmd, re.IGNORECASE):
+            return False, "Command matches a destructive pattern."
+
+    return True, ""

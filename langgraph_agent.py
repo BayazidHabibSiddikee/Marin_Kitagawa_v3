@@ -19,6 +19,7 @@ from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 import subprocess
+from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -31,21 +32,23 @@ from utils.shared_logic import USER_CONTEXT
 
 def get_llm(model_name: str, bind_tools: list = None):
     """Factory to create the right LLM instance based on model name."""
-    # Check if it's a local model
-    is_local = model_name in LOCAL_MODELS or ":" in model_name and "/" not in model_name
+    # Use local Ollama for models in LOCAL_MODELS
+    # Others go to Cloud (OpenRouter/Proxy) via ChatOpenAI
+    is_local = model_name in LOCAL_MODELS or (":" in model_name and "/" not in model_name)
     
     if is_local:
-        llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL)
+        llm = ChatOllama(
+            model=model_name,
+            base_url=OLLAMA_BASE_URL,
+            request_timeout=120,
+        )
     else:
-        # OpenRouter / Cloud
-        api_key = get_api_key("openrouter") or OPENROUTER_API_KEY
         llm = ChatOpenAI(
             model=model_name,
-            openai_api_key=api_key,
-            openai_api_base=OPENROUTER_BASE_URL,
-            default_headers={"HTTP-Referer": "https://github.com/bayazid", "X-Title": "Marin HS-02"}
+            base_url=OPENROUTER_BASE_URL,
+            api_key=OPENROUTER_API_KEY or "sk-or-v1-proxy",
+            streaming=True
         )
-    
     if bind_tools:
         return llm.bind_tools(bind_tools)
     return llm
@@ -253,90 +256,6 @@ def app_list() -> str:
             lines.append(f"    {avail} {key} — {desc}")
         lines.append("")
     return "\n".join(lines)
-
-@tool
-def swordwatch_inspect(target: str) -> str:
-    """Deep inspect a running process by name or PID. Shows CPU, memory, threads, children, open files, network connections.
-    
-    Args:
-        target: Process name (e.g., 'firefox') or PID number (e.g., '1234').
-    """
-    import time as _time
-    from tools.swordwatch import find_procs, get_cmdline, get_threads, get_children, get_open_files, get_connections, fmt_bytes, fmt_uptime
-    import psutil
-
-    matches = find_procs(target)
-    if not matches:
-        return f"No process matching '{target}'."
-
-    proc = matches[0]
-    try:
-        with proc.oneshot():
-            pid     = proc.pid
-            name    = proc.name()
-            status  = proc.status()
-            uptime  = _time.time() - proc.create_time()
-            cpu_p   = proc.cpu_percent(interval=0.3)
-            mem     = proc.memory_info()
-            mem_p   = proc.memory_percent()
-            thr     = get_threads(proc)
-            cmd     = get_cmdline(proc)
-            try: user = proc.username()
-            except: user = "—"
-
-        files = get_open_files(proc)
-        conns = get_connections(proc)
-        kids  = get_children(proc)
-    except psutil.NoSuchProcess:
-        return f"Process '{target}' disappeared during inspection."
-
-    lines = [
-        f"🔍 {name} (pid {pid})",
-        f"  Status: {status} | User: {user}",
-        f"  CPU: {cpu_p:.1f}% | Memory: {mem_p:.1f}% ({fmt_bytes(mem.rss)})",
-        f"  Threads: {thr} | Uptime: {fmt_uptime(uptime)}",
-        f"  Command: {cmd[:120]}",
-    ]
-    if kids:
-        lines.append(f"  Children: {len(kids)} ({', '.join(k.name() for k in kids[:5])})")
-    if files:
-        lines.append(f"  Open files: {len(files)}")
-    if conns:
-        lines.append(f"  Network: {len(conns)} connections")
-    return "\n".join(lines)
-
-@tool
-def swordwatch_kill(target: str, force: bool = False) -> str:
-    """Kill a process by name or PID. Sends SIGTERM by default, SIGKILL if force=True.
-    
-    Args:
-        target: Process name (e.g., 'firefox') or PID number.
-        force: If True, sends SIGKILL (instant, no cleanup). If False, sends SIGTERM (graceful).
-    """
-    import signal as _signal
-    from tools.swordwatch import find_procs
-    import psutil
-
-    matches = find_procs(target)
-    if not matches:
-        return f"No process matching '{target}'."
-
-    sig = _signal.SIGKILL if force else _signal.SIGTERM
-    sig_name = "SIGKILL" if force else "SIGTERM"
-    results = []
-
-    for p in matches:
-        try:
-            name = p.name()
-            pid = p.pid
-            p.send_signal(sig)
-            results.append(f"✓ {sig_name} → {name} (pid {pid})")
-        except psutil.NoSuchProcess:
-            results.append(f"pid {p.pid} already gone")
-        except psutil.AccessDenied:
-            results.append(f"✗ pid {p.pid} access denied (try sudo)")
-
-    return "\n".join(results)
 
 @tool
 def msg_telegram(message: str) -> str:
@@ -564,15 +483,31 @@ def file_tool(action: str, path: str, content: str = "") -> str:
              return f"Access denied: {path} is outside the allowed workspace."
 
     try:
-        if action == "write":
+        if action == "write" or action == "append":
+            mode = "w" if action == "write" else "a"
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
+            with open(full_path, mode, encoding="utf-8") as f:
                 f.write(content)
-            return f"Successfully wrote to {path}."
-        elif action == "append":
-            with open(full_path, "a", encoding="utf-8") as f:
-                f.write(content)
-            return f"Successfully appended to {path}."
+            
+            # Auto-open logic
+            ext = full_path.suffix.lower()
+            opened_msg = ""
+            try:
+                # Text/Code formats open in Geany
+                if ext in [".txt", ".md", ".py", ".c", ".cpp", ".h", ".tex", ".sh", ".json", ".log"]:
+                    subprocess.Popen(["geany", str(full_path)], start_new_session=True,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    opened_msg = " and opened in Geany"
+                # PDF formats open in Okular
+                elif ext == ".pdf":
+                    subprocess.Popen(["okular", str(full_path)], start_new_session=True,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    opened_msg = " and opened in Okular"
+            except Exception:
+                pass # Fail silently if display/app is unavailable
+
+            verb = "wrote" if action == "write" else "appended"
+            return f"Successfully {verb} to {path}{opened_msg}."
         elif action == "read":
             if not full_path.exists(): return f"File not found: {path}"
             with open(full_path, "r", encoding="utf-8") as f:
@@ -1059,9 +994,6 @@ class AgentState(TypedDict):
 
 # ── Auditor Logic ────────────────────────────────────────────────────────────
 
-# Auditor stays on a stable reasoning model
-llm_auditor = get_llm(DEFAULT_MODEL)
-
 # ── Node B: The Executor ────────────────────────────────────────────────────
 
 AVAILABLE_TOOLS_DESC = """
@@ -1102,6 +1034,14 @@ STRATEGIST_SYSTEM = f"""You are Marin's Strategist. Your job is to analyze the u
 
 {AVAILABLE_TOOLS_DESC}
 
+ENVIRONMENT & CONSTRAINTS:
+- You operate in a Linux Docker sandbox.
+- Your project root is in the current directory.
+- You can write to the 'unique/' directory for persistent storage that the user can see.
+- Do NOT hallucinate file paths like '/home/sentinel'. Use relative paths or paths starting with 'unique/'.
+- 'Executing' a task means planning the correct tool calls. 
+- NEVER claim to have performed an action (like writing a file or running a command) unless you have included the corresponding tool call in your plan.
+
 RULES:
 1. Read the user message and determine what actions are needed.
 2. If you need context from vault or knowledge base, call vault_access or rag_search as a tool call.
@@ -1109,10 +1049,7 @@ RULES:
    {{"action": "<tool_name or 'respond'>", "args": {{...}}, "rationale": "..."}}
 4. If the task is simple (pure conversation, no tool needed), output a single step:
    [{{"action": "respond", "args": {{}}, "rationale": "Direct conversational response"}}]
-5. For multi-step tasks, plan multiple steps. Example for "what's bitcoin price and weather":
-   [{{"action": "crypto_tool", "args": {{"coin": "bitcoin"}}, "rationale": "Get crypto price"}},
-    {{"action": "weather_tool", "args": {{"city": "Dhaka"}}, "rationale": "Get weather"}},
-    {{"action": "respond", "args": {{}}, "rationale": "Combine results into response"}}]
+5. For multi-step tasks, plan multiple steps.
 6. Use file_tool whenever you need to create a script, save code, or write a note. 
 7. Do NOT execute tools yourself — only plan.
 
@@ -1226,7 +1163,7 @@ def node_executor(state: AgentState) -> dict:
     # ── SPECIAL BUSINESS PATH ──
     # If the strategist planned a business analysis, run the Arena
     if any(p.get("action") == "business_analysis_tool" for p in plan) and "business_analysis_tool" not in tool_outputs:
-        from tools.agents.business_agents.business_orchestrator import run_business_analysis, format_business_report
+        from tools.business_judge import BusinessJudge
         symbol = "BTCUSDT" # Default
         for p in plan:
             if p.get("action") == "business_analysis_tool":
@@ -1234,8 +1171,8 @@ def node_executor(state: AgentState) -> dict:
                 break
         
         print(f"[Arena] Activating Trading Arena for {symbol}...")
-        analysis = run_business_analysis(user_input, symbol, state.get("user_id", "USR-MASTER"))
-        report = format_business_report(analysis)
+        judge = BusinessJudge()
+        report = judge.run_debate(symbol, user_input, state.get("user_id", "USR-MASTER"))
         tool_outputs["business_analysis_tool"] = report
         return {"tool_outputs": tool_outputs}
 
@@ -1245,8 +1182,12 @@ def node_executor(state: AgentState) -> dict:
 
     if current_step is None:
         # All steps done — generate final response
+        instruction = "All plan steps are complete. Generate a comprehensive, helpful response to the user based on the collected information."
+        if correction:
+            instruction += f"\n\nCRITICAL CORRECTION FROM AUDITOR: {correction}\nYou MUST fix the issues mentioned above in your response."
+            
         executor_msgs = [
-            SystemMessage(content="All plan steps are complete. Generate a comprehensive, helpful response to the user based on the collected information."),
+            SystemMessage(content=instruction),
         ] + list(messages)
         response = executor.invoke(executor_msgs)
         # Store the final response content in tool_outputs under a sentinel key
@@ -1314,9 +1255,12 @@ AUDITOR_SYSTEM = """You are Marin's Auditor — a strict quality gate. You revie
 
 YOUR JOB:
 1. Read the tool outputs and the original user question.
-2. Check ONLY for: factual errors, math mistakes, hallucinated data, or completely empty/irrelevant answers.
-3. Set technical_verification to True if the output is accurate and addresses the user's question.
-4. If there are errors, explain what's wrong so the Executor can fix it.
+2. Check for: factual errors, math mistakes, hallucinated data, or completely empty/irrelevant answers.
+3. **HALLUCINATED ACTIONS**: Check if the agent's proposed response (in __final_response__) claims to have performed a system action (like writing a file, creating a directory, or running a command).
+4. **VERIFY ACTIONS**: If such a claim exists, ensure the 'Tool outputs collected' actually show that the specific tool (like file_tool or terminal_tool) was called and returned a success message for that action.
+5. If the agent claims to have done something it didn't actually do, fail the verification.
+6. Set technical_verification to True if the output is accurate, addresses the user's question, and contains no false claims of action.
+7. If there are errors, explain what's wrong so the Executor can fix it.
 
 CRITICAL RULES — you MUST follow these:
 - Do NOT criticize which tools were used or the order they were called. Tool selection is the Strategist's job, not yours.
@@ -1324,16 +1268,16 @@ CRITICAL RULES — you MUST follow these:
 - Do NOT invent requirements the user never stated. Only judge what the user actually asked.
 - If a tool returned empty results (no PDF found, no results), that is NOT a factual error — pass it.
 - If the response honestly tells the user what was found (or not found), that is a PASS.
-- Only FAIL if the response contains factually wrong information or is completely unrelated to the question.
+- Only FAIL if the response contains factually wrong information, false claims of action, or is completely unrelated to the question.
 
 OUTPUT FORMAT — respond with ONLY a JSON object:
 {
   "technical_verification": true or false,
-  "issues": ["list of factual issues found, empty if all good"],
+  "issues": ["list of factual issues or false claims found, empty if all good"],
   "correction_hint": "what factual content to fix, empty if passed"
 }
 
-Be strict about facts. Be lenient about process."""
+Be strict about facts and actions. Be lenient about process."""
 
 def node_auditor(state: AgentState) -> dict:
     """Node C — Verifies tool_outputs. Owns state.technical_verification."""
@@ -1358,7 +1302,8 @@ def node_auditor(state: AgentState) -> dict:
         f"Output your verification as JSON."
     )
 
-    response = llm_auditor.invoke([SystemMessage(content=AUDITOR_SYSTEM), HumanMessage(content=auditor_prompt)])
+    llm = get_llm(DEFAULT_MODEL)
+    response = llm.invoke([SystemMessage(content=AUDITOR_SYSTEM), HumanMessage(content=auditor_prompt)])
 
     # Parse auditor response
     verified = False
@@ -1396,7 +1341,7 @@ def node_auditor(state: AgentState) -> dict:
 # ── Node D: The Persona Layer ───────────────────────────────────────────────
 
 # Shared LLM for persona (no tools bound)
-llm = ChatOllama(model=DEFAULT_MODEL, base_url=OLLAMA_BASE_URL)
+llm = get_llm(DEFAULT_MODEL)
 
 
 async def persona_node(state: AgentState) -> AgentState:
@@ -1452,9 +1397,12 @@ Persona rules: {persona_prompt}
 Verified technical content:
 {raw_content}
 
-Deliver this to the operator in your voice. Keep all numbers, units, and logic
-exactly as given. Add warmth, your signature expressions, and natural phrasing.
-Do NOT add new claims, hedge the facts, or soften technical conclusions.
+DELIVERY RULES:
+1. Deliver this to the operator in your voice. Keep all numbers, units, and logic exactly as given.
+2. Add warmth, your signature expressions, and natural phrasing.
+3. **CRITICAL**: Do NOT claim to have performed any physical or system actions (e.g., "I created the directory", "I saved the file") UNLESS the "Verified technical content" above explicitly states that those actions were successfully completed.
+4. If a file was not actually written by a tool in the content above, do NOT say "I wrote the file".
+5. Do NOT add new claims, hedge the facts, or soften technical conclusions.
 """.strip()
 
     response = await persona_llm.ainvoke([SystemMessage(content=wrap_instruction)])
@@ -1562,16 +1510,32 @@ async def chat_with_marin(message: str, history: list = None, user_id: str = "US
 
 async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
     from marin import get_character_prompt
+    from config import classify_task
+    from utils.shared_logic import get_user_context
     is_owner = (role == "owner")
-    msgs = [SystemMessage(content=get_character_prompt(user_vibe, is_owner=is_owner) + "\n" + USER_CONTEXT)]
+    msgs = [SystemMessage(content=get_character_prompt(user_vibe, is_owner=is_owner) + "\n" + get_user_context())]
     if history:
         for m in history:
             msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user"
                         else AIMessage(content=m["content"]))
     
-    # Add context if provided
-    full_msg = f"{context}\n\nUSER'S MESSAGE: {message}" if context else message
-    msgs.append(HumanMessage(content=full_msg))
+    # Add context as a SystemMessage if provided, to prevent hallucinating that the user typed it
+    if context:
+        msgs.append(SystemMessage(content=context))
+        
+    msgs.append(HumanMessage(content=message))
+
+    # Fast-path: skip planning pipeline for simple conversational queries
+    task_type = classify_task(message)
+    if task_type == "smart_tasks":
+        try:
+            fast_llm = get_llm(get_model_for_task(task_type))
+            async for chunk in fast_llm.astream(msgs):
+                if chunk.content:
+                    yield chunk.content
+            return
+        except Exception as e:
+            print(f"[FastPath] Error: {e}")
 
     initial_state = {
         "messages":               msgs,

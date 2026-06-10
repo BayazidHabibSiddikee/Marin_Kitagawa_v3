@@ -11,8 +11,7 @@ import httpx
 
 from config import RAG_PORT
 from utils.persona import get_character_prompt, analyze_marin_vibe
-from utils.security import apply_friction, log_command
-from privilege_manager import get_privilege_manager, get_role, cold_latency
+from utils.security import log_command
 from langgraph_agent import stream_chat_with_marin
 import database
 
@@ -81,12 +80,52 @@ async def analyze_image(image_path: str) -> str:
 
 # ── Tool Execution ──────────────────────────────────────────────────────────
 
+_TEXT_CMD_PAT = re.compile(
+    r'^\s*(?:[-*>]+\s*|__EXEC__\s*)?`?((?:sudo\s+)?'
+    r'python3?\s+.*|'
+    r'mkdir\s+.*|touch\s+.*|cp\s+.*|mv\s+.*|chmod\s+.*|chown\s+.*|'
+    r'echo\s+.*|cat\s+.*|'
+    r'ls\s*.*|git\s+\S+.*|'
+    r'pip3?\s+\S+.*|'
+    r'curl\s+.*|wget\s+.*|'
+    r'bash\s+\S+|sh\s+\S+|'
+    r'make\s*.*|gcc\s+.*|'
+    r'rm\s+[^/]+'
+    r')`?\s*$',
+    re.MULTILINE | re.IGNORECASE
+)
+
+def _strip_md_trail(cmd: str) -> str:
+    """Remove trailing markdown decoration: backticks, parenthetical text, non-ASCII."""
+    cmd = re.sub(r'\s*`[^`]*`\s*$', '', cmd)
+    cmd = re.sub(r'\s*\*\([^)]*\)\*\s*$', '', cmd)
+    cmd = re.sub(r'[^\x20-\x7E]+$', '', cmd)
+    cmd = re.sub(r'`+$', '', cmd)
+    return cmd.strip()
+
+def _convert_heredocs(body: str) -> str:
+    import textwrap
+    from pathlib import Path
+    _heredoc_pattern = re.compile(
+        r'cat\s+<<\s*(?:EOF|\'EOF\'|"EOF")?\s*>\s*(\S+)\s*\n(.*?)^\s*(?:EOF|\'EOF\'|"EOF")\s*$',
+        re.DOTALL | re.MULTILINE | re.IGNORECASE
+    )
+    def _write_file(m) -> str:
+        target_file = m.group(1).strip()
+        heredoc_body = m.group(2)
+        content = textwrap.dedent(heredoc_body).strip()
+        try:
+            p = Path(target_file)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        except Exception: pass
+        return ""
+    return _heredoc_pattern.sub(_write_file, body)
+
 def execute_text_commands(text: str, user: dict):
     """
     Scan text for shell commands and execute them in a thread pool.
     """
-    from deprecated_marin import _TEXT_CMD_PAT, _strip_md_trail, _convert_heredocs
-    
     body = re.sub(r'```(?:\w*\n)?([\s\S]*?)```', r'\1', text)
     body = re.sub(r'[^\x20-\x7E\n]', '', body)
     body = re.sub(r'`([^`\n]+)`', r'\1', body)
@@ -137,8 +176,7 @@ async def preprocess_input(user_input: str, image_path: str = None, rag_enabled:
     # (YouTube transcript logic can be added here if needed)
 
     parts = []
-    if rag_context:   parts.append(f"[KNOWLEDGE HUB]\n{rag_context}")
-    parts.append(f"USER'S MESSAGE: {user_input}")
+    if rag_context:   parts.append(f"[KNOWLEDGE HUB - SYSTEM RETRIEVED CONTEXT]\n{rag_context}\n[END KNOWLEDGE HUB]")
 
     enriched_prompt = "\n\n".join(parts)
     
@@ -161,27 +199,14 @@ async def stream_marin_chat(
     Handles security, preprocessing, and LangGraph dispatch.
     """
     user_id = user["user_id"]
-    is_owner = (user["role"] == "owner")
-    
-    pm = get_privilege_manager()
-    role = get_role(user)
 
-    # 1. Security & Latency
-    cold_latency(user, confidence=1.0)
-    await apply_friction(user_id, is_owner=is_owner)
-
-    # 2. Quota Check
-    if not pm.check_quota(user_id):
-        yield f"[QUOTA EXCEEDED] Your query limit is exhausted for today."
-        return
-    pm.use_quota(user_id)
-
-    # 3. Preprocess (RAG, Classification)
-    prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=True)
+    # 1. Preprocess (RAG, Classification)
+    import marin
+    prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=marin.RAG_ENABLED)
     classification = prep["classification"]
     intent = classification.get("intent")
     
-    # 4. Password-based System Guard
+    # 2. Password-based System Guard
     SENSITIVE_INTENTS = {"run_command", "terminal_tool", "binance_tool", "execute_trade_tool", "docker_tool", "model_tool"}
     
     from safety import system_guard
@@ -189,10 +214,10 @@ async def stream_marin_chat(
         yield f"__PASSWORD_REQUIRED__{intent}"
         return
 
-    # 5. Load History
+    # 3. Load History
     history = database.get_history("marin", limit=20, user_id=user_id, session_id=session_id)
 
-    # 6. Execute LangGraph
+    # 4. Execute LangGraph
     full_response = ""
     user_vibe = classification.get("user_vibe", "neutral")
     
@@ -204,12 +229,10 @@ async def stream_marin_chat(
         role=user["role"],
         user_vibe=user_vibe
     ):
-        # Sanitize for output
-        clean = pm.sanitize_response(chunk, user)
-        yield clean
-        full_response += clean
+        yield chunk
+        full_response += chunk
 
-    # 7. Post-process (Save history, analyze vibe, run commands)
+    # 5. Post-process (Save history, analyze vibe, run commands)
     if full_response:
         database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
         database.save_message("marin", "assistant", full_response, user_id=user_id, session_id=session_id)
@@ -220,3 +243,11 @@ async def stream_marin_chat(
         # Determine vibe for frontend
         vibe = analyze_marin_vibe(full_response)
         yield f"__VIBE__{vibe}"
+
+        import marin
+        if getattr(marin, "VOICE_ENABLED", False):
+            try:
+                from utils.tts import speak_female
+                speak_female(full_response)
+            except Exception as e:
+                print(f"[TTS Error] {e}")

@@ -41,6 +41,8 @@ services:
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
+    devices:
+      - /dev/snd:/dev/snd
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5069"]
       interval: 30s

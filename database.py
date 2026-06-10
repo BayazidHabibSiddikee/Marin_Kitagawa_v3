@@ -1,265 +1,185 @@
 import sqlite3
 import json
 import os
+import secrets
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "storage", "marin.db")
 
-def get_connection():
+def get_db_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    # Chat History Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS chat_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Timers Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS timers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task TEXT NOT NULL,
-            start_time DATETIME NOT NULL,
-            end_time DATETIME,
-            duration_minutes INTEGER,
-            status TEXT DEFAULT 'active'
-        )
-    ''')
-    
-    # User Settings / State Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # 1. Users Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                display_name TEXT,
+                role TEXT DEFAULT 'guest',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 2. User API Keys
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_api_keys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                api_key TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        ''')
 
-    # News Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            summary TEXT,
-            analysis TEXT,
-            source TEXT DEFAULT 'AlJazeera',
-            fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+        # 3. Chat History (Updated with user_id)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT DEFAULT 'USR-MASTER',
+                session_id TEXT DEFAULT 'default',
+                agent TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 4. Trades Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                amount REAL,
+                price REAL,
+                status TEXT DEFAULT 'pending',
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # 5. Timers (Updated with user_id)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS timers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT DEFAULT 'USR-MASTER',
+                task TEXT NOT NULL,
+                start_time DATETIME NOT NULL,
+                end_time DATETIME,
+                duration_minutes INTEGER,
+                status TEXT DEFAULT 'active'
+            )
+        ''')
+        
+        conn.commit()
+
+# ── USER API ─────────────────────────────────────────────────────────────────
+
+def create_user(username: str, role: str = "guest", display_name: str = None) -> dict:
+    user_id = f"USR-{secrets.token_hex(4).upper()}"
+    if username == "developer" or username == "admin": user_id = "USR-MASTER"
     
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO users (user_id, username, role, display_name) VALUES (?, ?, ?, ?)",
+            (user_id, username, role, display_name or username)
+        )
+        conn.commit()
+        
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        return dict(cursor.fetchone())
+
+def get_user_by_api_key(api_key: str) -> Optional[dict]:
+    # For now, we use a simple header check in middleware, 
+    # but this allows per-user API keys for external access
+    return None # Implementation pending
+
+def promote_user(user_id: str, role: str):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET role = ? WHERE user_id = ?", (role, user_id))
+        conn.commit()
 
 # ── Chat History API ─────────────────────────────────────────────────────────
 
-def save_message(agent: str, role: str, content: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO chat_history (agent, role, content) VALUES (?, ?, ?)",
-        (agent, role, content)
-    )
-    conn.commit()
-    conn.close()
-
-def get_history(agent: str, limit: int = 50) -> List[Dict[str, str]]:
-    conn = get_connection()
-    cursor = conn.cursor()
-    # Subquery gets newest IDs, outer query returns them in chronological order
-    cursor.execute(
-        """SELECT role, content FROM chat_history
-           WHERE id IN (
-               SELECT id FROM chat_history WHERE agent = ? ORDER BY id DESC LIMIT ?
-           )
-           ORDER BY id ASC""",
-        (agent, limit)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"role": r["role"], "content": r["content"]} for r in rows]
-
-def clear_history(agent: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM chat_history WHERE agent = ?", (agent,))
-    conn.commit()
-    conn.close()
-
-# ── Timer API ────────────────────────────────────────────────────────────────
-
-def start_timer(task: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    start_time = datetime.now().isoformat()
-    cursor.execute(
-        "INSERT INTO timers (task, start_time, status) VALUES (?, ?, 'active')",
-        (task, start_time)
-    )
-    timer_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return timer_id
-
-def end_timer(timer_id: int, status: str = 'completed'):
-    conn = get_connection()
-    cursor = conn.cursor()
-    end_time = datetime.now()
-    
-    cursor.execute("SELECT start_time FROM timers WHERE id = ?", (timer_id,))
-    row = cursor.fetchone()
-    if row:
-        start_time = datetime.fromisoformat(row["start_time"])
-        duration = int((end_time - start_time).total_seconds() / 60)
+def save_message(agent: str, role: str, content: str, user_id: str = "USR-MASTER", session_id: str = "default"):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
         cursor.execute(
-            "UPDATE timers SET end_time = ?, duration_minutes = ?, status = ? WHERE id = ?",
-            (end_time.isoformat(), duration, status, timer_id)
+            "INSERT INTO chat_history (user_id, session_id, agent, role, content) VALUES (?, ?, ?, ?, ?)",
+            (user_id, session_id, agent, role, content)
         )
-    conn.commit()
-    conn.close()
+        conn.commit()
 
-def get_timer_stats():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM timers ORDER BY start_time DESC LIMIT 20")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-# ── User State API ───────────────────────────────────────────────────────────
-
-def set_state(key: str, value: Any):
-    conn = get_connection()
-    cursor = conn.cursor()
-    val_str = json.dumps(value) if not isinstance(value, str) else value
-    cursor.execute(
-        "INSERT OR REPLACE INTO user_state (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-        (key, val_str)
-    )
-    conn.commit()
-    conn.close()
-
-def get_state(key: str, default: Any = None) -> Any:
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM user_state WHERE key = ?", (key,))
-    row = cursor.fetchone()
-    conn.close()
-    if not row:
-        return default
-    try:
-        return json.loads(row["value"])
-    except:
-        return row["value"]
-
-# ── News API ─────────────────────────────────────────────────────────────────
-
-def save_news(items: list, source: str = "AlJazeera"):
-    conn = get_connection()
-    cursor = conn.cursor()
-    for item in items:
-        # Use source from item if available, else use the provided default
-        item_source = item.get("source", source)
+def get_history(agent: str, limit: int = 50, user_id: str = "USR-MASTER", session_id: str = "default") -> List[Dict[str, str]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO news (title, summary, analysis, source, fetched_at) VALUES (?, ?, ?, ?, ?)",
-            (item.get("title", ""), item.get("summary", ""), item.get("analysis", ""),
-             item_source, item.get("timestamp", datetime.now().isoformat()))
+            """SELECT role, content FROM chat_history
+               WHERE agent = ? AND user_id = ? AND session_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (agent, user_id, session_id, limit)
         )
-    conn.commit()
-    conn.close()
+        rows = cursor.fetchall()
+        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
-def get_latest_news(limit: int = 5) -> list:
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT title, summary, analysis, source, fetched_at FROM news ORDER BY fetched_at DESC LIMIT ?",
-        (limit,)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+def clear_history(agent: str, user_id: str = "USR-MASTER", session_id: str = "default"):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM chat_history WHERE agent = ? AND user_id = ? AND session_id = ?", 
+            (agent, user_id, session_id)
+        )
+        conn.commit()
 
-def delete_old_news(days: int = 14) -> int:
-    """Delete news older than `days` days. Returns count of deleted rows."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "DELETE FROM news WHERE fetched_at < datetime('now', ?)",
-        (f"-{days} days",)
-    )
-    deleted = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return deleted
+# ── API KEY STORAGE ──────────────────────────────────────────────────────────
 
+def save_user_key(user_id: str, provider: str, key: str):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO user_api_keys (user_id, provider, api_key) VALUES (?, ?, ?)",
+            (user_id, provider, key)
+        )
+        conn.commit()
 
-# ── Migration Helper ──────────────────────────────────────────────────────────
+def get_user_keys(user_id: str) -> Dict[str, str]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT provider, api_key FROM user_api_keys WHERE user_id = ?", (user_id,))
+        return {r["provider"]: r["api_key"] for r in cursor.fetchall()}
 
-def migrate_from_json():
-    storage_dir = os.path.join(BASE_DIR, "storage")
-    if not os.path.exists(storage_dir):
-        return
+def get_user_key(user_id: str, provider: str) -> Optional[str]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT api_key FROM user_api_keys WHERE user_id = ? AND provider = ?", (user_id, provider))
+        row = cursor.fetchone()
+        return row["api_key"] if row else None
 
-    # Migrate Histories
-    for agent in ['bayazid', 'marin', '']:
-        json_path = os.path.join(storage_dir, f"{agent}_history.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r") as f:
-                    history = json.load(f)
-                    for msg in history:
-                        save_message(agent, msg["role"], msg["content"])
-                print(f"Migrated {agent} history.")
-                os.remove(json_path)
-            except Exception as e:
-                print(f"Error migrating {agent} history: {e}")
+def save_trade(user_id: str, symbol: str, side: str, amount: float, price: float, status: str, order_id: str = None):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Ensure the table exists or just skip if simple. For now, creating dynamically if needed is better,
+        # but let's assume it exists or create it.
+        cursor.execute('''CREATE TABLE IF NOT EXISTS trades 
+                          (id INTEGER PRIMARY KEY, user_id TEXT, symbol TEXT, side TEXT, 
+                           amount REAL, price REAL, status TEXT, order_id TEXT, ts DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        cursor.execute("INSERT INTO trades (user_id, symbol, side, amount, price, status, order_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (user_id, symbol, side, amount, price, status, order_id))
+        conn.commit()
 
-    # Migrate Vibe State
-    vibe_path = os.path.join(storage_dir, "vibe_state.json")
-    if os.path.exists(vibe_path):
-        try:
-            with open(vibe_path, "r") as f:
-                vibe = json.load(f)
-                set_state("vibe", vibe)
-            print("Migrated vibe state.")
-            os.remove(vibe_path)
-        except Exception as e:
-            print(f"Error migrating vibe state: {e}")
-
-    # Migrate Timers
-    timer_path = os.path.join(storage_dir, "timer_sessions.json")
-    if os.path.exists(timer_path):
-        try:
-            with open(timer_path, "r") as f:
-                sessions = json.load(f)
-                conn = get_connection()
-                cursor = conn.cursor()
-                for s in sessions:
-                    cursor.execute(
-                        "INSERT INTO timers (task, start_time, end_time, duration_minutes, status) VALUES (?, ?, ?, ?, ?)",
-                        (s.get("task", "Unknown"), s.get("start_time"), s.get("end_time"), s.get("duration"), s.get("status", "completed"))
-                    )
-                conn.commit()
-                conn.close()
-            print("Migrated timers.")
-            os.remove(timer_path)
-        except Exception as e:
-            print(f"Error migrating timers: {e}")
-
-if __name__ == "__main__":
-    init_db()
-    migrate_from_json()
-    print("Database initialized and migrated.")
+def delete_user_key(user_id: str, provider: str):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_api_keys WHERE user_id = ? AND provider = ?", (user_id, provider))
+        conn.commit()

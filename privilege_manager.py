@@ -86,6 +86,7 @@ ROLES: Dict[str, Role] = {
 # User → Role mapping
 USER_ROLES: Dict[str, str] = {
     MASTER_USER: "owner",
+    "USR-MASTER": "owner",
     "marin": "owner",
     "visitor": "guest",
     "guest": "guest",

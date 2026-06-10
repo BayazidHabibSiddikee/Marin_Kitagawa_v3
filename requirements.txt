@@ -63,3 +63,10 @@ playwright>=1.40.0
 
 # OSC / Avatar
 python-osc>=1.8.0
+duckduckgo-search
+docker
+pymupdf
+yt-dlp
+psutil
+geopy
+folium

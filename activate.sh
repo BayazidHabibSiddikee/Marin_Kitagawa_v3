@@ -1,18 +1,25 @@
 #!/bin/bash
-# Activate Marin HS-02 virtual environment
-# Usage: source activate.sh
+# Marin Tools Helper — Start the Kingdom
+# Usage: ./activate.sh
 
-VENV_PATH="$HOME/.venv/langchain-fix"
+echo "🏹 Starting Marin Tools (Docker-First)..."
 
-if [ -f "$VENV_PATH/bin/activate" ]; then
-    source "$VENV_PATH/bin/activate"
-    echo "✓ Marin venv activated ($VENV_PATH)"
-else
-    echo "✗ Venv not found at $VENV_PATH"
-    echo "  Create one: python3 -m venv $VENV_PATH && source $VENV_PATH/bin/activate"
-    return 1 2>/dev/null || exit 1
+# 1. Ensure required directories exist
+mkdir -p logs storage/faiss_db static/uploads static/generated
+
+# 2. Check for .env
+if [ ! -f ".env" ]; then
+    echo "⚠️ .env file missing! Creating a temporary one..."
+    echo "MARIN_API_SECRET=$(openssl rand -hex 32)" > .env
+    echo "OWNER_USER=Bayazid" >> .env
 fi
 
-# Ensure we're in the project root
-cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null
-echo "✓ Project root: $(pwd)"
+# 3. Start the containers
+docker compose up -d --build
+
+echo "✨ Marin is ascending..."
+echo "🌍 Portal: http://localhost:5069"
+echo "⌬ Brain Topology: http://localhost:5070"
+echo "📚 RAG Server: http://localhost:5080"
+echo "------------------------------------------------"
+echo "Use 'docker compose logs -f' to watch her thoughts."

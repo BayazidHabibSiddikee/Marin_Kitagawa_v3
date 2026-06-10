@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ModuleFlow — Function & Module Dependency Graph</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--bg1:#0f0f1a;--bg2:#12121e;--bg3:#1a1a2e;--border:#2a2a4a;--text:#e2e8f0;--dim:#94a3b8;--acc:#a78bfa;--acc2:#c4b5fd;--cyan:#22d3ee;--green:#34d399;--red:#f87171;--orange:#fbbf24;--blue:#60a5fa;--pink:#f472b6}
+body{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+.topbar{height:48px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:16px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-mark{width:28px;height:28px;background:linear-gradient(135deg,var(--acc),var(--cyan));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#0a0a0f;font-weight:700}
+.logo-text{font-size:14px;font-weight:700;color:var(--acc)}
+.topbar input{flex:1;max-width:400px;padding:6px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:11px}
+.topbar input:focus{outline:none;border-color:var(--acc)}
+.topbar input::placeholder{color:var(--dim)}
+.btn{padding:6px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--acc);color:var(--acc)}
+.btn.active{background:var(--acc);color:#0a0a0f;border-color:var(--acc)}
+.main{display:flex;flex:1;overflow:hidden}
+.sidebar{width:280px;background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-header{padding:12px;border-bottom:1px solid var(--border)}
+.sidebar-title{font-size:9px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+.sidebar-scroll{flex:1;overflow-y:auto;padding:8px}
+.sidebar-scroll::-webkit-scrollbar{width:5px}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:12px}
+.stat-card{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center}
+.stat-val{font-size:20px;font-weight:700;color:var(--acc)}
+.stat-lbl{font-size:8px;color:var(--dim);text-transform:uppercase;margin-top:2px}
+.stat-card.cyan .stat-val{color:var(--cyan)}
+.stat-card.green .stat-val{color:var(--green)}
+.stat-card.red .stat-val{color:var(--red)}
+.stat-card.orange .stat-val{color:var(--orange)}
+.legend{margin-bottom:12px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);padding:4px 8px;border-radius:4px}
+.legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.legend-line{width:20px;height:2px;flex-shrink:0;border-radius:1px}
+.file-list{display:flex;flex-direction:column;gap:1px}
+.file-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:10px;color:var(--dim);transition:background 0.15s}
+.file-item:hover{background:rgba(167,139,250,0.15);color:var(--text)}
+.file-item.active{background:rgba(167,139,250,0.2);color:var(--acc);font-weight:600}
+.file-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-meta{font-size:9px;color:var(--dim);flex-shrink:0}
+.filter-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.filter-chip{padding:4px 10px;border:1px solid var(--border);border-radius:999px;font-size:9px;cursor:pointer;color:var(--dim);transition:all 0.15s}
+.filter-chip:hover{border-color:var(--acc);color:var(--text)}
+.filter-chip.active{background:var(--acc);color:#0a0a0f;border-color:var(--acc)}
+.canvas{flex:1;position:relative;background:var(--bg);overflow:hidden}
+.canvas svg{width:100%;height:100%;display:block}
+.toolbar{position:absolute;top:12px;left:12px;display:flex;gap:4px;z-index:10}
+.info-bar{position:absolute;bottom:12px;left:12px;right:12px;display:flex;gap:8px;z-index:10;pointer-events:none}
+.info-chip{padding:6px 10px;background:rgba(15,15,26,0.9);border:1px solid var(--border);border-radius:6px;font-size:10px;color:var(--dim);backdrop-filter:blur(8px)}
+.info-chip strong{color:var(--acc)}
+.tooltip{position:fixed;background:rgba(15,15,26,0.95);border:1px solid var(--border);border-radius:8px;padding:10px 14px;pointer-events:none;z-index:1000;max-width:320px;font-size:11px;box-shadow:0 8px 32px rgba(0,0,0,0.6);backdrop-filter:blur(8px)}
+.tooltip-title{font-weight:700;color:var(--acc2);margin-bottom:6px;font-size:12px}
+.tooltip-body{color:var(--dim);line-height:1.6}
+.tooltip-body span{color:var(--text)}
+.section-toggle{display:flex;align-items:center;justify-content:space-between;padding:8px;cursor:pointer;border-radius:4px;margin-top:4px}
+.section-toggle:hover{background:rgba(167,139,250,0.1)}
+.section-label{font-size:9px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+.section-arrow{font-size:8px;color:var(--dim);transition:transform 0.2s}
+.section-arrow.open{transform:rotate(90deg)}
+.node-glow{filter:url(#glow)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-mark">MF</div>
+    <div class="logo-text">ModuleFlow</div>
+  </div>
+  <input type="text" id="search" placeholder="Search files, functions, classes...">
+  <button class="btn" id="btn-expand" onclick="toggleExpandMode()">Expand All</button>
+  <button class="btn" onclick="fitGraph()">Fit</button>
+  <button class="btn" onclick="toggleLabels()">Labels</button>
+  <button class="btn" onclick="resetView()">Reset</button>
+  <button class="btn" onclick="exportSVG()">Export SVG</button>
+</div>
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-header"><div class="sidebar-title">Analysis</div></div>
+    <div class="sidebar-scroll">
+      <div class="stat-grid" id="stats"></div>
+      <div class="legend" id="legend"></div>
+      <div class="filter-row" id="dir-filters"></div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+  </div>
+  <div class="canvas" id="canvas">
+    <div class="toolbar">
+      <button class="btn" onclick="zoomIn()">+</button>
+      <button class="btn" onclick="zoomOut()">−</button>
+    </div>
+    <svg id="graph">
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <marker id="arrow-imports" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,-4L8,0L0,4" fill="#60a5fa"/></marker>
+        <marker id="arrow-calls" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,-4L8,0L0,4" fill="#f87171"/></marker>
+        <marker id="arrow-defines" viewBox="0 -5 10 10" refX="18" refY="0" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,-3L6,0L0,3" fill="#475569"/></marker>
+      </defs>
+    </svg>
+    <div class="info-bar">
+      <div class="info-chip" id="hover-info">Hover a node · Click file to expand</div>
+      <div class="info-chip" id="selected-info"></div>
+      <div class="info-chip" id="zoom-info"></div>
+    </div>
+  </div>
+</div>
+<div class="tooltip" id="tooltip" style="display:none"></div>
+
+<script>
+let graphData = null;
+let simulation = null;
+let svg, g, zoomBehavior;
+let showLabels = false;
+let activeDirFilter = null;
+let selectedFileId = null;
+let expandedFiles = new Set();
+let visibleNodes = [];
+let visibleEdges = [];
+let nodeElements, linkElements;
+
+const COLORS = {
+  file: '#a78bfa',
+  function: '#22d3ee',
+  class: '#34d399',
+  'file-expanded': '#c4b5fd',
+};
+const EDGE_COLORS = { imports: '#60a5fa', calls: '#f87171', defines: '#475569' };
+
+function getDir(path) {
+  const parts = path.split('/');
+  return parts.length > 1 ? parts.slice(0, -1).join('/') : '.';
+}
+
+function getDirs(files) {
+  const dirs = new Set();
+  files.forEach(f => { const d = getDir(f.path); if (d !== '.') dirs.add(d); });
+  return [...dirs].sort();
+}
+
+async function init() {
+  try {
+    const resp = await fetch('graph.json');
+    graphData = await resp.json();
+  } catch (e) {
+    document.getElementById('stats').innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px">graph.json not found. Run: python moduleflow/analyze.py</div>';
+    return;
+  }
+  renderStats();
+  renderLegend();
+  renderFileList();
+  renderGraph();
+  setupSearch();
+}
+
+function renderStats() {
+  const s = graphData.stats;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="stat-val">${s.total_files}</div><div class="stat-lbl">Files</div></div>
+    <div class="stat-card cyan"><div class="stat-val">${s.total_functions}</div><div class="stat-lbl">Functions</div></div>
+    <div class="stat-card green"><div class="stat-val">${s.total_classes}</div><div class="stat-lbl">Classes</div></div>
+    <div class="stat-card orange"><div class="stat-val">${s.total_import_edges}</div><div class="stat-lbl">Imports</div></div>
+    <div class="stat-card red"><div class="stat-val">${s.total_call_edges}</div><div class="stat-lbl">Calls</div></div>
+    <div class="stat-card"><div class="stat-val">${(s.total_lines/1000).toFixed(1)}k</div><div class="stat-lbl">Lines</div></div>`;
+}
+
+function renderLegend() {
+  document.getElementById('legend').innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:${COLORS.file}"></div>File</div>
+    <div class="legend-item"><div class="legend-dot" style="background:${COLORS.function};width:8px;height:8px"></div>Function (click file to see)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:${COLORS.class};width:10px;height:10px;border-radius:3px"></div>Class (click file to see)</div>
+    <div class="legend-item"><div class="legend-line" style="background:${EDGE_COLORS.imports}"></div>Imports</div>
+    <div class="legend-item"><div class="legend-line" style="background:${EDGE_COLORS.calls};border-top:2px dashed ${EDGE_COLORS.calls};height:0"></div>Calls</div>`;
+}
+
+function renderFileList() {
+  const files = graphData.nodes.filter(n => n.type === 'file');
+  const dirs = getDirs(files);
+
+  document.getElementById('dir-filters').innerHTML =
+    '<div class="filter-chip' + (activeDirFilter === null ? ' active' : '') + '" onclick="filterDir(null)">All</div>' +
+    dirs.map(d => '<div class="filter-chip' + (activeDirFilter === d ? ' active' : '') + '" onclick="filterDir(\'' + d + '\')">' + d + '</div>').join('');
+
+  const filtered = activeDirFilter ? files.filter(f => getDir(f.path) === activeDirFilter) : files;
+  document.getElementById('file-list').innerHTML = filtered
+    .sort((a, b) => b.functions_count - a.functions_count)
+    .map(f => `<div class="file-item${selectedFileId===f.id?' active':''}" data-id="${f.id}" onclick="toggleFile('${f.id}')"><div class="file-dot" style="background:${expandedFiles.has(f.id)?COLORS.file+';box-shadow:0 0 6px '+COLORS.file:COLORS.file}"></div><div class="file-name">${f.path}</div><div class="file-meta">${f.functions_count}f ${f.classes_count}c</div></div>`)
+    .join('');
+}
+
+function getVisibleData() {
+  const fileNodes = graphData.nodes.filter(n => n.type === 'file');
+  let extraNodes = [];
+  let extraEdges = [];
+
+  if (expandedFiles.size > 0) {
+    const expandedSet = new Set();
+    expandedFiles.forEach(fid => {
+      graphData.nodes.forEach(n => {
+        if ((n.type === 'function' || n.type === 'class') && n.file === fid) {
+          expandedSet.add(n.id);
+          extraNodes.push(n);
+        }
+      });
+    });
+    graphData.edges.forEach(e => {
+      const sid = typeof e.source === 'object' ? e.source.id : e.source;
+      const tid = typeof e.target === 'object' ? e.target.id : e.target;
+      const sourceFile = graphData.nodes.find(n => n.id === sid);
+      const targetFile = graphData.nodes.find(n => n.id === tid);
+      const sourceInExpanded = expandedFiles.has(sid) || (sourceFile && expandedFiles.has(sourceFile.file));
+      const targetInExpanded = expandedFiles.has(tid) || (targetFile && expandedFiles.has(targetFile.file));
+      if (sourceInExpanded || targetInExpanded) {
+        extraEdges.push(e);
+      }
+    });
+  }
+
+  // File-to-file import/call edges (always visible)
+  const fileIds = new Set(fileNodes.map(n => n.id));
+  const fileEdges = graphData.edges.filter(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    return fileIds.has(sid) && fileIds.has(tid) && e.type !== 'defines';
+  });
+
+  // Import edges from files to other files
+  const allNodes = [...fileNodes, ...extraNodes];
+  const allEdges = [...fileEdges, ...extraEdges.filter(e => e.type !== 'defines')];
+  return { nodes: allNodes, edges: allEdges };
+}
+
+function renderGraph() {
+  const container = document.getElementById('canvas');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  svg = d3.select('#graph');
+  svg.selectAll('g').remove();
+  g = svg.append('g');
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.05, 5])
+    .on('zoom', (e) => {
+      g.attr('transform', e.transform);
+      const k = e.transform.k;
+      document.getElementById('zoom-info').innerHTML = k > 1.5 ? '<strong>Zoom:</strong> Labels visible' : '';
+      // Show labels only when zoomed in enough
+      g.selectAll('.node-label').style('display', k > 1.2 ? null : 'none');
+    });
+  svg.call(zoomBehavior);
+
+  const data = getVisibleData();
+  visibleNodes = data.nodes;
+  visibleEdges = data.edges;
+
+  linkElements = g.append('g')
+    .selectAll('line')
+    .data(visibleEdges)
+    .join('line')
+    .attr('stroke', d => EDGE_COLORS[d.type] || '#475569')
+    .attr('stroke-width', d => d.type === 'imports' ? 1.5 : 1)
+    .attr('stroke-dasharray', d => d.type === 'calls' ? '4,3' : null)
+    .attr('stroke-opacity', 0.5)
+    .attr('marker-end', d => 'url(#arrow-' + d.type + ')');
+
+  nodeElements = g.append('g')
+    .selectAll('g')
+    .data(visibleNodes)
+    .join('g')
+    .attr('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', dragStart)
+      .on('drag', dragging)
+      .on('end', dragEnd));
+
+  // Glow circle for files
+  nodeElements.filter(d => d.type === 'file')
+    .append('circle')
+    .attr('r', 18)
+    .attr('fill', 'none')
+    .attr('stroke', COLORS.file)
+    .attr('stroke-width', 1)
+    .attr('stroke-opacity', 0.2);
+
+  // Main circle
+  nodeElements.append('circle')
+    .attr('r', d => d.type === 'file' ? 12 : d.type === 'class' ? 7 : 4)
+    .attr('fill', d => {
+      if (d.type === 'file' && expandedFiles.has(d.id)) return COLORS['file-expanded'];
+      return COLORS[d.type] || '#94a3b8';
+    })
+    .attr('stroke', d => {
+      const c = d3.color(COLORS[d.type] || '#94a3b8');
+      return c ? c.brighter(0.8) : '#fff';
+    })
+    .attr('stroke-width', d => d.type === 'file' ? 2 : 1.5)
+    .attr('filter', d => d.type === 'file' ? 'url(#glow)' : null);
+
+  // Label (hidden by default, shown on zoom)
+  nodeElements.append('text')
+    .attr('class', 'node-label')
+    .attr('dx', d => d.type === 'file' ? 18 : d.type === 'class' ? 12 : 8)
+    .attr('dy', 3)
+    .attr('fill', d => d.type === 'file' ? '#e2e8f0' : '#94a3b8')
+    .attr('font-size', d => d.type === 'file' ? '11px' : '9px')
+    .attr('font-weight', d => d.type === 'file' ? '600' : '400')
+    .style('display', 'none')
+    .text(d => d.name);
+
+  // Tooltip + interaction
+  const tooltip = document.getElementById('tooltip');
+  nodeElements
+    .on('mouseover', (e, d) => {
+      let html = `<div class="tooltip-title">${d.name}</div><div class="tooltip-body">`;
+      html += `<span>Type:</span> ${d.type}<br>`;
+      if (d.path) html += `<span>Path:</span> ${d.path}<br>`;
+      if (d.file) html += `<span>File:</span> ${d.file}<br>`;
+      if (d.line) html += `<span>Line:</span> ${d.line}<br>`;
+      if (d.args && d.args.length) html += `<span>Args:</span> (${d.args.join(', ')})<br>`;
+      if (d.bases) html += `<span>Extends:</span> ${d.bases.join(', ')}<br>`;
+      if (d.functions_count !== undefined) html += `<span>Functions:</span> ${d.functions_count}<br>`;
+      if (d.classes_count !== undefined) html += `<span>Classes:</span> ${d.classes_count}<br>`;
+      if (d.is_async) html += `<span>Async:</span> yes<br>`;
+      if (d.type === 'file') html += `<br><span style="color:var(--acc2)">Click to expand functions</span>`;
+      html += '</div>';
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      highlightConnected(d);
+    })
+    .on('mousemove', ev => {
+      tooltip.style.left = (ev.clientX + 14) + 'px';
+      tooltip.style.top = (ev.clientY + 14) + 'px';
+    })
+    .on('mouseout', () => { tooltip.style.display = 'none'; resetHighlight(); })
+    .on('click', (e, d) => {
+      if (d.type === 'file') toggleFile(d.id);
+    });
+
+  // Force
+  simulation = d3.forceSimulation(visibleNodes)
+    .force('link', d3.forceLink(visibleEdges).id(d => d.id).distance(d => {
+      if (d.type === 'defines') return 40;
+      if (d.type === 'imports') return 120;
+      return 100;
+    }).strength(d => d.type === 'defines' ? 0.7 : 0.2))
+    .force('charge', d3.forceManyBody().strength(d => d.type === 'file' ? -400 : -60))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => d.type === 'file' ? 30 : 8))
+    .force('x', d3.forceX(width / 2).strength(0.03))
+    .force('y', d3.forceY(height / 2).strength(0.03))
+    .on('tick', tick);
+
+  setTimeout(fitGraph, 800);
+  updateZoomInfo();
+}
+
+function tick() {
+  linkElements
+    .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
+}
+
+function updateZoomInfo() {
+  document.getElementById('zoom-info').innerHTML = expandedFiles.size > 0
+    ? `<strong>${expandedFiles.size}</strong> files expanded`
+    : 'Click files to expand';
+}
+
+function highlightConnected(d) {
+  const connected = new Set([d.id]);
+  visibleEdges.forEach(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    if (sid === d.id) connected.add(tid);
+    if (tid === d.id) connected.add(sid);
+  });
+  nodeElements.classed('dimmed', n => !connected.has(n.id));
+  linkElements.classed('dimmed', e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    return sid !== d.id && tid !== d.id;
+  }).attr('stroke-opacity', e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    return (sid === d.id || tid === d.id) ? 1 : 0.08;
+  });
+}
+
+function resetHighlight() {
+  nodeElements.classed('dimmed', false);
+  linkElements.classed('dimmed', false).attr('stroke-opacity', 0.5);
+}
+
+function toggleFile(fileId) {
+  if (expandedFiles.has(fileId)) {
+    expandedFiles.delete(fileId);
+  } else {
+    expandedFiles.add(fileId);
+  }
+  selectedFileId = expandedFiles.has(fileId) ? fileId : null;
+  // Rebuild graph
+  renderGraph();
+  renderFileList();
+  updateZoomInfo();
+}
+
+function filterDir(dir) {
+  activeDirFilter = dir;
+  renderFileList();
+  if (!dir) {
+    nodeElements.style('opacity', 1);
+    linkElements.style('opacity', 1);
+    return;
+  }
+  const filesInDir = graphData.nodes.filter(n => n.type === 'file' && getDir(n.path) === dir).map(n => n.id);
+  const expandedInDir = new Set();
+  filesInDir.forEach(fid => {
+    graphData.nodes.forEach(n => {
+      if ((n.type === 'function' || n.type === 'class') && n.file === fid) expandedInDir.add(n.id);
+    });
+  });
+  const visible = new Set([...filesInDir, ...expandedInDir]);
+  nodeElements.style('opacity', n => visible.has(n.id) ? 1 : 0.08);
+}
+
+function setupSearch() {
+  document.getElementById('search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase().trim();
+    if (!q) { resetHighlight(); nodeElements.style('opacity', 1); return; }
+    const matches = new Set();
+    graphData.nodes.forEach(n => {
+      if (n.name.toLowerCase().includes(q) || (n.path && n.path.toLowerCase().includes(q))) matches.add(n.id);
+    });
+    nodeElements.style('opacity', n => matches.has(n.id) ? 1 : 0.08);
+    linkElements.attr('stroke-opacity', 0.05);
+  });
+}
+
+function zoomIn() { svg.transition().duration(300).call(zoomBehavior.scaleBy, 1.5); }
+function zoomOut() { svg.transition().duration(300).call(zoomBehavior.scaleBy, 0.67); }
+
+function fitGraph() {
+  const nodes = visibleNodes.filter(n => n.x !== undefined && n.y !== undefined);
+  if (!nodes.length) return;
+  const container = document.getElementById('canvas');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  const xExt = d3.extent(nodes, n => n.x);
+  const yExt = d3.extent(nodes, n => n.y);
+  const dx = (xExt[1] - xExt[0]) + 120;
+  const dy = (yExt[1] - yExt[0]) + 120;
+  const scale = Math.min(w / dx, h / dy, 2) * 0.85;
+  const cx = (xExt[0] + xExt[1]) / 2;
+  const cy = (yExt[0] + yExt[1]) / 2;
+  svg.transition().duration(500).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity.translate(w / 2 - cx * scale, h / 2 - cy * scale).scale(scale)
+  );
+}
+
+function toggleLabels() {
+  showLabels = !showLabels;
+  g.selectAll('.node-label').style('display', showLabels ? null : 'none');
+}
+
+function resetView() {
+  expandedFiles.clear();
+  selectedFileId = null;
+  activeDirFilter = null;
+  document.getElementById('search').value = '';
+  document.getElementById('selected-info').innerHTML = '';
+  renderGraph();
+  renderFileList();
+  updateZoomInfo();
+}
+
+function toggleExpandMode() {
+  const btn = document.getElementById('btn-expand');
+  if (expandedFiles.size > 0) {
+    expandedFiles.clear();
+    btn.textContent = 'Expand All';
+    btn.classList.remove('active');
+  } else {
+    graphData.nodes.filter(n => n.type === 'file').forEach(n => expandedFiles.add(n.id));
+    btn.textContent = 'Collapse All';
+    btn.classList.add('active');
+  }
+  renderGraph();
+  renderFileList();
+  updateZoomInfo();
+}
+
+function exportSVG() {
+  const svgEl = document.getElementById('graph');
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'moduleflow-' + Date.now() + '.svg';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function dragStart(e, d) {
+  if (!e.active) simulation.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragging(e, d) { d.fx = e.x; d.fy = e.y; }
+function dragEnd(e, d) {
+  if (!e.active) simulation.alphaTarget(0);
+  d.fx = null; d.fy = null;
+}
+
+// Style for dimmed
+const style = document.createElement('style');
+style.textContent = `.dimmed{opacity:0.08!important} .link.dimmed{stroke-opacity:0.05!important}`;
+document.head.appendChild(style);
+
+init();
+</script>
+</body>
+</html>

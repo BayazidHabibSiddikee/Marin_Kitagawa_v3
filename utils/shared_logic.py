@@ -23,18 +23,25 @@ def detect_owner() -> str:
 
 MASTER_USER = detect_owner()
 OWNER_USER = MASTER_USER
-USER_CONTEXT = """
-User: 
+def get_user_context() -> str:
+    now = datetime.now()
+    time_str = now.strftime("%A, %B %d, %Y | %I:%M %p")
+    return f"""
+User:
 Location: Rajshahi, Bangladesh
 Status: Self-directed student
 Focus Areas: Embedded systems, IoT, ML, computer vision, robotics, control systems
-Active Projects: CNC plotter, ESP32 car, face recognition, surveillance robot, Marin HS-02 AI
+Active Projects: None currently assigned
 Learning Style: Project-driven, hands-on, prefers doing over reading
 Personality: High output, ambitious, systematic, appreciates direct communication
 Preferences: Concise answers, technical depth when needed, no fluff
 Book Library: 60+ technical books on ML, embedded systems, robotics, hacking, Linux, mathematics
+
+[CURRENT SYSTEM TIME]
+{time_str}
 """
 
+USER_CONTEXT = get_user_context() # Legacy support, though this will be static
 # ── Study Timer ────────────────────────────────────────────────────────────────
 class StudyTimer:
     """Track focus sessions and store them in the database."""

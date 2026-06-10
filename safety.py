@@ -260,3 +260,7 @@ def is_egress_allowed(host: str) -> bool:
 
 _load_pending()
 kill_switch = KillSwitch()
+
+
+def _in_docker() -> bool:
+    return os.path.exists('/.dockerenv')
