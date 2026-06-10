@@ -9,9 +9,9 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://unpkg.com/three@0.154.0/build/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.154.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://unpkg.com/@pixiv/three-vrm@2.0.3/lib/three-vrm.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/@pixiv/three-vrm@0.6.11/lib/three-vrm.js"></script>
     <style>
         #vrm-container {
             width: 35%;
@@ -23,6 +23,7 @@
             border-right: 1px solid var(--border);
             overflow: hidden;
             flex-shrink: 0;
+            z-index: 10;
         }
         #vrm-canvas { width: 100%; height: 100%; display: block; }
         
@@ -62,6 +63,7 @@
             min-width: 300px;
             height: 100%;
             overflow: hidden;
+            z-index: 5;
         }
         :root {
             /* Deep, warm-cool palette pulled from the character */
@@ -1042,11 +1044,12 @@
         const canvas = document.getElementById('vrm-canvas');
         vrmScene = new THREE.Scene();
         vrmCamera = new THREE.PerspectiveCamera(30.0, canvas.clientWidth / canvas.clientHeight, 0.1, 20.0);
-        vrmCamera.position.set(0.0, 1.4, 1.2);
+        vrmCamera.position.set(0.0, 1.4, 1.4);
 
         vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
         vrmRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
+        vrmRenderer.outputEncoding = THREE.sRGBEncoding;
 
         const light = new THREE.DirectionalLight(0xffffff, 1.0);
         light.position.set(1.0, 1.0, 1.0).normalize();
@@ -1062,19 +1065,19 @@
         loader.load(
             '/static/models/marin.vrm',
             (gltf) => {
-                THREE.VRMUtils.removeUnnecessaryVertices(gltf.scene);
-                THREE.VRMUtils.removeUnnecessaryJoints(gltf.scene);
-
+                // VRM 0.x loading
                 THREE.VRM.from(gltf).then((vrm) => {
                     vrmModel = vrm;
                     vrmScene.add(vrm.scene);
-                    vrm.scene.rotation.y = Math.PI;
+                    vrm.scene.rotation.y = Math.PI; // Face the camera
                     console.log("[VRM] Model loaded:", vrm);
                     
                     // Center camera on head
-                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    const head = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.Head);
                     if (head) {
-                        vrmCamera.lookAt(head.getWorldPosition(new THREE.Vector3()));
+                        const headPos = new THREE.Vector3();
+                        head.getWorldPosition(headPos);
+                        vrmCamera.lookAt(headPos);
                     }
                 });
             },
@@ -1091,6 +1094,7 @@
         const container = document.getElementById('vrm-container');
         const width = container.clientWidth;
         const height = container.clientHeight;
+        if (width === 0 || height === 0) return;
         
         vrmCamera.aspect = width / height;
         vrmCamera.updateProjectionMatrix();
@@ -1103,22 +1107,16 @@
         if (vrmModel) {
             vrmModel.update(delta);
             
-            // Simple blinking (v2.x uses expressionManager)
+            // Simple blinking
             const blinkStrength = Math.sin(vrmClock.elapsedTime * 2) > 0.98 ? 1.0 : 0.0;
-            if (vrmModel.expressionManager) {
-                vrmModel.expressionManager.setValue('blink', blinkStrength);
-            }
+            vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.Blink, blinkStrength);
             
             // Lip sync simulation if talking
             if (document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
                 const mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 15) * 0.5;
-                if (vrmModel.expressionManager) {
-                    vrmModel.expressionManager.setValue('aa', mouthOpen);
-                }
+                vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, mouthOpen);
             } else {
-                if (vrmModel.expressionManager) {
-                    vrmModel.expressionManager.setValue('aa', 0);
-                }
+                vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, 0);
             }
         }
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
