@@ -16,7 +16,7 @@ import database
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 OWNER_USER = os.getenv("OWNER_USER", "Bayazid")
 RAG_ENABLED = True
-VOICE_ENABLED = False
+VOICE_ENABLED = True
 
 # ── MAIN ENTRY POINT ────────────────────────────────────────────────────────
 

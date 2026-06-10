@@ -113,7 +113,12 @@ async def execute_tool(intent: str, params: dict, user_id: str = "USR-00000000")
         if "user_id" not in params:
             params["user_id"] = user_id
             
-        result = await asyncio.to_thread(tools_by_name[intent].invoke, params)
+        tool = tools_by_name[intent]
+        # Robust execution: handle both sync and async tools
+        if asyncio.iscoroutinefunction(tool._run):
+            result = await tool.ainvoke(params)
+        else:
+            result = await asyncio.to_thread(tool.invoke, params)
         
         ts = datetime.now().strftime("%H:%M:%S")
         _cmd_log.append({
