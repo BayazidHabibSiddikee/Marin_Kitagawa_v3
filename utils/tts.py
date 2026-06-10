@@ -1,12 +1,23 @@
 import subprocess
 import re
+import os
 
-VOICE_PATH = "~/.piper-voices/en_US-amy-medium.onnx"
+# Piper binary and voice paths inside the container
+PIPER_BIN = "/app/utils/piper/piper"
+VOICE_PATH = "/root/.piper-voices/en_US-amy-medium.onnx"
 
 def _run_piper(text: str):
+    if not os.path.exists(PIPER_BIN):
+        print(f"❌ Piper binary not found at {PIPER_BIN}")
+        return
+    
     # OWNER-ONLY — single-user dev box
-    cmd = f"echo '{text}' | piper-tts --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
-    subprocess.run(cmd, shell=True, capture_output=True)
+    # Use the absolute path to piper and the model
+    cmd = f"echo '{text}' | {PIPER_BIN} --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
+    try:
+        subprocess.run(cmd, shell=True, capture_output=True)
+    except Exception as e:
+        print(f"❌ Voice playback failed: {e}")
 
 def _clean(text: str) -> str:
     text = re.sub(r"\*{1,3}[\s\S]{0,2000}?\*{1,3}", "", text)

@@ -4,7 +4,7 @@ import sys
 import requests
 
 # ── Configuration ──────────────────────────────────────────────────────────────
-DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "unique", "download")
+DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "unique", "marin_vault")
 REQUEST_TIMEOUT = 30
 
 def validate_pdf(data: bytes) -> bool:
@@ -67,7 +67,7 @@ def marin_search_and_download(query: str, download_dir: str = None) -> str:
     results = search_web(pdf_query, max_results=10)
     
     if not results:
-        return f"I couldn't find any direct links for '{query}'."
+        return None
 
     for i, r in enumerate(results[:5], 1):
         href = r.get("href") or r.get("link") or ""
@@ -77,4 +77,4 @@ def marin_search_and_download(query: str, download_dir: str = None) -> str:
         if path:
             return os.path.abspath(path)
             
-    return ""
+    return None

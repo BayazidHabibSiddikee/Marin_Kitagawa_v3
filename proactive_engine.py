@@ -24,7 +24,7 @@ import database
 IDLE_INTERVALS  = [
     1200,    # 1st: 20 min
     7200,    # 2nd: 2 hours
-    21600,   # 3rd: 6 hours
+    18000,   # 3rd: 5 hours
     172800,  # 4th: 2 days
 ]
 QUIET_START     = dtime(0, 0)    # midnight

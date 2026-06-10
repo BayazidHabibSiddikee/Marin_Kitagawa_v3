@@ -610,7 +610,7 @@ def search_web(query: str, max_results: int = 20) -> list:
     if results:
         return results
     try:
-        from ddgs import DDGS
+        from duckduckgo_search import DDGS
         results = DDGS().text(query, max_results=max_results)
         if results:
             return results

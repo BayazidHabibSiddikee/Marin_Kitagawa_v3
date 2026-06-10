@@ -178,6 +178,61 @@ def save_trade(user_id: str, symbol: str, side: str, amount: float, price: float
                        (user_id, symbol, side, amount, price, status, order_id))
         conn.commit()
 
+def start_timer(task: str, user_id: str = "USR-MASTER") -> int:
+    # Clear any previously active timers first
+    clear_active_timers(user_id)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO timers (user_id, task, start_time, status) VALUES (?, ?, ?, 'active')",
+            (user_id, task, datetime.now().isoformat())
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+def clear_active_timers(user_id: str = "USR-MASTER"):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE timers SET status = 'interrupted', end_time = ? WHERE user_id = ? AND status = 'active'", 
+                       (datetime.now().isoformat(), user_id))
+        conn.commit()
+
+def end_timer(timer_id: int, status: str = "completed"):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Calculate duration
+        cursor.execute("SELECT start_time FROM timers WHERE id = ?", (timer_id,))
+        row = cursor.fetchone()
+        duration = 0
+        if row:
+            start = datetime.fromisoformat(row["start_time"])
+            duration = int((datetime.now() - start).total_seconds() / 60)
+            
+        cursor.execute(
+            "UPDATE timers SET end_time = ?, status = ?, duration_minutes = ? WHERE id = ?",
+            (datetime.now().isoformat(), status, duration, timer_id)
+        )
+        conn.commit()
+
+def get_timer_stats(user_id: str = "USR-MASTER") -> List[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM timers WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        return [dict(r) for r in cursor.fetchall()]
+
+def get_last_timer(user_id: str = "USR-MASTER") -> Optional[Dict[str, Any]]:
+    """Find the last session that isn't the currently active one (if any)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Find the last completed or stopped task
+        cursor.execute("SELECT * FROM timers WHERE user_id = ? AND status != 'active' ORDER BY id DESC LIMIT 1", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            # Fallback to the very last one regardless of status
+            cursor.execute("SELECT * FROM timers WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,))
+            row = cursor.fetchone()
+        return dict(row) if row else None
+
 def delete_user_key(user_id: str, provider: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
