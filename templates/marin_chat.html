@@ -291,7 +291,7 @@
 
         /* ── SIDEBAR ─────────────────────────────────────────────── */
         .sidebar {
-            width: 200px;
+            width: 220px;
             background: var(--ink2);
             border-right: 1px solid var(--border);
             flex-shrink: 0;
@@ -300,7 +300,31 @@
             padding: 16px 0;
             gap: 2px;
             overflow-y: auto;
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 1000;
+            transform: translateX(-212px); /* Hide most of it, leave a tiny trigger sliver */
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
+            box-shadow: 10px 0 30px rgba(0,0,0,0);
         }
+        .sidebar:hover {
+            transform: translateX(0);
+            background: var(--ink);
+            box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+            border-right-color: var(--teal-dim);
+        }
+        /* Visual cue for the trigger sliver */
+        .sidebar::after {
+            content: '';
+            position: absolute;
+            right: 0; top: 0; bottom: 0;
+            width: 4px;
+            background: linear-gradient(to bottom, transparent, var(--teal-dim), transparent);
+            opacity: 0.3;
+        }
+        .sidebar:hover::after { opacity: 0; }
 
         .sidebar-section {
             padding: 6px 16px 6px;
@@ -830,6 +854,12 @@
         <div class="sidebar-section">Modes</div>
         <button class="sidebar-btn active" onclick="setMode('chat')"  id="btn-chat"><span class="icon">◈</span> Chat</button>
 
+        <div class="sidebar-section">Proactive</div>
+        <button class="sidebar-btn" onclick="sendAction('/habits status')"><span class="icon">📋</span> Check Todos</button>
+        <button class="sidebar-btn" onclick="sendAction('/timer resume')"><span class="icon">🔄</span> Resume Session</button>
+        <button class="sidebar-btn" onclick="sendAction('/habits stats')"><span class="icon">📊</span> Daily Brief</button>
+        <button class="sidebar-btn" onclick="sendAction('/timer status')"><span class="icon">⏱️</span> Timer Status</button>
+
         <div class="sidebar-section">Commands</div>
         <div id="active-tasks" style="padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-dim);">
             <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
@@ -871,12 +901,6 @@
 
         <!-- INPUT -->
         <div class="input-area">
-            <div class="proactive-row" style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
-                <button class="sm-tool-btn" onclick="sendAction('/habits status')">📋 Check Todos</button>
-                <button class="sm-tool-btn" onclick="sendAction('/timer resume')">🔄 Resume Session</button>
-                <button class="sm-tool-btn" onclick="sendAction('/habits stats')">📊 Daily Brief</button>
-                <button class="sm-tool-btn" onclick="sendAction('/timer status')">⏱️ Timer Status</button>
-            </div>
             <div class="input-row">
                 <textarea id="msg-input" rows="1" placeholder="Ask anything..."></textarea>
                 <button class="send-btn" id="send-btn" onclick="sendMessage()">send</button>
@@ -990,18 +1014,12 @@
             const container = document.querySelector('.main-area');
             const containerRect = container.getBoundingClientRect();
             
-            // ClientX is absolute, find position relative to container
-            let relativeX = e.clientX - containerRect.left;
-            
-            // If sidebar is visible, we need to subtract its width (flex child)
-            const sidebar = document.querySelector('.sidebar');
-            const sidebarWidth = (window.getComputedStyle(sidebar).display !== 'none') ? sidebar.offsetWidth : 0;
-            
-            let newWidth = relativeX - sidebarWidth;
+            // Sidebar is now absolute (overlay), so we calculate relative to main-area
+            let newWidth = e.clientX - containerRect.left;
             
             // Constraints
             const minWidth = 200;
-            const maxWidth = containerRect.width - sidebarWidth - 300; // Leave space for chat
+            const maxWidth = containerRect.width - 300; // Leave space for chat
             
             if (newWidth < minWidth) newWidth = minWidth;
             if (newWidth > maxWidth) newWidth = maxWidth;
