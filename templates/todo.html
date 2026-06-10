@@ -40,6 +40,10 @@
         <option value="high">High</option>
       </select>
     </div>
+    <div class="field">
+      <label>Level (1-10)</label>
+      <input type="number" id="level-input" min="1" max="10" value="5" style="width:60px;">
+    </div>
     <div class="field" style="display:flex; flex-direction:row; align-items:center; gap:8px; margin-bottom:10px;">
       <input type="checkbox" id="remind-input" style="width:auto; margin:0;">
       <label for="remind-input" style="margin:0; font-size:14px;">Daily Remind</label>
@@ -120,7 +124,8 @@ $("todo-form").addEventListener("submit", async e => {
       title: $("title-input").value.trim(),
       category_id: cat || null,
       priority: $("priority-select").value,
-      remind_daily: $("remind-input").checked ? 1 : 0
+      remind_daily: $("remind-input").checked ? 1 : 0,
+      task_level: $("level-input").value
     })
   });
   $("title-input").value = "";
@@ -174,6 +179,7 @@ async function loadTodos() {
     return `<div class="todo-item ${t.status}">
       <span class="title" onclick="editTitle(${t.id})" title="click to edit">${esc(t.title)}${remindIcon}</span>
       <span class="badge badge-${t.priority}">${t.priority}</span>
+      <span class="badge badge-lvl">Lvl ${t.task_level}</span>
       ${catBadge}
       <span class="badge ${t.status==='done'?'badge-done':t.status==='in-progress'?'badge-in-progress':'badge-todo'}">${statusTxt}</span>
       <button class="sm" onclick="cycleStatus(${t.id},'${t.status}')" title="advance status">&#8644;</button>

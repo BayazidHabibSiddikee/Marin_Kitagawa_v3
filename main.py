@@ -1,3 +1,4 @@
+import asyncio
 import os
 import secrets
 import threading
@@ -53,6 +54,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
+# Initialize databases
+from database import init_db
+from tools.habit_store import init_todo_db
+init_db()
+init_todo_db()
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the proactive conversation engine
+    from proactive_engine import proactive_broadcaster, seed_from_db
+    seed_from_db("marin")
+    asyncio.create_task(proactive_broadcaster("marin"))
+
 # ── CORE ROUTES ──────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -62,6 +76,11 @@ async def health():
 @app.get("/proactive/stream")
 async def proactive_sse(agent: str = "marin"):
     return StreamingResponse(proactive_stream(agent), media_type="text/event-stream")
+
+@app.get("/proactive/status")
+async def get_proactive_status():
+    from proactive_engine import get_status
+    return JSONResponse(get_status())
 
 @app.get("/landing")
 async def landing_page(request: Request):
@@ -184,14 +203,57 @@ async def call_tool_api(name: str, request: Request):
         raise HTTPException(500, str(e))
 
 @app.get("/api/todos")
-async def list_todos_api(request: Request):
-    user = request.state.user
+async def list_todos_api(status: str = None, category: str = None):
+    from tools.habit_store import list_tasks
+    return JSONResponse(list_tasks(status, category))
+
+@app.post("/api/todos")
+async def add_todo_api(request: Request):
+    from tools.habit_store import add_task
+    data = await request.json()
+    task = add_task(
+        title=data["title"],
+        category=data.get("category", "general"),
+        priority=data.get("priority", "medium"),
+        remind_daily=bool(data.get("remind_daily", False)),
+        task_level=int(data.get("task_level", 5))
+    )
+    return JSONResponse(task)
+
+@app.patch("/api/todos/{id}")
+async def update_todo_api(id: int, request: Request):
+    from tools.habit_store import update_task
+    data = await request.json()
+    result = update_task(id, **data)
+    return {"status": "success", "message": result}
+
+@app.delete("/api/todos/{id}")
+async def delete_todo_api(id: int):
+    from tools.habit_store import delete_task
+    result = delete_task(id)
+    return {"status": "success", "message": result}
+
+@app.get("/api/categories")
+async def list_categories_api():
     import sqlite3
-    db = sqlite3.connect("storage/todos.db")
+    from tools.habit_store import DB_PATH
+    db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
-    todos = db.execute("SELECT * FROM todos WHERE user_id = ? ORDER BY id DESC", (user["user_id"],)).fetchall()
+    cats = db.execute("SELECT * FROM categories ORDER BY name ASC").fetchall()
     db.close()
-    return JSONResponse([dict(r) for r in todos])
+    return JSONResponse([dict(r) for r in cats])
+
+@app.post("/api/categories")
+async def add_category_api(request: Request):
+    from tools.habit_store import _get_or_create_category
+    data = await request.json()
+    cat_id = _get_or_create_category(data["name"])
+    return {"id": cat_id, "name": data["name"]}
+
+@app.get("/api/stats")
+async def get_todo_stats_api():
+    from tools.habit_store import get_stats
+    return JSONResponse(get_stats())
 
 @app.get("/api/market/quotes")
 async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):

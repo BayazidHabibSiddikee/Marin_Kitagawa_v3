@@ -19,6 +19,51 @@ def _get_db():
     return conn
 
 
+def init_todo_db():
+    db = _get_db()
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        )
+    ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT 'USR-MASTER',
+            category_id INTEGER,
+            title TEXT NOT NULL,
+            priority TEXT DEFAULT 'medium',
+            status TEXT DEFAULT 'todo',
+            task_level INTEGER DEFAULT 5,
+            remind_daily INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT (datetime('now','localtime')),
+            completed_at DATETIME,
+            FOREIGN KEY (category_id) REFERENCES categories (id)
+        )
+    ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS daily_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            log_date DATE DEFAULT (date('now','localtime')),
+            note TEXT,
+            FOREIGN KEY (task_id) REFERENCES todos (id)
+        )
+    ''')
+    
+    # Migration: Add task_level column if it doesn't exist
+    try:
+        db.execute("ALTER TABLE todos ADD COLUMN task_level INTEGER DEFAULT 5")
+    except sqlite3.OperationalError:
+        pass # Column already exists
+        
+    # Insert default category
+    db.execute("INSERT OR IGNORE INTO categories (name) VALUES ('general')")
+    db.commit()
+    db.close()
+
+
 def _get_or_create_category(name: str) -> int:
     db = _get_db()
     try:
@@ -30,12 +75,12 @@ def _get_or_create_category(name: str) -> int:
         db.close()
 
 
-def add_task(title: str, category: str = "general", priority: str = "medium", remind_daily: bool = False) -> dict:
+def add_task(title: str, category: str = "general", priority: str = "medium", remind_daily: bool = False, task_level: int = 5) -> dict:
     cat_id = _get_or_create_category(category)
     db = _get_db()
     cur = db.execute(
-        "INSERT INTO todos (title, category_id, priority, remind_daily) VALUES (?, ?, ?, ?)",
-        (title, cat_id, priority, 1 if remind_daily else 0)
+        "INSERT INTO todos (title, category_id, priority, remind_daily, task_level) VALUES (?, ?, ?, ?, ?)",
+        (title, cat_id, priority, 1 if remind_daily else 0, task_level)
     )
     db.commit()
     task_id = cur.lastrowid
@@ -80,28 +125,37 @@ def list_tasks(status: str = None, category: str = None) -> list:
 
 def get_stats() -> dict:
     db = _get_db()
-    total = db.execute("SELECT COUNT(*) as c FROM todos").fetchone()["c"]
-    done = db.execute("SELECT COUNT(*) as c FROM todos WHERE status='done'").fetchone()["c"]
-    todo = db.execute("SELECT COUNT(*) as c FROM todos WHERE status='todo'").fetchone()["c"]
-    in_prog = db.execute("SELECT COUNT(*) as c FROM todos WHERE status='in-progress'").fetchone()["c"]
-
+    
+    # 1. Status summary
+    status_rows = db.execute("SELECT status, COUNT(*) as c FROM todos GROUP BY status").fetchall()
+    status_map = {row["status"]: row["c"] for row in status_rows}
+    # Ensure all statuses exist
+    for s in ["todo", "in-progress", "done"]:
+        if s not in status_map: status_map[s] = 0
+        
+    # 2. Categories
     by_cat = db.execute(
-        "SELECT c.name as category, COUNT(t.id) as total, "
-        "SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) as done "
+        "SELECT c.name, COUNT(t.id) as total, "
+        "SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) as done, "
+        "SUM(CASE WHEN t.status='in-progress' THEN 1 ELSE 0 END) as in_progress, "
+        "SUM(CASE WHEN t.status='todo' THEN 1 ELSE 0 END) as todo "
         "FROM categories c "
         "LEFT JOIN todos t ON c.id = t.category_id "
         "GROUP BY c.id HAVING total > 0"
     ).fetchall()
 
-    by_priority = db.execute(
-        "SELECT priority, COUNT(*) as c FROM todos WHERE status != 'done' GROUP BY priority"
+    # 3. Daily Completion (Last 7 days)
+    daily = db.execute(
+        "SELECT date(completed_at) as completed_at, COUNT(*) as count "
+        "FROM todos WHERE status = 'done' AND completed_at IS NOT NULL "
+        "GROUP BY date(completed_at) ORDER BY completed_at DESC LIMIT 7"
     ).fetchall()
 
     db.close()
     return {
-        "total": total, "done": done, "todo": todo, "in_progress": in_prog,
+        "status": status_map,
         "categories": [dict(c) for c in by_cat],
-        "pending_by_priority": {r["priority"]: r["c"] for r in by_priority},
+        "daily_completion": [dict(d) for d in daily]
     }
 
 
@@ -140,7 +194,7 @@ def delete_task(task_id: int) -> str:
 
 def update_task(task_id: int, **kwargs) -> str:
     db = _get_db()
-    allowed = {"title", "priority", "status", "remind_daily"}
+    allowed = {"title", "priority", "status", "remind_daily", "task_level"}
     updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
     
     # Handle category separately if it's a string

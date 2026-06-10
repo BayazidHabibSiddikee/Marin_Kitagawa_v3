@@ -689,6 +689,26 @@
             #messages { padding: 16px; }
             .input-area { padding: 12px 16px 16px; }
         }
+        .sm-tool-btn {
+            background: var(--ink3);
+            border: 1px solid var(--border-hi);
+            color: var(--teal);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 500;
+        }
+        .sm-tool-btn:hover {
+            border-color: var(--teal);
+            background: var(--teal-soft);
+            color: #fff;
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
@@ -780,6 +800,12 @@
 
         <!-- INPUT -->
         <div class="input-area">
+            <div class="proactive-row" style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+                <button class="sm-tool-btn" onclick="sendAction('/habits status')">📋 Check Todos</button>
+                <button class="sm-tool-btn" onclick="sendAction('/timer resume')">🔄 Resume Session</button>
+                <button class="sm-tool-btn" onclick="sendAction('/habits stats')">📊 Daily Brief</button>
+                <button class="sm-tool-btn" onclick="sendAction('/timer status')">⏱️ Timer Status</button>
+            </div>
             <div class="input-row">
                 <textarea id="msg-input" rows="1" placeholder="Ask anything..."></textarea>
                 <button class="send-btn" id="send-btn" onclick="sendMessage()">send</button>
@@ -1016,6 +1042,11 @@
     }
 
     // ── SEND ───────────────────────────────────────────────────────────────
+    async function sendAction(cmd) {
+        document.getElementById('msg-input').value = cmd;
+        sendMessage();
+    }
+
     async function sendMessage() {
         const inp  = document.getElementById('msg-input');
         const text = inp.value.trim();

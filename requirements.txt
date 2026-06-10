@@ -70,3 +70,14 @@ yt-dlp
 psutil
 geopy
 folium
+arrow
+requests
+duckduckgo-search
+geopy
+folium
+docker
+pymupdf
+yt-dlp
+psutil
+arrow
+requests

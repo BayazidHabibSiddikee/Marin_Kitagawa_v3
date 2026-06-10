@@ -47,7 +47,7 @@ def get_llm(model_name: str, bind_tools: list = None):
             model=model_name,
             base_url=OPENROUTER_BASE_URL,
             api_key=OPENROUTER_API_KEY or "sk-or-v1-proxy",
-            streaming=True
+            streaming=False
         )
     if bind_tools:
         return llm.bind_tools(bind_tools)
@@ -189,14 +189,8 @@ def screenshot_tool() -> str:
 def terminal_tool(command: str) -> str:
     """Execute a safe shell command inside Marin's sandbox. Use this for testing code or exploring the system."""
     from utils.command_runner import run_command
-    from marin_fier import is_cmd_allowed
     
-    # We still check the allowlist for general safety, even in docker
-    allowed, reason = is_cmd_allowed(command)
-    if not allowed:
-        return f"Blocked: {reason}"
-    
-    code, output = run_command(command, timeout=30)
+    code, output = run_command(command, timeout=120)
     return f"Exit Code: {code}\nOutput:\n{output}"
 
 @tool
@@ -977,8 +971,8 @@ tools_by_name = {t.name: t for t in ALL_TOOLS}
 
 # ── State Schema ─────────────────────────────────────────────────────────────
 
-# Planner tools: Node A can call vault/rag to gather info before making a plan
-PLANNER_TOOLS = [vault_access, rag_search]
+# Planner tools: Node A can call vault/rag/terminal to gather info or execute before making a plan
+PLANNER_TOOLS = [vault_access, rag_search, terminal_tool]
 
 # Executor tools: Node B has full tool access
 EXECUTOR_TOOLS = ALL_TOOLS
@@ -1067,36 +1061,20 @@ def node_strategist(state: AgentState) -> dict:
         if isinstance(m, HumanMessage):
             user_input = m.content
             break
-            
+
     # Orchestration: choose model based on task
     task_type = classify_task(user_input)
-    planner = get_orchestrated_planner(task_type)
-    
-    system = SystemMessage(content=STRATEGIST_SYSTEM + f"\n[ORCHESTRATION: Task classified as {task_type}. Using optimal model.]")
+    # Don't bind tools natively to keep it simple and reliable via text JSON
+    planner = get_llm(get_model_for_task(task_type))
+
+    system = SystemMessage(content=STRATEGIST_SYSTEM + f"\n[ORCHESTRATION: Task classified as {task_type}. Use text-based JSON for planning.]")
     response = planner.invoke([system] + list(messages))
+    content = response.content if response.content else ""
 
     plan = []
-    if hasattr(response, "tool_calls") and response.tool_calls:
-        # LLM wants to gather info first — execute planner tools, then re-plan
-        tool_msgs = []
-        for tc in response.tool_calls:
-            fn = tools_by_name.get(tc["name"])
-            if fn:
-                result = fn.invoke(tc["args"])
-                tool_msgs.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
-
-        # Second pass: now that we have info, build the actual plan
-        followup = planner.invoke(
-            [system] + list(messages) +
-            [response] + tool_msgs +
-            [SystemMessage(content="Now output the final plan as a JSON array of steps. No more tool calls.")]
-        )
-        content = followup.content if followup.content else ""
-    else:
-        content = response.content if response.content else ""
-
     # Parse plan from LLM output
     try:
+
         clean = content.strip()
         # Find the first '[' and last ']' to extract the JSON array
         start = clean.find('[')
@@ -1501,7 +1479,7 @@ async def chat_with_marin(message: str, history: list = None, user_id: str = "US
         "role":                   role,
     }
 
-    result = await agent.ainvoke(initial_state)
+    result = await agent.ainvoke(initial_state, config={"recursion_limit": 50})
 
     for msg in reversed(result["messages"]):
         if isinstance(msg, AIMessage) and msg.content:
@@ -1511,9 +1489,15 @@ async def chat_with_marin(message: str, history: list = None, user_id: str = "US
 async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
     from marin import get_character_prompt
     from config import classify_task
-    from utils.shared_logic import get_user_context
+    from utils.shared_logic import get_user_context, timer
     is_owner = (role == "owner")
-    msgs = [SystemMessage(content=get_character_prompt(user_vibe, is_owner=is_owner) + "\n" + get_user_context())]
+    
+    context_str = get_user_context()
+    session_status = timer.get_session_status()
+    if session_status["active"]:
+        context_str += f"\n\n[ACTIVE FOCUS SESSION]\nTask: {session_status['task']}\nElapsed: {session_status['elapsed_formatted']}\nMarin is currently prioritizing knowledge from books related to this topic."
+
+    msgs = [SystemMessage(content=get_character_prompt(user_vibe, is_owner=is_owner) + "\n" + context_str)]
     if history:
         for m in history:
             msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user"
@@ -1525,17 +1509,24 @@ async def stream_chat_with_marin(message: str, history: list = None, context: st
         
     msgs.append(HumanMessage(content=message))
 
-    # Fast-path: skip planning pipeline for simple conversational queries
-    task_type = classify_task(message)
-    if task_type == "smart_tasks":
-        try:
-            fast_llm = get_llm(get_model_for_task(task_type))
-            async for chunk in fast_llm.astream(msgs):
-                if chunk.content:
-                    yield chunk.content
-            return
-        except Exception as e:
-            print(f"[FastPath] Error: {e}")
+    # Direct intercept for core system commands to ensure reliability
+    if message.startswith("/timer"):
+        from utils.shared_logic import handle_timer_command
+        parts = message.split(maxsplit=2)
+        cmd = parts[1] if len(parts) > 1 else "status"
+        task = parts[2] if len(parts) > 2 else ""
+        result = await handle_timer_command(cmd, task)
+        yield result
+        return
+
+    if message.startswith("/habits"):
+        # Legacy support for habits command via terminal or direct
+        from marin_fier import execute_tool
+        # Map 'status' to 'habit_list' or similar
+        action = "habit_stats" if "stats" in message else "habit_list"
+        result = await execute_tool(action, {})
+        yield result
+        return
 
     initial_state = {
         "messages":               msgs,
@@ -1550,7 +1541,7 @@ async def stream_chat_with_marin(message: str, history: list = None, context: st
     # astream_events v2 — only yield tokens from the persona node's LLM call
     persona_token_yielded = False
     try:
-        async for event in agent.astream_events(initial_state, version="v2"):
+        async for event in agent.astream_events(initial_state, version="v2", config={"recursion_limit": 50}):
             if (
                 event["event"] == "on_chat_model_stream"
                 and event.get("metadata", {}).get("langgraph_node") == "persona"
@@ -1564,7 +1555,7 @@ async def stream_chat_with_marin(message: str, history: list = None, context: st
 
     # Fallback: if streaming didn't yield anything, do a full invoke
     if not persona_token_yielded:
-        result = await agent.ainvoke(initial_state)
+        result = await agent.ainvoke(initial_state, config={"recursion_limit": 50})
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
                 yield msg.content

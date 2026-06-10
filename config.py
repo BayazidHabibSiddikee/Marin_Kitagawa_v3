@@ -55,7 +55,7 @@ def launch_app(name: str) -> str:
 LOCAL_MODELS = ["gemma4:31b-cloud", "marin:latest", "qwen2.5:0.5b"]
 
 CLOUD_FREE_MODELS = {
-    "default": "gemma4:31b-cloud",
+    "default": "liquid/lfm-2.5-1.2b-instruct:free",
 }
 
 IMAGE_MODELS = {
@@ -65,9 +65,9 @@ IMAGE_MODELS = {
 
 MODEL_TIERS = {
     "smart_tasks":    ["marin:latest"],
-    "standard_tasks": ["gemma4:31b-cloud"],
-    "complex_tasks":  ["gemma4:31b-cloud"],
-    "coding_tasks":   ["gemma4:31b-cloud"]
+    "standard_tasks": ["marin:latest"],
+    "complex_tasks":  ["marin:latest"],
+    "coding_tasks":   ["marin:latest"]
 }
 
 TASK_ROUTING = {
@@ -106,7 +106,7 @@ OPENROUTER_API_KEY = API_KEYS.get("openrouter", {}).get("api_key") or os.getenv(
 
 # ── DYNAMIC DEFAULTS ─────────────────────────────────────────────────────────
 # Fallback to local if no cloud key found
-_G_DEFAULT = "gemma4:31b-cloud"
+_G_DEFAULT = "liquid/lfm-2.5-1.2b-instruct:free"
 
 DEFAULT_MODEL = _G_DEFAULT
 FAST_MODEL    = "marin:latest"

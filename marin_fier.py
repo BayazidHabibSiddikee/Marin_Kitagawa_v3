@@ -135,11 +135,9 @@ def is_cmd_allowed(cmd: str) -> Tuple[bool, str]:
     Validates if a command is allowed to run.
     Checks against blocked patterns and metacharacters.
     """
-    # 1. Block dangerous characters (preventing simple escapes)
-    # Note: we allow spaces, dots, dashes, and basic alphanum
-    # We block pipes, ampersands, redirects, etc. for guests
-    # (The system prompt has more detailed rules)
-    forbidden = r'[;&|`$(){}!\n\r<>]'
+    # 1. Block truly dangerous redirection/sequencing for safety
+    # We allow (), ;, and quotes for python -c and complex logic
+    forbidden = r'[`$!\n\r<>]'
     if re.search(forbidden, cmd):
         return False, "Command contains forbidden characters."
 

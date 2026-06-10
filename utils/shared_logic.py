@@ -56,6 +56,54 @@ class StudyTimer:
         self.start_time = time.time()
         self.current_id = database.start_timer(task)
         print(f"⏱️ Focus session started: {task}")
+        
+        # Trigger background book download and indexing for the session topic
+        import threading
+        threading.Thread(target=self._prepare_session_materials, args=(task,), daemon=True).start()
+
+    def _prepare_session_materials(self, topic: str):
+        """Background task: download 3-4 books about the topic and index them."""
+        # Use a persistent log for visibility
+        log_path = "/app/logs/session_prep.log"
+        def _log(msg):
+            with open(log_path, "a") as f:
+                f.write(f"[{datetime.now()}] {msg}\n")
+            print(msg)
+
+        _log(f"📚 Marin is gathering materials for: {topic}...")
+        try:
+            from tools.pdf_downloader_marin import marin_search_and_download
+            
+            # Directory from user request
+            vault_dir = "/app/unique/marin_vault"
+            os.makedirs(vault_dir, exist_ok=True)
+            
+            queries = [
+                f"{topic} technical book",
+                f"Advanced {topic} engineering",
+                f"{topic} specialized manual"
+            ]
+            
+            downloaded_count = 0
+            for q in queries:
+                _log(f"🔍 Searching for: {q}...")
+                path = marin_search_and_download(q, download_dir=vault_dir)
+                if path:
+                    downloaded_count += 1
+                    _log(f"✅ Downloaded: {path}")
+                if downloaded_count >= 3: break
+                
+            if downloaded_count > 0:
+                _log(f"🧠 {downloaded_count} materials added to marin_vault. Ready for analysis.")
+                # Trigger RAG update if the server is reachable
+                try:
+                    import requests
+                    requests.post("http://localhost:5080/update", json={"path": vault_dir}, timeout=2)
+                except: pass
+            else:
+                _log("⚠️ No specific materials found, but I will use my internal knowledge base.")
+        except Exception as e:
+            _log(f"❌ Failed to gather materials: {e}")
 
     def end_session(self, status: str = "completed") -> Optional[Dict[str, Any]]:
         if not self.current_id:
@@ -84,7 +132,12 @@ class StudyTimer:
         }
 
     def _get_today_total(self) -> float:
-        sessions = database.get_timer_stats()
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("database", "/app/database.py")
+        db = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(db)
+        
+        sessions = db.get_timer_stats()
         today = datetime.now().date()
         return sum(
             (s["duration_minutes"] or 0) * 60 for s in sessions
@@ -217,6 +270,11 @@ class SecuritySentinel:
 sentinel = SecuritySentinel()
 
 async def handle_timer_command(command: str, task: str = "") -> str:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("database", "/app/database.py")
+    db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(db)
+
     if command == "start":
         if not task:
             return "⚔️ Specify what you're working on: `/timer start [task]`"
@@ -227,6 +285,23 @@ async def handle_timer_command(command: str, task: str = "") -> str:
             f"Time started: {datetime.now().strftime('%H:%M')}\n\n"
             f"Execute with precision. 🐸"
         )
+    elif command == "resume":
+        last = db.get_last_timer()
+        if not last:
+            return "No previous session found to resume."
+        task = last["task"]
+        # If there's an active one already for this task, just say so
+        if timer.current_task == task:
+            return f"Session for '{task}' is already active."
+
+        timer.start_session(task)
+        return (
+            f"⚔️ **SESSION RESUMED**\n"
+            f"Task: {task}\n"
+            f"Time resumed: {datetime.now().strftime('%H:%M')}\n\n"
+            f"Picking up where we left off. 🐸"
+        )
+
     elif command == "stop":
         session = timer.end_session()
         if not session:
