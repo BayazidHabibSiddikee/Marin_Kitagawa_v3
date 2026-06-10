@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/@pixiv/three-vrm@0.6.11/lib/three-vrm.js"></script>
     <style>
         #vrm-container {
@@ -976,6 +977,8 @@
     let vrmCamera    = null;
     let vrmClock     = new THREE.Clock();
 
+    let vrmControls  = null;
+
     // ── VRM VIEWER ──────────────────────────────────────────────────────────
     function toggleVRM() {
         vrmVisible = !vrmVisible;
@@ -1053,11 +1056,16 @@
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
         vrmRenderer.outputEncoding = THREE.sRGBEncoding;
 
-        const light = new THREE.DirectionalLight(0xffffff, 1.0);
+        vrmControls = new THREE.OrbitControls(vrmCamera, canvas);
+        vrmControls.screenSpacePanning = true;
+        vrmControls.target.set(0.0, 1.4, 0.0);
+        vrmControls.update();
+
+        const light = new THREE.DirectionalLight(0xffffff, 1.5);
         light.position.set(1.0, 1.0, 1.0).normalize();
         vrmScene.add(light);
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         vrmScene.add(ambientLight);
 
         const loader = new THREE.GLTFLoader();
@@ -1117,6 +1125,7 @@
     function animateVRM() {
         requestAnimationFrame(animateVRM);
         const delta = vrmClock.getDelta();
+        if (vrmControls) vrmControls.update();
         if (vrmModel) {
             vrmModel.update(delta);
             
@@ -1470,11 +1479,15 @@
     }
     async function toggleVoice() {
         voiceOn = !voiceOn;
-        updateVoiceLabel();
+        const lbl = document.getElementById('voice-label');
+        lbl.textContent = 'voice: ...';
         try {
             const fd = new FormData(); fd.append('enabled', voiceOn?'1':'0');
-            await fetch('/settings/voice', {method:'POST',body:fd});
-        } catch(e){}
+            const r = await fetch('/settings/voice', {method:'POST',body:fd});
+            const d = await r.json();
+            voiceOn = d.voice_enabled;
+            updateVoiceLabel();
+        } catch(e){ updateVoiceLabel(); }
     }
 
     // ── RAG ────────────────────────────────────────────────────────────────
