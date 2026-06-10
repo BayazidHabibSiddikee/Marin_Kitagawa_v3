@@ -246,8 +246,10 @@ async def stream_marin_chat(
 
         import marin
         if getattr(marin, "VOICE_ENABLED", False):
+            yield "__TALK_ON__"
             try:
                 from utils.tts import speak_female
-                speak_female(full_response)
+                await speak_female(full_response)
             except Exception as e:
                 print(f"[TTS Error] {e}")
+            yield "__TALK_OFF__"
