@@ -1079,6 +1079,17 @@
                         head.getWorldPosition(headPos);
                         vrmCamera.lookAt(headPos);
                     }
+
+                    // Hands down pose
+                    const lArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftUpperArm);
+                    const rArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightUpperArm);
+                    if (lArm) lArm.rotation.z = 1.35;
+                    if (rArm) rArm.rotation.z = -1.35;
+                    
+                    const lLowerArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftLowerArm);
+                    const rLowerArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightLowerArm);
+                    if (lLowerArm) lLowerArm.rotation.z = 0.1;
+                    if (rLowerArm) rLowerArm.rotation.z = -0.1;
                 });
             },
             (progress) => console.log('Loading progress: ' + (100.0 * progress.loaded / progress.total) + '%'),
