@@ -61,8 +61,10 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# KNOWLEDGE BASE  —  low-memory: FAISS mmap + lazy embedding model
+# KNOWLEDGE BASE  —  persistent embeddings: loaded once, stay in memory
 # ═══════════════════════════════════════════════════════════════════════════════
+import hashlib
+
 _LIBC = None
 def _malloc_trim():
     """Release free memory from Python's allocator back to the OS."""
@@ -95,34 +97,95 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from config import EMBEDDING_MODEL
 
-def _lazy_embeddings():
-    """Create embedding model — called on first search, not at boot."""
-    model = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL,
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"batch_size": 32},
-    )
-    return model
+def _create_embedding_model():
+    """Create embedding model — loaded once at startup, kept in memory."""
+    from sentence_transformers import SentenceTransformer
+    
+    # TRULY OFFLINE: Use local cache path if in Docker
+    LOCAL_CACHE = "/root/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+    model_to_load = LOCAL_CACHE if os.path.exists(LOCAL_CACHE) else EMBEDDING_MODEL
+
+    class DirectEmbedder:
+        def __init__(self, model_name):
+            print(f"🔄 Direct loading SentenceTransformer: {model_name}")
+            # local_files_only prevents hanging on network requests if not cached
+            is_local = os.path.exists(model_name)
+            self.model = SentenceTransformer(model_name, device="cpu", local_files_only=not is_local)
+        def embed_documents(self, texts: List[str]) -> List[List[float]]:
+            embeddings = self.model.encode(texts, batch_size=32, show_progress_bar=False)
+            if hasattr(embeddings, "tolist"):
+                return embeddings.tolist()
+            return embeddings
+        def embed_query(self, text: str) -> List[float]:
+            embedding = self.model.encode([text], show_progress_bar=False)
+            if len(embedding) > 0 and hasattr(embedding[0], "tolist"):
+                return embedding[0].tolist()
+            return embedding[0]
+
+    class OllamaFallbackEmbedder:
+        def __init__(self):
+            print("🔄 Loading Ollama Fallback Embedder: nomic-embed-text")
+            from langchain_ollama import OllamaEmbeddings
+            import config
+            self.model = OllamaEmbeddings(
+                model="nomic-embed-text",
+                base_url=config.OLLAMA_BASE_URL
+            )
+            # Warm up to ensure it works
+            self.model.embed_query("test")
+        def embed_documents(self, texts: List[str]) -> List[List[float]]:
+            return self.model.embed_documents(texts)
+        def embed_query(self, text: str) -> List[float]:
+            return self.model.embed_query(text)
+
+    try:
+        return DirectEmbedder(model_to_load)
+    except Exception as e:
+        print(f"⚠️ Direct model load failed: {e}. Attempting fallback...")
+        try:
+            return DirectEmbedder(EMBEDDING_MODEL)
+        except Exception as e2:
+            print(f"⚠️ Critical: Direct embedding model load failed: {e2}. Attempting Ollama Fallback...")
+            try:
+                return OllamaFallbackEmbedder()
+            except Exception as e3:
+                print(f"❌ Critical: Ollama fallback also failed: {e3}")
+                return None
+
+
+def _file_checksum(path: Path) -> str:
+    """SHA256 of file content for change detection."""
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()[:16]
+    except Exception:
+        return ""
 
 
 class KnowledgeBase:
     """
     Unified FAISS index over doc/ and code/.
-    Uses raw FAISS with mmap + lazy embedding loading to keep RAM low.
+    Embeddings loaded once at startup and kept in memory.
+    File changes detected via checksums — only changed files re-indexed.
     """
 
     MANIFEST_PATH   = FAISS_DIR / "manifest.json"
+    CHECKSUMS_PATH  = FAISS_DIR / "checksums.json"
     DOC_CHUNK_SIZE  = 450
-    DOC_OVERLAP     = 30   # reduced overlap = fewer vectors
+    DOC_OVERLAP     = 30
     CODE_CHUNK_SIZE = 300
     CODE_OVERLAP    = 40
 
     def __init__(self):
-        self._raw_index = None      # raw faiss.Index (mmap'd)
-        self._docstore  = None      # dict: docstore_id → Document
-        self._id_map    = None      # dict: seq_id → docstore_id
+        self._raw_index = None
+        self._docstore  = None
+        self._id_map    = None
         self.manifest: Dict[str, Any] = {"indexed": [], "failed": []}
-        self._lc_vectorstore = None  # LangChain FAISS wrapper (used only during indexing)
+        self.checksums: Dict[str, str] = {}   # filename → checksum
+        self._lc_vectorstore = None
         self._embeddings = None
         self._boot()
 
@@ -132,7 +195,16 @@ class KnowledgeBase:
             print("⚠️ FAISS not available — RAG disabled")
             return
 
+        # Load embeddings ONCE — they stay in memory for all searches
+        print("🔄 Loading embedding model...")
+        self._embeddings = _create_embedding_model()
+        if self._embeddings is None:
+            print("❌ KB boot failed: Embedding model not available")
+            return
+        print("✅ Embedding model loaded and ready")
+
         self._load_manifest()
+        self._load_checksums()
         index_file = FAISS_DIR / "index.faiss"
         pkl_file   = FAISS_DIR / "index.pkl"
         docstore_json = FAISS_DIR / "docstore.json"
@@ -144,20 +216,24 @@ class KnowledgeBase:
                 self._raw_index = faiss.read_index(
                     str(index_file), faiss.IO_FLAG_MMAP
                 )
-                # Load from JSON (safe, no pickle)
                 with open(docstore_json) as f:
                     self._docstore = json.load(f)
                 with open(idmap_json) as f:
                     self._id_map = json.load(f)
                 n = len(self.manifest["indexed"])
                 print(f"✅ KB loaded (safe JSON): {n} files, {self._raw_index.ntotal} vectors")
+                
+                # Dimension check
+                test_dim = len(self._embeddings.embed_query("test"))
+                if test_dim != self._raw_index.d:
+                    print(f"⚠️ Embedding dimension mismatch ({test_dim} != {self._raw_index.d}). Rebuilding index...")
+                    raise ValueError("Dimension mismatch")
             except Exception as e:
                 print(f"⚠️ safe load failed ({e}) — falling back to rebuild")
                 self._raw_index = None
                 self._docstore  = None
                 self._id_map    = None
         elif index_file.exists() and pkl_file.exists():
-            # Legacy pickle fallback — log warning, migrate on next save
             try:
                 import warnings
                 warnings.warn("Loading from legacy pickle — will migrate to JSON on next save", DeprecationWarning)
@@ -168,26 +244,26 @@ class KnowledgeBase:
                     self._docstore, self._id_map = pickle.load(f)
                 n = len(self.manifest["indexed"])
                 print(f"⚠️ KB loaded (LEGACY pickle — will migrate): {n} files, {self._raw_index.ntotal} vectors")
+                
+                # Dimension check
+                test_dim = len(self._embeddings.embed_query("test"))
+                if test_dim != self._raw_index.d:
+                    print(f"⚠️ Embedding dimension mismatch ({test_dim} != {self._raw_index.d}). Rebuilding index...")
+                    raise ValueError("Dimension mismatch")
             except Exception as e:
                 print(f"⚠️ pickle load failed ({e}) — falling back to rebuild")
                 self._raw_index = None
                 self._docstore  = None
                 self._id_map    = None
         else:
-            # First boot — will build from scratch
-            self._create_embeddings()
+            # First boot — build from scratch
             self._index_new_files()
-            self._unload_embeddings()
+            _compact(force=True)
             return
 
-        self._create_embeddings()
-        self._index_new_files()
-        self._unload_embeddings()
+        # Index any new/changed files (embeddings already loaded)
+        self._index_changed_files()
         _compact(force=True)
-
-    def _create_embeddings(self):
-        if self._embeddings is None:
-            self._embeddings = _lazy_embeddings()
 
     def _unload_embeddings(self):
         """Release the embedding model to free PyTorch RAM."""
@@ -214,6 +290,19 @@ class KnowledgeBase:
         with open(self.MANIFEST_PATH, "w") as f:
             json.dump(self.manifest, f, indent=2)
 
+    # ── Checksums ────────────────────────────────────────────────────────────
+    def _load_checksums(self):
+        if self.CHECKSUMS_PATH.exists():
+            try:
+                with open(self.CHECKSUMS_PATH) as f:
+                    self.checksums = json.load(f)
+            except Exception:
+                self.checksums = {}
+
+    def _save_checksums(self):
+        with open(self.CHECKSUMS_PATH, "w") as f:
+            json.dump(self.checksums, f, indent=2)
+
     # ── File discovery ────────────────────────────────────────────────────────
     def _all_files(self) -> List[Path]:
         files = []
@@ -234,21 +323,74 @@ class KnowledgeBase:
         if not new_files:
             return
         print(f"📚 Indexing {len(new_files)} new file(s)...")
-        self._create_embeddings()
         for path in new_files:
             self._index_single_file(path)
+            self.checksums[path.name] = _file_checksum(path)
         self._save_faiss()
         self._save_manifest()
+        self._save_checksums()
         _compact()
         print(f"✅ Done: {len(self.manifest['indexed'])} total indexed")
+
+    def _index_changed_files(self):
+        """Check for new or modified files and re-index only those."""
+        all_files = self._all_files()
+        new_files = []
+        changed_files = []
+
+        for path in all_files:
+            name = path.name
+            current_sum = _file_checksum(path)
+            old_sum = self.checksums.get(name, "")
+
+            if name not in self.manifest["indexed"] and name not in {e["file"] for e in self.manifest["failed"]}:
+                new_files.append(path)
+            elif current_sum != old_sum and current_sum:
+                changed_files.append(path)
+
+        if not new_files and not changed_files:
+            print("✅ No new or changed files to index")
+            return
+
+        if new_files:
+            print(f"📚 Indexing {len(new_files)} new file(s)...")
+        if changed_files:
+            print(f"🔄 Re-indexing {len(changed_files)} changed file(s)...")
+
+        for path in new_files + changed_files:
+            name = path.name
+            # Remove old entries if re-indexing changed file
+            if name in self.manifest["indexed"]:
+                self.manifest["indexed"].remove(name)
+            self.manifest["failed"] = [e for e in self.manifest["failed"] if e["file"] != name]
+            self._index_single_file(path)
+            self.checksums[name] = _file_checksum(path)
+
+        self._save_faiss()
+        self._save_manifest()
+        self._save_checksums()
+        _compact()
+        print(f"✅ Index updated: {len(self.manifest['indexed'])} total indexed")
 
     def _save_faiss(self):
         """Save the raw FAISS index + docstore to disk, then reload mmap."""
         if self._lc_vectorstore is None:
             return
-        self._lc_vectorstore.save_local(str(FAISS_DIR))
-        # Sync raw pointers from LC wrapper before mmap reload
-        self._raw_index = self._lc_vectorstore.index
+
+        # Write the raw index directly (LC save_local fails on mmap'd indexes)
+        index_file = FAISS_DIR / "index.faiss"
+        live_index = self._lc_vectorstore.index
+        # Clone to a writable (non-mmap) index before writing
+        try:
+            import io, pickle as _pickle
+            writable = faiss.deserialize_index(faiss.serialize_index(live_index))
+            faiss.write_index(writable, str(index_file))
+        except Exception as e:
+            print(f"⚠️ FAISS write failed: {e}")
+            return
+
+        # Sync raw pointers from LC wrapper
+        self._raw_index = live_index
         self._docstore  = self._lc_vectorstore.docstore
         self._id_map    = self._lc_vectorstore.index_to_docstore_id
 
@@ -419,10 +561,9 @@ class KnowledgeBase:
     # ── Public API ────────────────────────────────────────────────────────────
     def search(self, query: str, k: int = 10,
                source_type: str = None) -> List[Dict[str, Any]]:
-        if self._raw_index is None:
+        if self._raw_index is None or self._embeddings is None:
             return []
         try:
-            self._create_embeddings()
             # Embed the query
             q_vec = self._embeddings.embed_query(query)
             import numpy as np
@@ -436,14 +577,19 @@ class KnowledgeBase:
                 doc_id  = self._id_map.get(int(idx))
                 if doc_id is None:
                     continue
-                doc = self._docstore.search(doc_id)
+                doc = self._docstore.get(doc_id) if isinstance(self._docstore, dict) else self._docstore.search(doc_id)
                 if doc is None:
                     continue
-                meta = doc.metadata
+                if isinstance(doc, dict):
+                    page_content = doc.get("page_content", "")
+                    meta = doc.get("metadata", {})
+                else:
+                    page_content = doc.page_content
+                    meta = doc.metadata
                 if source_type and meta.get("source_type") != source_type:
                     continue
                 results.append({
-                    "content":     doc.page_content,
+                    "content":     page_content,
                     "source":      meta.get("source_file") or meta.get("source", "Unknown"),
                     "source_type": meta.get("source_type", "doc"),
                     "language":    meta.get("language",    "text"),
@@ -485,12 +631,12 @@ class KnowledgeBase:
             self.manifest["indexed"].remove(name)
         self.manifest["failed"] = [e for e in self.manifest["failed"] if e["file"] != name]
 
-        self._create_embeddings()
         self._ensure_lc_store()
         self._index_single_file(path)
         self._save_faiss()
         self._save_manifest()
-        self._unload_embeddings()
+        self.checksums[name] = _file_checksum(path)
+        self._save_checksums()
 
         success = name in self.manifest["indexed"]
         return {
@@ -588,15 +734,44 @@ async def report():
 @app.get("/health")
 async def health():
     index_loaded = kb._raw_index is not None
+    embeddings_loaded = kb._embeddings is not None
     return {
-        "status":       "operational",
-        "port":         5080,
-        "total":        len(kb.manifest["indexed"]),
-        "ready":        index_loaded,
-        "index_loaded": index_loaded,
-        "doc_dir":      str(DOC_DIR),
-        "code_dir":     str(CODE_DIR),
+        "status":            "operational",
+        "port":              5080,
+        "total":             len(kb.manifest["indexed"]),
+        "ready":             index_loaded,
+        "index_loaded":      index_loaded,
+        "embeddings_loaded": embeddings_loaded,
+        "doc_dir":           str(DOC_DIR),
+        "code_dir":          str(CODE_DIR),
     }
+
+
+@app.post("/reindex")
+async def reindex():
+    """Manually trigger re-indexing of all files (new + changed)."""
+    result = await asyncio.to_thread(kb._index_changed_files)
+    return {
+        "ok":      True,
+        "total":   len(kb.manifest["indexed"]),
+        "indexed": kb.manifest["indexed"],
+    }
+
+
+@app.get("/unload")
+async def unload_embeddings():
+    """Release embedding model from memory to free RAM."""
+    kb._unload_embeddings()
+    return {"ok": True, "message": "Embeddings unloaded from memory"}
+
+
+@app.get("/reload")
+async def reload_embeddings():
+    """Reload embedding model into memory."""
+    if kb._embeddings is None:
+        kb._embeddings = _create_embedding_model()
+        return {"ok": True, "message": "Embeddings reloaded"}
+    return {"ok": True, "message": "Embeddings already loaded"}
 
 
 if __name__ == "__main__":

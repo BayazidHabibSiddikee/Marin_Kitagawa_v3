@@ -9,6 +9,7 @@ from pathlib import Path
 from difflib import get_close_matches
 from typing import Optional, Tuple, Dict, Any
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 # Single Source of Truth for Tools
 from langgraph_agent import ALL_TOOLS, tools_by_name
@@ -20,6 +21,8 @@ _cmd_log = []
 
 _TIMER_PAT   = re.compile(r'\b(timer|countdown|stopwatch)\b')
 _ALARM_PAT   = re.compile(r'\b(alarm|wake|remind)\b')
+_LIST_PAT    = re.compile(r'\b(ls|list|show|check|scan|files|directory|cwd)\b')
+_READ_PAT    = re.compile(r'\b(read|open|cat|analyze|view)\b')
 _CRYPTO_PAT  = re.compile(r'\b(crypto|bitcoin|ethereum|solana|price|market)\b')
 _STOCK_PAT   = re.compile(r'\b(stock|share|equity|company|aapl|tsla|nvda)\b')
 _NEWS_PAT    = re.compile(r'\b(news|headlines|world|latest)\b')
@@ -27,9 +30,9 @@ _WEATHER_PAT = re.compile(r'\b(weather|temp|humidity|rain|sun)\b')
 _MAP_PAT     = re.compile(r'\b(map|location|places|find|pin)\b')
 _MATH_PAT    = re.compile(r'\b(plot|draw|graph|math|equation|calculate)\b')
 _BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|finance|market)\b')
-_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning)\b')
+_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
-_BOOK_PAT    = re.compile(r'\b(search|find|lookup|book|textbook|epub)\b')
+_BOOK_PAT    = re.compile(r'\b(search|find|lookup|book|textbook|epub|download)\b')
 
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
@@ -55,11 +58,26 @@ def _regex_stage(text: str) -> dict | None:
             return {"intent": "batch_convert_tool", "params": {"directory": "."}, "confidence": 0.9}
         return {"intent": "pdf_analyze_tool", "params": {"path": "document.pdf"}, "confidence": 0.8}
 
-    # Books
+    # Books - prioritize learn_topic_tool for technical learning
     if _BOOK_PAT.search(lower):
+        if any(w in lower for w in ["arduino", "python", "coding", "programming", "manual", "guide", "datasheet", "assembly", "asm", "c programming", "kernel", "linux"]):
+            return {"intent": "learn_topic_tool", "params": {"topic": lower}, "confidence": 1.0}
         return {"intent": "book_download_tool", "params": {"query": lower}, "confidence": 0.9}
 
     # Standard Tools
+    if _LIST_PAT.search(lower):
+        if any(w in lower for w in ["file", "directory", "cwd", "folder"]):
+            return {"intent": "terminal_tool", "params": {"command": "ls -F"}, "confidence": 1.0}
+        return {"intent": "terminal_tool", "params": {"command": "ls"}, "confidence": 0.8}
+
+    if _READ_PAT.search(lower):
+        if "file" in lower:
+             # Try to extract filename
+             fname = "notes.txt"
+             for part in lower.split():
+                 if '.' in part: fname = part
+             return {"intent": "file_tool", "params": {"action": "read", "path": fname}, "confidence": 0.9}
+
     if _TIMER_PAT.search(lower):
         return {"intent": "timer_tool", "params": {"duration": "10m"}, "confidence": 0.9}
     if _ALARM_PAT.search(lower):

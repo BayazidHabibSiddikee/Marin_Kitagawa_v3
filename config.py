@@ -52,22 +52,13 @@ def launch_app(name: str) -> str:
 
 # ── MODEL CONFIG ───────────────────────────────────────────────────────────────
 
-LOCAL_MODELS = ["gemma4:31b-cloud", "marin:latest", "qwen2.5:0.5b"]
-
-CLOUD_FREE_MODELS = {
-    "default": "liquid/lfm-2.5-1.2b-instruct:free",
-}
+LOCAL_MODELS = [
+    "qwen2.5:1.5b", "marin:latest", "qwen2.5:0.5b", "tinyllama:latest",
+]
 
 IMAGE_MODELS = {
     "primary": "sourceful/riverflow-v2.5-pro:free",
     "fallback": "moondream"
-}
-
-MODEL_TIERS = {
-    "smart_tasks":    ["marin:latest"],
-    "standard_tasks": ["marin:latest"],
-    "complex_tasks":  ["marin:latest"],
-    "coding_tasks":   ["marin:latest"]
 }
 
 TASK_ROUTING = {
@@ -96,27 +87,31 @@ try:
     _v = get_vault()
     _v.migrate_from_settings(SETTINGS_PATH)
     API_KEYS = {}
-    for p in ["openai", "gemini", "anthropic", "deepseek", "openrouter"]:
+    for p in ["openai", "gemini", "anthropic", "deepseek"]:
         k = vault_get(f"{p}_api_key")
         if k: API_KEYS[p] = {"api_key": k}
 except:
     API_KEYS = _settings.get("api_keys", {})
 
-OPENROUTER_API_KEY = API_KEYS.get("openrouter", {}).get("api_key") or os.getenv("OPENROUTER_API_KEY")
-
 # ── DYNAMIC DEFAULTS ─────────────────────────────────────────────────────────
-# Fallback to local if no cloud key found
-_G_DEFAULT = "liquid/lfm-2.5-1.2b-instruct:free"
+# FORCED: Use qwen2.5:1.5b for all background/tool tasks (it supports tools)
+DEFAULT_MODEL   = "qwen2.5:1.5b"
+FAST_MODEL      = "qwen2.5:1.5b"
+STRATEGY_MODEL  = "qwen2.5:1.5b"
 
-DEFAULT_MODEL = _G_DEFAULT
-FAST_MODEL    = "marin:latest"
-VISION_MODEL  = IMAGE_MODELS["fallback"]
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# PERSONA: Use marin:latest for the character wrap
+PERSONA_MODEL   = _settings.get("models", {}).get("default", "marin:latest")
+if "cloud" in PERSONA_MODEL: PERSONA_MODEL = "marin:latest"
 
-# ── GOOGLE OAUTH ───────────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_CONF_URL = "https://accounts.google.com/.well-known/openid-configuration"
+VISION_MODEL    = _settings.get("models", {}).get("vision", IMAGE_MODELS["fallback"])
+EMBEDDING_MODEL = _settings.get("models", {}).get("embedding", "all-MiniLM-L6-v2")
+
+MODEL_TIERS = {
+    "smart_tasks":    [DEFAULT_MODEL],
+    "standard_tasks": [DEFAULT_MODEL],
+    "complex_tasks":  [DEFAULT_MODEL],
+    "coding_tasks":   [DEFAULT_MODEL],
+}
 
 # ── SESSION SECRET ───────────────────────────────────────────────────────────
 _s_key_path = os.path.join(BASE_DIR, "storage", ".session_key")
@@ -141,12 +136,16 @@ SESSION_SECRET_KEY = _get_session_key()
 HOST = _settings.get("server", {}).get("host", "0.0.0.0")
 PORT = _settings.get("server", {}).get("port", 5069)
 RAG_PORT = _settings.get("server", {}).get("rag_port", 5080)
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", _settings.get("server", {}).get("ollama_base_url", "http://localhost:11434"))
+# Use localhost:11434 as default for Ollama
+_env_ollama = os.getenv("OLLAMA_BASE_URL")
+_set_ollama = _settings.get("server", {}).get("ollama_base_url")
+OLLAMA_BASE_URL = _env_ollama or _set_ollama or "http://localhost:11434"
 
-# Proxy AI Integration (~/.proxy_ai)
-# Use host.docker.internal if in docker, else localhost
-_PROXY_HOST = "host.docker.internal" if os.path.exists("/.dockerenv") else "localhost"
-OPENROUTER_BASE_URL = f"http://{_PROXY_HOST}:8005/v1"
+# Use localhost by default since we use network_mode: host
+_PROXY_HOST = os.getenv("MARIN_PROXY_HOST", "localhost")
+
+print(f"[Config] OLLAMA_BASE_URL: {OLLAMA_BASE_URL}")
+
 UPLOAD_FOLDER = "static/uploads"
 
 def get_api_key(p): return API_KEYS.get(p, {}).get("api_key")

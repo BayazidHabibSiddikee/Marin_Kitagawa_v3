@@ -1,13 +1,13 @@
 {
   "models": {
-    "default": "local-dolphin",
-    "fast": "local-dolphin",
-    "vision": "leo",
+    "default": "gemma4:31b-cloud",
+    "fast": "qwen2.5:1.5b",
+    "vision": "moondream",
     "embedding": "all-MiniLM-L6-v2"
   },
   "providers": {
     "ollama": {
-      "enabled": false,
+      "enabled": true,
       "base_url": "http://localhost:11434"
     },
     "openai": {

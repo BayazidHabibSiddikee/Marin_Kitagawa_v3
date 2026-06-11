@@ -79,8 +79,45 @@ def init_db():
                 status TEXT DEFAULT 'active'
             )
         ''')
+
+        # 6. News Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT,
+                title TEXT UNIQUE,
+                summary TEXT,
+                analysis TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         
         conn.commit()
+
+# ── NEWS API ─────────────────────────────────────────────────────────────────
+
+def save_news(news_list: List[Dict[str, Any]]):
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for item in news_list:
+            cursor.execute('''
+                INSERT OR REPLACE INTO news (source, title, summary, analysis, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (item.get("source"), item.get("title"), item.get("summary"), item.get("analysis"), item.get("timestamp") or datetime.now().isoformat()))
+        conn.commit()
+
+def get_latest_news(limit: int = 10) -> List[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM news ORDER BY timestamp DESC LIMIT ?", (limit,))
+        return [dict(r) for r in cursor.fetchall()]
+
+def delete_old_news(days: int = 14) -> int:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM news WHERE timestamp < date('now', '-' || ? || ' days')", (days,))
+        conn.commit()
+        return cursor.rowcount
 
 # ── USER API ─────────────────────────────────────────────────────────────────
 
@@ -219,6 +256,44 @@ def get_timer_stats(user_id: str = "USR-MASTER") -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM timers WHERE user_id = ? ORDER BY id DESC", (user_id,))
         return [dict(r) for r in cursor.fetchall()]
+
+def get_timer_summary(user_id: str = "USR-MASTER") -> Dict[str, Any]:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Today's total seconds
+        cursor.execute("""
+            SELECT SUM(duration_minutes) as total_mins 
+            FROM timers 
+            WHERE user_id = ? AND date(start_time) = date('now')
+        """, (user_id,))
+        today_mins = cursor.fetchone()["total_mins"] or 0
+        
+        # Active session
+        cursor.execute("""
+            SELECT * FROM timers 
+            WHERE user_id = ? AND status = 'active' 
+            LIMIT 1
+        """, (user_id,))
+        active = cursor.fetchone()
+        
+        # Total sessions
+        cursor.execute("SELECT COUNT(*) as total FROM timers WHERE user_id = ?", (user_id,))
+        total_sessions = cursor.fetchone()["total"]
+        
+        # Sessions today
+        cursor.execute("SELECT COUNT(*) as total FROM timers WHERE user_id = ? AND date(start_time) = date('now')", (user_id,))
+        sessions_today = cursor.fetchone()["total"]
+
+        return {
+            "today_total_seconds": today_mins * 60,
+            "today_seconds": today_mins * 60, # compatibility
+            "active_session": bool(active),
+            "current_task": active["task"] if active else None,
+            "start_time": active["start_time"] if active else None,
+            "total_sessions": total_sessions,
+            "sessions_today": sessions_today
+        }
 
 def get_last_timer(user_id: str = "USR-MASTER") -> Optional[Dict[str, Any]]:
     """Find the last session that isn't the currently active one (if any)."""

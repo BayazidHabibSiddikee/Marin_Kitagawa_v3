@@ -9,27 +9,26 @@ services:
       - NET_ADMIN
       - NET_RAW
       - SYS_PTRACE
-    # Bridge mode for isolation
-    network_mode: bridge
+    # Host mode for direct access to Ollama on localhost
+    network_mode: host
+    # ports are ignored in host mode but good for documentation
     ports:
       - "5069:5069"
       - "5080:5080"
       - "5070:5070"
-    # Linux host-gateway for Ollama access
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # extra_hosts not needed in host mode
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 8G
           cpus: '4'
         reservations:
-          memory: 1G
+          memory: 2G
           cpus: '0.5'
     env_file:
       - .env
     environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://localhost:11434
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1

@@ -969,13 +969,16 @@
                 if (d.active_session && d.current_task) {
                     document.getElementById('session-card').classList.add('active');
                     document.getElementById('s-task').textContent = d.current_task;
-                    if (!sessionStart) {
-                        sessionStart = Date.now() - (d.today_total_seconds * 1000);
+                    if (!sessionStart && d.start_time) {
+                        sessionStart = new Date(d.start_time).getTime();
+                        if (timerInterval) clearInterval(timerInterval);
                         timerInterval = setInterval(tickElapsed, 1000);
+                        tickElapsed();
                     }
                 } else {
                     document.getElementById('session-card').classList.remove('active');
-                    clearInterval(timerInterval);
+                    if (timerInterval) clearInterval(timerInterval);
+                    timerInterval = null;
                     sessionStart = null;
                 }
             } catch (e) {
@@ -990,8 +993,11 @@
         }
 
         async function stopSession() {
-            await fetch('/timer/stop', { method: 'POST' });
-            clearInterval(timerInterval);
+            const fd = new FormData();
+            fd.append('command', 'stop');
+            await fetch('/timer/command', { method: 'POST', body: fd });
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
             sessionStart = null;
             document.getElementById('session-card').classList.remove('active');
             loadAll();
@@ -1090,10 +1096,6 @@
         loadRepos();
         setInterval(loadAll, 30000);
     </script>
-</body>
+    </body>
 
-</html>;
-    </script>
-</body>
-
-</html>
+    </html>

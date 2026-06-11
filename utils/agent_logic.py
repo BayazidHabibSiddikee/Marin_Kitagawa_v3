@@ -18,6 +18,44 @@ import database
 # ── RAG configuration ──────────────────────────────────────────────────────────
 RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
 
+def fix_spacing(text: str) -> str:
+    """Fix missing spaces between words from small models."""
+    if not text:
+        return text
+    # 1. camelCase: wordWord -> word Word
+    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
+    # 2. Punctuation: word,word -> word, word
+    text = re.sub(r'([,\.!?;:])([a-zA-Z])', r'\1 \2', text)
+    # 3. Common glued words (aggressive for 0.5B models)
+    glued = [
+        (r'([iI])(don\'?t)', r'\1 \2'),
+        (r'([iI])(can\'?t)', r'\1 \2'),
+        (r'([iI])(am)', r'\1 \2'),
+        (r'([iI])(\'m)', r'\1 \2'),
+        (r'(but)(as)(an)', r'\1 \2 \3'),
+        (r'(but)(an)', r'\1 \2'),
+        (r'(is)(a)', r'\1 \2'),
+        (r'(to)(you)', r'\1 \2'),
+        (r'(for)(you)', r'\1 \2'),
+        (r'(of)(the)', r'\1 \2'),
+        (r'(in)(the)', r'\1 \2'),
+        (r'(it)(is)', r'\1 \2'),
+        (r'(and)(the)', r'\1 \2'),
+        (r'(asan)', r'as an'),
+        (r'(tobe)', r'to be'),
+        (r'(witha)', r'with a'),
+        (r'(operatewitha)', r'operate with a'),
+        (r'(staticlist)', r'static list'),
+        (r'(languagemodel)', r'language model'),
+        (r'(im|I\'m)(sorry)', r"I'm \2"),
+    ]
+    for pattern, repl in glued:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    
+    # 4. Final cleanup
+    text = re.sub(r'  +', ' ', text)
+    return text
+
 async def get_rag_context(query: str, enabled: bool = True) -> str:
     if not enabled:
         return ""
@@ -153,7 +191,7 @@ def execute_text_commands(text: str, user: dict):
                 log_command(cmd, "blocked", "Password authorization required for terminal commands.", user_id=user_id)
                 return
                 
-            code, output = asyncio.run(run_command(cmd, timeout=30))
+            code, output = run_command(cmd, timeout=30)
             log_command(cmd, "done" if code == 0 else f"exit {code}", output, user_id=user_id)
         except Exception as e:
             log_command(cmd, "error", str(e), user_id=user_id)
@@ -195,61 +233,87 @@ async def stream_marin_chat(
     image_path: str = None
 ) -> AsyncIterator[str]:
     """
-    Production-grade streaming entry point.
-    Handles security, preprocessing, and LangGraph dispatch.
+    Refactored Persona-First Pipeline.
+    1. Fast Classification (Regex)
+    2. Instant Persona Stream (Aware of classification)
+    3. Async Background Tools (If needed)
     """
     user_id = user["user_id"]
+    is_owner = (user["role"] == "owner")
 
-    # 1. Preprocess (RAG, Classification)
-    import marin
-    prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=marin.RAG_ENABLED)
-    classification = prep["classification"]
-    intent = classification.get("intent")
+    # 1. Fast Intent Detection
+    from marin_fier import classify
+    cls = classify(prompt)
+    intent = cls["intent"]
+    user_vibe = cls.get("user_vibe", "neutral")
     
-    # 2. Password-based System Guard
-    SENSITIVE_INTENTS = {"run_command", "terminal_tool", "binance_tool", "execute_trade_tool", "docker_tool", "model_tool"}
+    # Tool detection — broad keywords covering real user requests
+    TOOL_KEYWORDS = [
+        "download", "search", "find", "get me", "fetch", "grab",
+        "book", "pdf", "paper", "textbook", "ebook",
+        "analyze", "stock", "crypto", "bitcoin", "news", "weather",
+        "alarm", "timer", "screenshot", "batch", "convert",
+        "habit", "trade", "buy", "sell", "install", "update",
+        "play", "open", "launch", "run", "execute", "command",
+        "ls", "list", "read", "file", "write", "check", "system",
+    ]
+    p_lower = prompt.lower()
+    needs_tools = any(kw in p_lower for kw in TOOL_KEYWORDS) or (intent != "chat" and cls["confidence"] > 0.8)
+
+    # 2. Path A: INSTANT PERSONA RESPONSE
+    from langgraph_agent import get_llm
+    from utils.persona import get_character_prompt
+    from config import FAST_MODEL
     
-    from safety import system_guard
-    if intent in SENSITIVE_INTENTS and not system_guard.is_authorized(user_id):
-        yield f"__PASSWORD_REQUIRED__{intent}"
-        return
-
-    # 3. Load History
-    history = database.get_history("marin", limit=20, user_id=user_id, session_id=session_id)
-
-    # 4. Execute LangGraph
+    fast_llm = get_llm(FAST_MODEL)
+    system = get_character_prompt(user_vibe, is_owner=is_owner)
+    
+    # Make Persona aware of what it is doing
+    context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."
+    if needs_tools:
+        context_instruction += (
+            f"\n[SYSTEM: The user has requested a task that requires your tools ({intent}). "
+            "DO NOT say you cannot do it. Tell the user you are handling it right now and will deliver the result shortly. "
+            "Be confident and in-character. Keep it under 2 sentences.]"
+        )
+    
+    history = database.get_history("marin", limit=10, user_id=user_id, session_id=session_id)
+    
     full_response = ""
-    user_vibe = classification.get("user_vibe", "neutral")
     
-    async for chunk in stream_chat_with_marin(
-        prompt,
-        history=history,
-        context=prep["enriched_prompt"],
-        user_id=user_id,
-        role=user["role"],
-        user_vibe=user_vibe
-    ):
-        yield chunk
-        full_response += chunk
-
-    # 5. Post-process (Save history, analyze vibe, run commands)
+    fast_msgs = [
+        {"role": "system", "content": system + context_instruction},
+        *[{"role": m["role"], "content": m["content"]} for m in history],
+        {"role": "user", "content": prompt}
+    ]
+    
+    async for chunk in fast_llm.astream(fast_msgs):
+        if chunk.content:
+            full_response += chunk.content
+            yield chunk.content
+    
+    # Save first response to history
     if full_response:
         database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
         database.save_message("marin", "assistant", full_response, user_id=user_id, session_id=session_id)
-        
-        # Execute extracted text commands if allowed
-        execute_text_commands(full_response, user)
-        
-        # Determine vibe for frontend
         vibe = analyze_marin_vibe(full_response)
         yield f"__VIBE__{vibe}"
 
-        import marin
-        if getattr(marin, "VOICE_ENABLED", False):
-            yield "__TALK_ON__"
-            try:
-                from utils.tts import speak_female
-                await speak_female(full_response)
-            except Exception as e:
-                print(f"[TTS Error] {e}")
-            yield "__TALK_OFF__"
+    # 3. Path B: BACKGROUND TOOL EXECUTION
+    # Trigger if: keywords matched OR Marin's response shows she refused/deferred a tool task
+    REFUSAL_PATTERNS = ["i cannot", "i can't", "i don't have the ability", "i'm unable", "cannot download", "cannot access"]
+    response_implies_tool = any(p in full_response.lower() for p in REFUSAL_PATTERNS)
+    
+    if needs_tools or response_implies_tool:
+        from langgraph_agent import run_background_tools
+        asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id, marin_fast_response=full_response))
+
+    # Optional: Voice trigger for the first response
+    import marin
+    if getattr(marin, "VOICE_ENABLED", False) and full_response:
+        yield "__TALK_ON__"
+        try:
+            from utils.tts import speak_female
+            await speak_female(full_response)
+        except Exception: pass
+        yield "__TALK_OFF__"

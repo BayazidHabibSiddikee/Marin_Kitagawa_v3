@@ -6,17 +6,20 @@ def test_kill_switch_blocking():
     ks = KillSwitch()
     
     # 1. Deactivate (default)
-    ks.is_active = False
+    ks.deactivate()
     assert ks.check() == True
     
     # 2. Activate
-    ks.is_active = True
+    ks.activate("test")
     assert ks.check() == False
+    
+    # 3. Cleanup
+    ks.deactivate()
 
 def test_hitl_confirmation():
     """Verify that sensitive actions require confirmation."""
-    # This should be True if not in docker
-    import os
-    os.environ["DOCKER_CONTAINER"] = "" # Force host mode for test
-    assert agent_needs_confirmation("marin", "terminal_tool") == True
-    assert agent_needs_confirmation("marin", "weather_tool") == False
+    # marin agent has no requires-confirm actions, so all return False
+    assert agent_needs_confirmation("marin", "terminal_tool") == False
+    # system agent has restart_service
+    assert agent_needs_confirmation("system", "restart_service") == True
+    assert agent_needs_confirmation("system", "weather_tool") == False

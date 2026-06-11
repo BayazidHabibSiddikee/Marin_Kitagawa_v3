@@ -238,7 +238,22 @@
     "vpa.py",
     "learn.pdf",
     "NumericalAnalysisWithPython.pdf",
-    "TeaTimeNumericalAnalysis.pdf"
+    "TeaTimeNumericalAnalysis.pdf",
+    "Assembly Language Programming Lecture Notes.pdf",
+    "RISC-V Assembly Programming.pdf",
+    "Essential C.pdf",
+    "ATmega328P Datasheet.pdf",
+    "AVR Instruction Set Manual.pdf",
+    "ATmega16 Complete Datasheet.pdf"
   ],
-  "failed": []
+  "failed": [
+    {
+      "file": "Arduino Uno Revision 3 Datasheet.pdf",
+      "reason": "'NoneType' object has no attribute 'embed_documents'"
+    },
+    {
+      "file": "The AVR Microcontroller and Embedded Systems using assembly and C by  M. Ali Mazidi.pdf",
+      "reason": "No valid chunks after filtering"
+    }
+  ]
 }

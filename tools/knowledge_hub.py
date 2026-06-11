@@ -611,9 +611,10 @@ def search_web(query: str, max_results: int = 20) -> list:
         return results
     try:
         from duckduckgo_search import DDGS
-        results = DDGS().text(query, max_results=max_results)
-        if results:
-            return results
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+            if results:
+                return results
     except Exception as e:
         print(f"DDG Search Error: {e}")
     return _fallback_search(query, max_results)

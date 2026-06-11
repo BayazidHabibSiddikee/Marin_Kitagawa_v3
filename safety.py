@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-STORAGE_DIR = Path(__file__).parent.parent / "storage"
+STORAGE_DIR = Path(__file__).parent / "storage"
 KILL_SWITCH_FILE = STORAGE_DIR / "kill_switch.json"
 CONFIRM_FILE = STORAGE_DIR / "pending_confirmations.json"
 
@@ -238,12 +238,6 @@ ALLOWED_EGRESS = {
     # Ollama (local)
     "localhost:11434",
     "127.0.0.1:11434",
-    # Known API endpoints
-    "api.openai.com",
-    "generativelanguage.googleapis.com",
-    "api.anthropic.com",
-    "api.deepseek.com",
-    "openrouter.ai",
 }
 
 

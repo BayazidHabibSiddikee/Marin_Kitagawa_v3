@@ -120,22 +120,30 @@ async def get_rag_setting():
     return {"rag_enabled": getattr(marin, "RAG_ENABLED", True)}
 
 @app.post("/settings/rag")
-async def set_rag_setting(enabled: str = Form("1")):
+async def set_rag_setting(request: Request):
     import marin
-    marin.RAG_ENABLED = enabled == "1"
-    return {"rag_enabled": marin.RAG_ENABLED}
-
-@app.get("/settings/wordlimit")
-async def get_wordlimit():
-    import marin
-    return {"word_limit": getattr(marin, "WORD_LIMIT", 0)}
+    if "application/json" in request.headers.get("content-type", ""):
+        data = await request.json()
+        enabled = data.get("enabled", data.get("rag_enabled", True))
+    else:
+        form = await request.form()
+        enabled = form.get("enabled") == "1" or form.get("rag_enabled") == "1"
+    
+    marin.RAG_ENABLED = bool(enabled)
+    return {"status": "success", "rag_enabled": marin.RAG_ENABLED}
 
 @app.post("/settings/wordlimit")
 async def set_wordlimit(request: Request):
-    data = await request.json()
     import marin
-    marin.WORD_LIMIT = data.get("word_limit", 0)
-    return {"status": "success"}
+    if "application/json" in request.headers.get("content-type", ""):
+        data = await request.json()
+        limit = data.get("word_limit", data.get("limit", 0))
+    else:
+        form = await request.form()
+        limit = form.get("word_limit") or form.get("limit") or 0
+    
+    marin.WORD_LIMIT = int(limit)
+    return {"status": "success", "word_limit": marin.WORD_LIMIT}
 
 @app.post("/audio/stop")
 async def stop_audio():
@@ -145,8 +153,10 @@ async def stop_audio():
     return {"status": "stopped"}
 
 @app.get("/api/news/latest")
-async def get_latest_news():
-    return JSONResponse({"news": "No recent updates."})
+async def get_latest_news_api():
+    from database import get_latest_news
+    news = get_latest_news(limit=10)
+    return JSONResponse(news)
 
 @app.get("/api/logs")
 async def get_logs():
@@ -163,12 +173,37 @@ async def clear_memory():
     return JSONResponse({"status": "cleared"})
 
 @app.get("/timer/stats")
-async def get_timer_stats():
-    return JSONResponse({"active": False, "task": None, "elapsed_seconds": 0})
+async def get_timer_stats_api(request: Request):
+    user = request.state.user
+    from database import get_timer_summary
+    return JSONResponse(get_timer_summary(user["user_id"]))
 
 @app.post("/timer/command")
-async def timer_command():
-    return JSONResponse({"status": "ignored"})
+async def timer_command(
+    request: Request,
+    command: str = Form(...),
+    task: str = Form("Focus")
+):
+    user = request.state.user
+    from database import start_timer, clear_active_timers, end_timer
+    import sqlite3
+    from database import DB_PATH
+    
+    if command == "start":
+        start_timer(task, user_id=user["user_id"])
+        return {"status": "started", "task": task}
+    elif command == "stop":
+        # Find active timer ID
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        active = conn.execute("SELECT id FROM timers WHERE user_id = ? AND status = 'active' LIMIT 1", (user["user_id"],)).fetchone()
+        if active:
+            end_timer(active["id"])
+            conn.close()
+            return {"status": "stopped"}
+        conn.close()
+        return {"status": "no_active_timer"}
+    return {"status": "ignored"}
 
 # ── API ROUTES ────────────────────────────────────────────────────────────
 
@@ -178,11 +213,22 @@ async def chat_endpoint(
     message: str = Form(...),
     session_id: str = Form("default")
 ):
+    from proactive_engine import record_user_message
+    record_user_message("marin")
+    
     user = request.state.user
     return StreamingResponse(
         stream_marin_chat(message, user=user, session_id=session_id),
         media_type="text/plain"
     )
+
+@app.get("/api/pending")
+async def pending_messages(request: Request):
+    """Poll for background tool pipeline results."""
+    user = request.state.user
+    from langgraph_agent import get_pending_message
+    msg = await get_pending_message(user["user_id"])
+    return {"message": msg, "has_pending": bool(msg)}
 
 @app.post("/api/rag/toggle")
 async def toggle_rag(request: Request):
@@ -340,6 +386,32 @@ async def research_search_api(request: Request):
     mode = data.get("mode", "pdf")  # "pdf" or "web"
     results = search_web(query, max_results=10) if mode == "web" else search_pdfs(query)
     return JSONResponse({"results": results})
+
+@app.post("/api/research/browse")
+async def research_browse_api(request: Request):
+    from tools.knowledge_hub import scrape_content
+    data = await request.json()
+    url = data.get("url")
+    try:
+        text = scrape_content(url)
+        return JSONResponse({"text": text})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/research/download")
+async def research_download_api(request: Request):
+    from tools.pdf_downloader import download_pdf
+    data = await request.json()
+    url = data.get("url")
+    title = data.get("title", "downloaded_document")
+    download_dir = os.path.join(BASE_DIR, "static", "downloads")
+    try:
+        path = download_pdf(url, title, output_dir=download_dir)
+        if path:
+            return JSONResponse({"status": "success", "file": f"/static/downloads/{os.path.basename(path)}"})
+        return JSONResponse({"error": "Download failed"}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/upload")
 async def upload_image(image: UploadFile = File(...)):

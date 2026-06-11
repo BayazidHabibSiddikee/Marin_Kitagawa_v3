@@ -35,6 +35,7 @@ CHECK_INTERVAL  = 90     # seconds between proactive checks
 _last_user_msg_time: dict[str, float]  = {}
 _last_proactive_time: dict[str, float] = {}
 _streak_count: dict[str, int]          = {} # count proactive sent since last user interaction
+_last_greeting_time: dict[str, float]  = {}
 
 # ── Broadcast queue (proactive messages go to ALL platforms) ──────────────
 _proactive_queue: asyncio.Queue | None = None
@@ -432,9 +433,19 @@ async def proactive_stream(agent: str = "marin") -> AsyncGenerator[str, None]:
     Mount on GET /proactive/stream.
     """
     queue = _get_queue()
+    # Initial connection ping
+    yield f"data: {json.dumps({'type': 'system', 'text': 'Proactive Engine Connected'})}\n\n"
+    
     while True:
-        payload = await queue.get()
-        yield f"data: {payload}\n\n"
+        try:
+            # Wait for message with a timeout for keep-alive
+            payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+            yield f"data: {payload}\n\n"
+        except asyncio.TimeoutError:
+            # Keep-alive comment
+            yield ": keep-alive\n\n"
+        except Exception:
+            break
 
 
 # ── Session Management ───────────────────────────────────────────────────
