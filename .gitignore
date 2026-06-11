@@ -57,6 +57,9 @@ desktop.ini
 *.bak2
 .claude/
 
+# ── VRM Model (large binary, keep locally) ───────────────────────────────────
+static/models/*.vrm
+
 # ── Personal Documents (too large for git, keep locally) ─────────────────────
 doc/
 busi_doc/
