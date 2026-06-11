@@ -9,8 +9,10 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://unpkg.com/fflate"></script>
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/FBXLoader.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/@pixiv/three-vrm@0.6.11/lib/three-vrm.js"></script>
     <style>
@@ -26,6 +28,46 @@
             flex-shrink: 0;
             z-index: 10;
         }
+        #vrm-container:hover #vrm-actions { opacity: 1; pointer-events: auto; }
+        
+        #vrm-actions {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(19, 16, 14, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-hi);
+            border-radius: var(--radius);
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s;
+            max-height: 80%;
+            overflow-y: auto;
+        }
+        .action-btn {
+            background: none;
+            border: 1px solid transparent;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.65rem;
+            text-align: left;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .action-btn:hover {
+            background: var(--teal-soft);
+            color: var(--teal);
+            border-color: var(--teal-dim);
+        }
+        
         #vrm-canvas { width: 100%; height: 100%; display: block; }
         
         #vrm-resizer {
@@ -881,6 +923,22 @@
     <!-- VRM AVATAR -->
     <div id="vrm-container">
         <canvas id="vrm-canvas"></canvas>
+        <div id="vrm-actions">
+            <div style="font-family:'JetBrains Mono'; font-size:0.55rem; color:var(--teal); margin-bottom:6px; text-transform:uppercase; border-bottom:1px solid var(--border); padding-bottom:4px; letter-spacing:0.1em;">Motions</div>
+            <button class="action-btn" onclick="playAnimation('Standing Greeting')">👋 Greeting</button>
+            <button class="action-btn" onclick="playAnimation('Happy')">😊 Happy</button>
+            <button class="action-btn" onclick="playAnimation('Laughing')">😂 Laughing</button>
+            <button class="action-btn" onclick="playAnimation('Thankful')">🙏 Thankful</button>
+            <button class="action-btn" onclick="playAnimation('Kiss')">💋 Blow Kiss</button>
+            <button class="action-btn" onclick="playAnimation('Dancing')">💃 Dance 1</button>
+            <button class="action-btn" onclick="playAnimation('Samba Dancing')">💃 Samba</button>
+            <button class="action-btn" onclick="playAnimation('Salsa Dancing')">💃 Salsa</button>
+            <button class="action-btn" onclick="playAnimation('Hip Hop Dancing')">🎵 Hip Hop</button>
+            <button class="action-btn" onclick="playAnimation('Running')">🏃 Run</button>
+            <button class="action-btn" onclick="playAnimation('Rejected')">💢 Angry</button>
+            <button class="action-btn" onclick="playAnimation('Sad Idle')">😔 Sad</button>
+            <button class="action-btn" onclick="stopAnimation()" style="color:var(--danger); border-top:1px solid var(--border); margin-top:4px; font-weight:bold;">⏹ Stop All</button>
+        </div>
     </div>
 
     <!-- RESIZER -->
@@ -978,6 +1036,8 @@
     let vrmClock     = new THREE.Clock();
 
     let vrmControls  = null;
+    let vrmMixer     = null;
+    let currentAction = null;
 
     // ── VRM VIEWER ──────────────────────────────────────────────────────────
     function toggleVRM() {
@@ -1187,6 +1247,7 @@
         requestAnimationFrame(animateVRM);
         const delta = vrmClock.getDelta();
         if (vrmControls) vrmControls.update();
+        if (vrmMixer) vrmMixer.update(delta);
         if (vrmModel) {
             vrmModel.update(delta);
             
@@ -1203,6 +1264,69 @@
             }
         }
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
+    }
+
+    async function playAnimation(name) {
+        if (!vrmModel) return;
+        stopAnimation();
+
+        console.log(`[VRM] Playing action: ${name}`);
+        const loader = new THREE.FBXLoader();
+        loader.load(`/static/animations/${name}.fbx`, (fbx) => {
+            const clip = fbx.animations[0];
+            if (!clip) return;
+
+            // Retargeting: Map mixamorig names to VRM humanoid names
+            const vrmClip = clip.clone();
+            vrmClip.tracks.forEach((track) => {
+                // Remove prefix like 'mixamorig' if present
+                track.name = track.name.replace(/mixamorig/g, '');
+                
+                // Map some specific names if needed
+                const map = {
+                    'Hips.position': 'hips.position',
+                    'Hips.quaternion': 'hips.quaternion',
+                    'Spine.quaternion': 'spine.quaternion',
+                    'Neck.quaternion': 'head.quaternion',
+                    'LeftArm.quaternion': 'leftUpperArm.quaternion',
+                    'RightArm.quaternion': 'rightUpperArm.quaternion',
+                    'LeftForeArm.quaternion': 'leftLowerArm.quaternion',
+                    'RightForeArm.quaternion': 'rightLowerArm.quaternion',
+                    'LeftHand.quaternion': 'leftHand.quaternion',
+                    'RightHand.quaternion': 'rightHand.quaternion',
+                    'LeftUpLeg.quaternion': 'leftUpperLeg.quaternion',
+                    'RightUpLeg.quaternion': 'rightUpperLeg.quaternion',
+                    'LeftLeg.quaternion': 'leftLowerLeg.quaternion',
+                    'RightLeg.quaternion': 'rightLowerLeg.quaternion',
+                    'LeftFoot.quaternion': 'leftFoot.quaternion',
+                    'RightFoot.quaternion': 'rightFoot.quaternion',
+                };
+                
+                Object.keys(map).forEach(key => {
+                    if (track.name.includes(key)) track.name = track.name.replace(key, map[key]);
+                });
+            });
+
+            vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
+            currentAction = vrmMixer.clipAction(vrmClip);
+            currentAction.play();
+        });
+    }
+
+    function stopAnimation() {
+        if (currentAction) {
+            currentAction.stop();
+            currentAction = null;
+        }
+        if (vrmMixer) {
+            vrmMixer.stopAllAction();
+            vrmMixer = null;
+        }
+        // Reset to pose
+        if (vrmModel) {
+            vrmModel.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftUpperArm).rotation.z = 1.35;
+            vrmModel.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightUpperArm).rotation.z = -1.35;
+        }
     }
 
     // ── TALKING ANIMATION ──────────────────────────────────────────────────
