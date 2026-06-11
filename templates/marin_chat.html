@@ -1048,24 +1048,78 @@
     async function initVRM() {
         const canvas = document.getElementById('vrm-canvas');
         vrmScene = new THREE.Scene();
-        vrmCamera = new THREE.PerspectiveCamera(30.0, canvas.clientWidth / canvas.clientHeight, 0.1, 20.0);
-        vrmCamera.position.set(0.0, 1.4, 1.4);
+        vrmScene.background = new THREE.Color(0x050403);
+        
+        vrmCamera = new THREE.PerspectiveCamera(35.0, canvas.clientWidth / canvas.clientHeight, 0.1, 50.0);
+        vrmCamera.position.set(0.0, 1.4, 2.5);
 
         vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
         vrmRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
         vrmRenderer.outputEncoding = THREE.sRGBEncoding;
+        vrmRenderer.shadowMap.enabled = true;
 
         vrmControls = new THREE.OrbitControls(vrmCamera, canvas);
         vrmControls.screenSpacePanning = true;
-        vrmControls.target.set(0.0, 1.4, 0.0);
+        vrmControls.target.set(0.0, 1.1, 0.0);
         vrmControls.update();
 
-        const light = new THREE.DirectionalLight(0xffffff, 1.5);
-        light.position.set(1.0, 1.0, 1.0).normalize();
-        vrmScene.add(light);
+        // ── ROOM ENVIRONMENT ────────────────────────────────────────────────
+        const roomGroup = new THREE.Group();
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        // Floor
+        const floorGeo = new THREE.PlaneGeometry(10, 10);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 0.8 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        roomGroup.add(floor);
+
+        // Back Wall
+        const wallGeo = new THREE.PlaneGeometry(10, 6);
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x12100e, roughness: 0.9 });
+        const backWall = new THREE.Mesh(wallGeo, wallMat);
+        backWall.position.set(0, 3, -2);
+        backWall.receiveShadow = true;
+        roomGroup.add(backWall);
+
+        // Side Walls
+        const leftWall = new THREE.Mesh(wallGeo, wallMat);
+        leftWall.rotation.y = Math.PI / 2;
+        leftWall.position.set(-5, 3, 3);
+        roomGroup.add(leftWall);
+
+        const rightWall = new THREE.Mesh(wallGeo, wallMat);
+        rightWall.rotation.y = -Math.PI / 2;
+        rightWall.position.set(5, 3, 3);
+        roomGroup.add(rightWall);
+
+        // Ceiling (subtle)
+        const ceil = new THREE.Mesh(floorGeo, wallMat);
+        ceil.rotation.x = Math.PI / 2;
+        ceil.position.y = 6;
+        roomGroup.add(ceil);
+
+        // Decorative Grid
+        const grid = new THREE.GridHelper(10, 20, 0x3a342c, 0x221e19);
+        grid.position.y = 0.01;
+        roomGroup.add(grid);
+
+        vrmScene.add(roomGroup);
+
+        // ── LIGHTING ────────────────────────────────────────────────────────
+        const mainLight = new THREE.SpotLight(0xffffff, 2.0);
+        mainLight.position.set(2, 5, 3);
+        mainLight.angle = Math.PI / 6;
+        mainLight.penumbra = 0.5;
+        mainLight.castShadow = true;
+        vrmScene.add(mainLight);
+
+        const fillLight = new THREE.PointLight(0x4db8a4, 0.8);
+        fillLight.position.set(-2, 2, 1);
+        vrmScene.add(fillLight);
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         vrmScene.add(ambientLight);
 
         const loader = new THREE.GLTFLoader();
@@ -1080,6 +1134,15 @@
                     vrmModel = vrm;
                     vrmScene.add(vrm.scene);
                     vrm.scene.rotation.y = Math.PI; // Face the camera
+                    
+                    // Shadow casting for all meshes in the model
+                    vrm.scene.traverse((obj) => {
+                        if (obj.isMesh) {
+                            obj.castShadow = true;
+                            obj.receiveShadow = true;
+                        }
+                    });
+
                     console.log("[VRM] Model loaded:", vrm);
                     
                     // Center camera on head
