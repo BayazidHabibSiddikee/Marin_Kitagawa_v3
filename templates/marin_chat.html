@@ -1270,47 +1270,55 @@
         if (!vrmModel) return;
         stopAnimation();
 
-        console.log(`[VRM] Playing action: ${name}`);
+        console.log(`[VRM] Loading animation: ${name}`);
         const loader = new THREE.FBXLoader();
         loader.load(`/static/animations/${name}.fbx`, (fbx) => {
             const clip = fbx.animations[0];
             if (!clip) return;
 
-            // Retargeting: Map mixamorig names to VRM humanoid names
             const vrmClip = clip.clone();
+            const tracks = [];
+            
+            // Map FBX to VRM
+            const boneMap = {
+                'Hips': 'hips', 'Spine': 'spine', 'Spine1': 'chest', 'Spine2': 'upperChest',
+                'Neck': 'neck', 'Head': 'head',
+                'LeftArm': 'leftUpperArm', 'LeftForeArm': 'leftLowerArm', 'LeftHand': 'leftHand',
+                'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
+                'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot',
+                'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot'
+            };
+
             vrmClip.tracks.forEach((track) => {
-                // Remove prefix like 'mixamorig' if present
-                track.name = track.name.replace(/mixamorig/g, '');
+                let trackName = track.name.replace(/mixamorig/g, '');
+                const boneName = trackName.split('.')[0];
+                const property = trackName.split('.')[1];
                 
-                // Map some specific names if needed
-                const map = {
-                    'Hips.position': 'hips.position',
-                    'Hips.quaternion': 'hips.quaternion',
-                    'Spine.quaternion': 'spine.quaternion',
-                    'Neck.quaternion': 'head.quaternion',
-                    'LeftArm.quaternion': 'leftUpperArm.quaternion',
-                    'RightArm.quaternion': 'rightUpperArm.quaternion',
-                    'LeftForeArm.quaternion': 'leftLowerArm.quaternion',
-                    'RightForeArm.quaternion': 'rightLowerArm.quaternion',
-                    'LeftHand.quaternion': 'leftHand.quaternion',
-                    'RightHand.quaternion': 'rightHand.quaternion',
-                    'LeftUpLeg.quaternion': 'leftUpperLeg.quaternion',
-                    'RightUpLeg.quaternion': 'rightUpperLeg.quaternion',
-                    'LeftLeg.quaternion': 'leftLowerLeg.quaternion',
-                    'RightLeg.quaternion': 'rightLowerLeg.quaternion',
-                    'LeftFoot.quaternion': 'leftFoot.quaternion',
-                    'RightFoot.quaternion': 'rightFoot.quaternion',
-                };
-                
-                Object.keys(map).forEach(key => {
-                    if (track.name.includes(key)) track.name = track.name.replace(key, map[key]);
-                });
+                const vrmBoneName = boneMap[boneName];
+                if (vrmBoneName) {
+                    const boneNode = vrmModel.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[vrmBoneName.charAt(0).toUpperCase() + vrmBoneName.slice(1)]);
+                    if (boneNode) {
+                        // Create a new track targeting the real node name
+                        const newTrack = track.clone();
+                        newTrack.name = `${boneNode.name}.${property}`;
+                        
+                        // Scale position (Mixamo is cm, VRM is m)
+                        if (property === 'position') {
+                            for (let i = 0; i < newTrack.values.length; i++) {
+                                newTrack.values[i] *= 0.01;
+                            }
+                        }
+                        tracks.push(newTrack);
+                    }
+                }
             });
 
+            const finalClip = new THREE.AnimationClip(name, vrmClip.duration, tracks);
             vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
-            currentAction = vrmMixer.clipAction(vrmClip);
+            currentAction = vrmMixer.clipAction(finalClip);
             currentAction.play();
-        });
+            console.log(`[VRM] Playing: ${name}`);
+        }, undefined, (err) => console.error("[VRM] FBX Load Error:", err));
     }
 
     function stopAnimation() {
