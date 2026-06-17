@@ -889,6 +889,7 @@
         <a href="/"                          class="sidebar-btn" style="text-decoration:none"><span class="icon">⌂</span> Home</a>
         <a href="/chat"                      class="sidebar-btn active" style="text-decoration:none"><span class="icon">◈</span> Chat</a>
         <a href="/profile"                   class="sidebar-btn" style="text-decoration:none"><span class="icon">◉</span> Profile</a>
+        <a href="/sentinel"                  class="sidebar-btn" style="text-decoration:none"><span class="icon">🛡️</span> Sentinel</a>
 
         <div class="sidebar-section">Modes</div>
         <button class="sidebar-btn active" onclick="setMode('chat')"  id="btn-chat"><span class="icon">◈</span> Chat</button>
@@ -1039,6 +1040,10 @@
     let vrmControls  = null;
     let vrmMixer     = null;
     let currentAction = null;
+
+    let audioContext = null;
+    let audioAnalyser = null;
+    let audioSource = null;
 
     // ── VRM VIEWER ──────────────────────────────────────────────────────────
     function toggleVRM() {
@@ -1606,7 +1611,17 @@
             
             // Lip sync simulation if talking
             if (document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
-                const mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 8) * 0.5;
+                let mouthOpen = 0;
+                if (audioAnalyser) {
+                    const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                    audioAnalyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const avg = sum / dataArray.length;
+                    mouthOpen = Math.min(1.0, avg / 60.0);
+                } else {
+                    mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 8) * 0.5;
+                }
                 vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, mouthOpen);
             } else {
                 vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, 0);
@@ -1917,6 +1932,47 @@
         sendMessage();
     }
 
+    async function playVoiceAudio(text) {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioAnalyser = audioContext.createAnalyser();
+            audioAnalyser.fftSize = 256;
+        }
+        
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        
+        try {
+            const response = await fetch(`/audio/speak?text=${encodeURIComponent(text)}`);
+            if (!response.ok) throw new Error("Audio fetch failed");
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            
+            if (audioSource) {
+                audioSource.stop();
+                audioSource.disconnect();
+            }
+            
+            audioSource = audioContext.createBufferSource();
+            audioSource.buffer = audioBuffer;
+            
+            audioSource.connect(audioAnalyser);
+            audioAnalyser.connect(audioContext.destination);
+            
+            audioSource.onended = () => {
+                toggleTalking(false);
+            };
+            
+            toggleTalking(true);
+            audioSource.start();
+        } catch (err) {
+            console.error("Failed to play audio:", err);
+            toggleTalking(false);
+        }
+    }
+
     async function sendMessage() {
         const inp  = document.getElementById('msg-input');
         const text = inp.value.trim();
@@ -1945,6 +2001,7 @@
             const reader = resp.body.getReader();
             const dec    = new TextDecoder();
             let   full   = '';
+            let   shouldSpeak = false;
             typingBubble.innerHTML = '';
 
             while (true) {
@@ -1954,8 +2011,8 @@
 
                 // Handle Tags
                 if (chunk.includes('__TALK_ON__')) {
+                    shouldSpeak = true;
                     toggleThinking(false);
-                    toggleTalking(true);
                     chunk = chunk.replace('__TALK_ON__', '');
                 }
                 if (chunk.includes('__TALK_OFF__')) {
@@ -1972,8 +2029,8 @@
 
                 if (!chunk.trim()) continue;
 
-                // Start talking when text arrives
-                if (!document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
+                // Start talking when text arrives only if voice is disabled
+                if (!shouldSpeak && !document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
                     toggleThinking(false);
                     toggleTalking(true);
                 }
@@ -1994,6 +2051,12 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '').replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
                 try { typingBubble.innerHTML = renderWithLatex(cleanText); }
                 catch { typingBubble.textContent = cleanText; }
+                
+                if (shouldSpeak) {
+                    playVoiceAudio(cleanText);
+                } else {
+                    toggleTalking(false);
+                }
             }
         } catch(e) {
             typingBubble.textContent = 'Connection error. Try again.';

@@ -26,7 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     supervisor \
     alsa-utils \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
+
+# NOTE: Ollama runs on the HOST machine, not inside this container.
+# The container connects to it via OLLAMA_BASE_URL=http://host.docker.internal:11434
 
 WORKDIR /app
 
@@ -47,7 +51,12 @@ RUN mkdir -p \
     doc \
     code \
     unique/marin_vault \
-    storage/faiss_db
+    storage/faiss_db \
+    /root/.piper-voices
+
+# Pre-download Piper voice models
+RUN curl -sSL https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx -o /root/.piper-voices/en_US-amy-medium.onnx && \
+    curl -sSL https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json -o /root/.piper-voices/en_US-amy-medium.onnx.json
 
 # Make scripts executable
 RUN chmod +x docker-entrypoint.sh 2>/dev/null || true

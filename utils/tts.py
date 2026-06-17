@@ -2,29 +2,10 @@ import asyncio
 import re
 import os
 
-# Piper binary and voice paths inside the container
-PIPER_BIN = "/app/utils/piper/piper"
-VOICE_PATH = "/root/.piper-voices/en_US-amy-medium.onnx"
-
-async def _run_piper(text: str):
-    if not os.path.exists(PIPER_BIN):
-        print(f"❌ Piper binary not found at {PIPER_BIN}")
-        return
-    
-    # Clean text to prevent shell injection or broken speech
-    safe_text = text.replace("'", "").replace('"', "")
-    
-    # OWNER-ONLY — single-user dev box
-    cmd = f"echo '{safe_text}' | {PIPER_BIN} --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
-    try:
-        process = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
-        )
-        await process.wait()
-    except Exception as e:
-        print(f"❌ Voice playback failed: {e}")
+# Piper binary and voice paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PIPER_BIN = os.path.join(BASE_DIR, "utils", "piper", "piper")
+VOICE_PATH = os.path.expanduser("~/.piper-voices/en_US-amy-medium.onnx")
 
 def _clean(text: str) -> str:
     text = re.sub(r"\*{1,3}[\s\S]{0,2000}?\*{1,3}", "", text)
@@ -33,11 +14,35 @@ def _clean(text: str) -> str:
     text = re.sub(r"https?://\S+", "", text)
     return " ".join(text.split()).strip()
 
+async def generate_wav(text: str) -> bytes:
+    if not os.path.exists(PIPER_BIN):
+        print(f"❌ Piper binary not found at {PIPER_BIN}")
+        return b""
+    
+    safe_text = _clean(text).replace("'", "").replace('"', "")
+    if not safe_text:
+        return b""
+        
+    cmd = f"echo '{safe_text}' | {PIPER_BIN} --model {VOICE_PATH} --output_file - --length_scale 0.85 --noise_scale 0.8 --noise_w 0.9"
+    try:
+        process = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        stdout, _ = await process.communicate()
+        return stdout
+    except Exception as e:
+        print(f"❌ Voice generation failed: {e}")
+        return b""
+
 async def speak_male(text: str):
-    await _run_piper(_clean(text))
+    # Legacy, no longer plays locally via aplay
+    pass
 
 async def speak_female(text: str):
-    await _run_piper(_clean(text))
+    # Legacy, no longer plays locally via aplay
+    pass
 
 def init():
     pass

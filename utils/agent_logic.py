@@ -287,6 +287,11 @@ async def stream_marin_chat(
         {"role": "user", "content": prompt}
     ]
     
+    # Optional: Voice trigger for the response
+    import marin
+    if getattr(marin, "VOICE_ENABLED", False):
+        yield "__TALK_ON__"
+    
     async for chunk in fast_llm.astream(fast_msgs):
         if chunk.content:
             full_response += chunk.content
@@ -306,14 +311,4 @@ async def stream_marin_chat(
     
     if needs_tools or response_implies_tool:
         from langgraph_agent import run_background_tools
-        asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id, marin_fast_response=full_response))
-
-    # Optional: Voice trigger for the first response
-    import marin
-    if getattr(marin, "VOICE_ENABLED", False) and full_response:
-        yield "__TALK_ON__"
-        try:
-            from utils.tts import speak_female
-            await speak_female(full_response)
-        except Exception: pass
-        yield "__TALK_OFF__"
+        asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id))

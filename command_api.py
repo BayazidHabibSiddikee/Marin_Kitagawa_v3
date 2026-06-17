@@ -11,7 +11,7 @@ import shutil
 import secrets
 from pathlib import Path
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
@@ -422,7 +422,7 @@ def get_agent_help():
 # ── HITL Confirmation endpoints ───────────────────────────────────────────────
 
 @app.get("/confirm/list")
-def list_pending_confirmations():
+def list_pending_confirmations_legacy():
     from marin import PENDING_CONFIRMATIONS
     pending = {k: v for k, v in PENDING_CONFIRMATIONS.items() if v["status"] == "pending"}
     return {"pending": pending, "count": len(pending)}

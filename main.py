@@ -28,12 +28,23 @@ import database
 from utils.agent_logic import stream_marin_chat
 from langgraph_agent import ALL_TOOLS, tools_by_name
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # ── LIFESPAN ──────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize databases
     init_db()
+    from tools.habit_store import init_todo_db
+    init_todo_db()
     print("[Database] Initialized Marin Tools.")
+    
+    # Start the proactive conversation engine
+    from proactive_engine import proactive_broadcaster, seed_from_db
+    seed_from_db("marin")
+    asyncio.create_task(proactive_broadcaster("marin"))
+    
     yield
 
 app = FastAPI(title="Marin Tools", lifespan=lifespan)
@@ -49,23 +60,16 @@ async def auto_auth_middleware(request: Request, call_next):
 
 # ── SETUP ───────────────────────────────────────────────────────────────
 
-import os
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-# Initialize databases
-from database import init_db
-from tools.habit_store import init_todo_db
-init_db()
-init_todo_db()
+# ── MOUNT COMMAND API AS SUB-ROUTER ──────────────────────────────────────
+from command_api import app as command_api_app
+app.mount("/cmd", command_api_app)
 
-@app.on_event("startup")
-async def startup_event():
-    # Start the proactive conversation engine
-    from proactive_engine import proactive_broadcaster, seed_from_db
-    seed_from_db("marin")
-    asyncio.create_task(proactive_broadcaster("marin"))
+# ── MOUNT SENTINEL ENGINE (PROXY) ────────────────────────────────────────
+from sentinel_engine import sentinel_app
+app.mount("/v1", sentinel_app)
 
 # ── CORE ROUTES ──────────────────────────────────────────────────────────
 
@@ -86,11 +90,19 @@ async def get_proactive_status():
 async def landing_page(request: Request):
     return templates.TemplateResponse(request=request, name="landing.html")
 
+@app.get("/sentinel")
+async def sentinel_dashboard(request: Request):
+    return templates.TemplateResponse(request=request, name="sentinel_dashboard.html")
+
 @app.get("/")
 @app.get("/chat")
 async def chat_page(request: Request):
     user = request.state.user
-    return templates.TemplateResponse(request=request, name="marin_chat.html", context={"user": user})
+    response = templates.TemplateResponse(request=request, name="marin_chat.html", context={"user": user})
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # ── UI COMPATIBILITY ENDPOINTS ──────────────────────────────────────────
 
@@ -147,10 +159,19 @@ async def set_wordlimit(request: Request):
 
 @app.post("/audio/stop")
 async def stop_audio():
-    import subprocess
     subprocess.run(["pkill", "-f", "aplay"], capture_output=True)
     subprocess.run(["pkill", "-f", "piper-tts"], capture_output=True)
     return {"status": "stopped"}
+
+@app.get("/audio/speak")
+async def speak_audio(text: str):
+    from utils.tts import generate_wav
+    import io
+    wav_bytes = await generate_wav(text)
+    if not wav_bytes:
+        raise HTTPException(status_code=500, detail="Failed to generate audio")
+    return StreamingResponse(io.BytesIO(wav_bytes), media_type="audio/wav")
+
 
 @app.get("/api/news/latest")
 async def get_latest_news_api():
@@ -428,13 +449,11 @@ async def upload_image(image: UploadFile = File(...)):
 
 @app.get("/moduleflow")
 async def moduleflow_page(request: Request):
-    import os
     with open(os.path.join(BASE_DIR, "moduleflow", "index.html"), "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 @app.get("/moduleflow/graph.json")
 async def moduleflow_graph(request: Request):
-    import os
     with open(os.path.join(BASE_DIR, "moduleflow", "graph.json"), "r", encoding="utf-8") as f:
         return HTMLResponse(f.read(), media_type="application/json")
 

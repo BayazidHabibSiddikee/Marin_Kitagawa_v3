@@ -3,20 +3,14 @@ services:
     build: .
     container_name: marin-hs02
     restart: unless-stopped
-    # Security hardening: removed unconfined security options
     user: root
     cap_add:
       - NET_ADMIN
       - NET_RAW
-      - SYS_PTRACE
-    # Host mode for direct access to Ollama on localhost
-    network_mode: host
-    # ports are ignored in host mode but good for documentation
     ports:
       - "5069:5069"
       - "5080:5080"
       - "5070:5070"
-    # extra_hosts not needed in host mode
     deploy:
       resources:
         limits:
@@ -25,10 +19,12 @@ services:
         reservations:
           memory: 2G
           cpus: '0.5'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
-      - OLLAMA_BASE_URL=http://localhost:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
@@ -40,6 +36,7 @@ services:
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./storage/ollama:/root/.ollama
     devices:
       - /dev/snd:/dev/snd
     healthcheck:
@@ -47,4 +44,4 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s

@@ -18,6 +18,9 @@ ENV/
 static/uploads/
 static/generated/
 storage/*.db
+storage/vault.enc
+storage/priv_state.json
+storage/breach_log.json
 *.db
 
 # ── Logs ─────────────────────────────────────────────────────────────────────

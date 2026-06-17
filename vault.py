@@ -17,7 +17,7 @@ try:
 except ImportError:
     HAS_CRYPTO = False
 
-VAULT_DIR = Path(__file__).parent.parent / "storage"
+VAULT_DIR = Path(__file__).parent / "storage"
 VAULT_FILE = VAULT_DIR / "vault.enc"
 VAULT_META = VAULT_DIR / "vault_meta.json"
 

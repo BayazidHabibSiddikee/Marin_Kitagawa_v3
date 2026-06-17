@@ -38,15 +38,23 @@ _streak_count: dict[str, int]          = {} # count proactive sent since last us
 _last_greeting_time: dict[str, float]  = {}
 
 # ── Broadcast queue (proactive messages go to ALL platforms) ──────────────
-_proactive_queue: asyncio.Queue | None = None
 _telegram_chat_id: str = ""
 
+# Pub/sub: keep a set of per-client queues so every tab gets every message
+_client_queues: set[asyncio.Queue] = set()
+_client_queues_lock = asyncio.Lock()
 
-def _get_queue() -> asyncio.Queue:
-    global _proactive_queue
-    if _proactive_queue is None:
-        _proactive_queue = asyncio.Queue()
-    return _proactive_queue
+
+async def _broadcast_to_clients(payload: str):
+    """Send payload to ALL connected SSE clients."""
+    async with _client_queues_lock:
+        dead = set()
+        for q in _client_queues:
+            try:
+                q.put_nowait(payload)
+            except asyncio.QueueFull:
+                dead.add(q)
+        _client_queues -= dead
 
 
 def record_user_message(agent: str):
@@ -58,7 +66,7 @@ def record_user_message(agent: str):
 def seed_from_db(agent: str = "marin"):
     """Restore proactive state from chat history on server startup."""
     try:
-        conn = database.get_connection()
+        conn = database.get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT timestamp FROM chat_history WHERE agent = ? ORDER BY id DESC LIMIT 1",
@@ -237,7 +245,7 @@ async def _generate_proactive(agent: str) -> str | None:
 
     try:
         from local_llm import stream_local_chat
-        from marin import get_character_prompt
+        from utils.persona import get_character_prompt
     except ImportError:
         return None
 
@@ -368,7 +376,7 @@ async def proactive_broadcaster(agent: str = "marin"):
     if not _is_quiet_hours():
         try:
             from local_llm import stream_local_chat
-            from marin import get_character_prompt
+            from utils.persona import get_character_prompt
 
             greeting = _get_time_greeting()
             time_ctx = _get_time_context()
@@ -402,21 +410,26 @@ Rules: Under 2 sentences. Stay in character. No questions. Do NOT sign your name
 
 
 async def _broadcast(text: str, trigger: str, agent: str = "marin"):
-    """Send a proactive message to ALL platforms: web SSE + Telegram."""
-    # 1. Send to web SSE clients
-    payload = json.dumps({"type": "proactive", "text": text, "trigger": trigger})
-    queue = _get_queue()
-    await queue.put(payload)
+    """Send a proactive message to ALL platforms: web SSE + Telegram + DB."""
+    # 1. Save to database for persistence and history-aware follow-ups
+    try:
+        database.save_message(agent, "assistant", f"[proactive:{trigger}] {text}",
+                              user_id="USR-MASTER", session_id="default")
+    except Exception as e:
+        print(f"[proactive] DB save error: {e}")
 
-    # 2. Send to Telegram
+    # 2. Send to ALL connected web SSE clients (pub/sub)
+    payload = json.dumps({"type": "proactive", "text": text, "trigger": trigger})
+    await _broadcast_to_clients(payload)
+
+    # 3. Send to Telegram
     if _telegram_chat_id:
         try:
             from tools.msg_telegram import send
             print(f"[proactive] Attempting Telegram send to {_telegram_chat_id}...")
-            # Run in thread to avoid blocking the async loop
             ok = await asyncio.to_thread(send, text)
             if ok:
-                print(f"[proactive] Telegram broadcast success: {text}...")
+                print(f"[proactive] Telegram broadcast success: {text[:60]}...")
             else:
                 print(f"[proactive] Telegram broadcast FAILED (check tool output)")
         except Exception as e:
@@ -429,23 +442,27 @@ async def _broadcast(text: str, trigger: str, agent: str = "marin"):
 
 async def proactive_stream(agent: str = "marin") -> AsyncGenerator[str, None]:
     """
-    SSE generator for web clients. Consumes from the shared broadcast queue.
+    SSE generator for web clients. Each client gets its own queue (pub/sub).
     Mount on GET /proactive/stream.
     """
-    queue = _get_queue()
-    # Initial connection ping
-    yield f"data: {json.dumps({'type': 'system', 'text': 'Proactive Engine Connected'})}\n\n"
-    
-    while True:
-        try:
-            # Wait for message with a timeout for keep-alive
-            payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-            yield f"data: {payload}\n\n"
-        except asyncio.TimeoutError:
-            # Keep-alive comment
-            yield ": keep-alive\n\n"
-        except Exception:
-            break
+    client_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    async with _client_queues_lock:
+        _client_queues.add(client_queue)
+    try:
+        # Initial connection ping
+        yield f"data: {json.dumps({'type': 'system', 'text': 'Proactive Engine Connected'})}\n\n"
+        
+        while True:
+            try:
+                payload = await asyncio.wait_for(client_queue.get(), timeout=15.0)
+                yield f"data: {payload}\n\n"
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+            except Exception:
+                break
+    finally:
+        async with _client_queues_lock:
+            _client_queues.discard(client_queue)
 
 
 # ── Session Management ───────────────────────────────────────────────────

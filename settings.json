@@ -1,6 +1,6 @@
 {
   "models": {
-    "default": "gemma4:31b-cloud",
+    "default": "google/gemma-2-9b-it:free",
     "fast": "qwen2.5:1.5b",
     "vision": "moondream",
     "embedding": "all-MiniLM-L6-v2"
@@ -8,7 +8,7 @@
   "providers": {
     "ollama": {
       "enabled": true,
-      "base_url": "http://localhost:11434"
+      "base_url": "http://host.docker.internal:11434"
     },
     "openai": {
       "enabled": false,

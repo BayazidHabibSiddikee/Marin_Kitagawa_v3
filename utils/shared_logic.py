@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 import database
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # ── Dynamic Owner Detection ──────────────────────────────────────────────────
 def detect_owner() -> str:
     """Detect the master user of the system. 
@@ -64,8 +66,9 @@ class StudyTimer:
     def _prepare_session_materials(self, topic: str):
         """Background task: download 3-4 books about the topic and index them."""
         # Use a persistent log for visibility
-        log_path = "/app/logs/session_prep.log"
+        log_path = os.path.join(BASE_DIR, "logs", "session_prep.log")
         def _log(msg):
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
             with open(log_path, "a") as f:
                 f.write(f"[{datetime.now()}] {msg}\n")
             print(msg)
@@ -75,7 +78,7 @@ class StudyTimer:
             from tools.pdf_downloader_marin import marin_search_and_download
             
             # Directory from user request
-            vault_dir = "/app/unique/marin_vault"
+            vault_dir = os.path.join(BASE_DIR, "unique", "marin_vault")
             os.makedirs(vault_dir, exist_ok=True)
             
             queries = [
@@ -132,12 +135,7 @@ class StudyTimer:
         }
 
     def _get_today_total(self) -> float:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("database", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "database.py"))
-        db = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(db)
-        
-        sessions = db.get_timer_stats()
+        sessions = database.get_timer_stats()
         today = datetime.now().date()
         return sum(
             (s["duration_minutes"] or 0) * 60 for s in sessions
@@ -174,10 +172,7 @@ class StudyTimer:
 timer = StudyTimer()
 
 async def handle_timer_command(command: str, task: str = "") -> str:
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("database", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "database.py"))
-    db = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(db)
+    db = database
 
     if command == "start":
         if not task:

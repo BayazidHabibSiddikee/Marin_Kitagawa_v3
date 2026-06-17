@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unified LLM Proxy</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #141720;
+    --border: #1e2333;
+    --accent: #4ade80;
+    --accent2: #60a5fa;
+    --warn: #f59e0b;
+    --err: #f87171;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 16px;
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg);
+  }
+  .logo { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--accent); letter-spacing: -0.5px; }
+  .logo span { color: var(--muted); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .uptime { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 8px; }
+  .card-value { font-family: var(--mono); font-size: 32px; font-weight: 600; }
+  .card-value.green { color: var(--accent); }
+  .card-value.blue  { color: var(--accent2); }
+  .card-value.amber { color: var(--warn); }
+  .card-value.red   { color: var(--err); }
+
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 16px; }
+
+  /* Keys table */
+  .keys-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .keys-table th { text-align: left; padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .keys-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+  .keys-table tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge.or   { background: rgba(96,165,250,0.15); color: var(--accent2); }
+  .badge.ollama { background: rgba(245,158,11,0.15); color: var(--warn); }
+  .del-btn { background: none; border: 1px solid var(--border); color: var(--err); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: var(--mono); transition: all 0.15s; }
+  .del-btn:hover { background: rgba(248,113,113,0.1); border-color: var(--err); }
+
+  /* Add key form */
+  .add-key-form { display: flex; gap: 10px; margin-bottom: 16px; }
+  .add-key-form input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 14px; border-radius: 6px;
+    font-family: var(--mono); font-size: 13px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .add-key-form input:focus { border-color: var(--accent); }
+  .add-key-form input::placeholder { color: var(--muted); }
+  .btn { padding: 10px 18px; border-radius: 6px; font-size: 13px; font-family: var(--mono); cursor: pointer; border: none; font-weight: 600; transition: all 0.15s; }
+  .btn-green { background: var(--accent); color: #000; }
+  .btn-green:hover { background: #22c55e; }
+  .btn-muted { background: var(--border); color: var(--text); }
+  .btn-muted:hover { background: #2a3047; }
+
+  /* Connection info box */
+  .info-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 32px; }
+  .info-box .row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .info-box .row:last-child { margin-bottom: 0; }
+  .info-label { font-size: 12px; color: var(--muted); width: 120px; flex-shrink: 0; }
+  .info-val { font-family: var(--mono); font-size: 13px; color: var(--accent2); }
+  .copy-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: var(--mono); }
+  .copy-btn:hover { color: var(--text); border-color: var(--text); }
+
+  .log-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: var(--mono); font-size: 12px; color: var(--muted); max-height: 220px; overflow-y: auto; }
+  .log-line { padding: 2px 0; line-height: 1.6; }
+  .log-line.info { color: var(--accent2); }
+  .log-line.warn { color: var(--warn); }
+  .log-line.err  { color: var(--err); }
+
+  .alert { padding: 10px 16px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .alert.show { display: block; }
+  .alert.ok  { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); color: var(--accent); }
+  .alert.bad { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <div class="status-dot" id="dot"></div>
+  <div class="logo">unified<span>/</span>llm-proxy</div>
+  <div class="uptime" id="uptimeEl">uptime: —</div>
+</header>
+
+<main>
+
+  <!-- Stats -->
+  <div class="grid-3" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-label">Total Requests</div>
+      <div class="card-value green" id="stat-total">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Via OpenRouter</div>
+      <div class="card-value blue" id="stat-or">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Via Ollama</div>
+      <div class="card-value amber" id="stat-ollama">—</div>
+    </div>
+  </div>
+  <div class="grid-3" style="margin-bottom:32px">
+    <div class="card">
+      <div class="card-label">Errors</div>
+      <div class="card-value red" id="stat-errors">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">OR Keys Loaded</div>
+      <div class="card-value" id="stat-or-keys">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Ollama Keys</div>
+      <div class="card-value" id="stat-ollama-keys">—</div>
+    </div>
+  </div>
+
+  <!-- Connection Info -->
+  <h2>How to Connect</h2>
+  <div class="info-box">
+    <div class="row">
+      <div class="info-label">Base URL</div>
+      <div class="info-val" id="base-url">http://localhost:8000/v1</div>
+      <button class="copy-btn" onclick="copy('base-url')">copy</button>
+    </div>
+    <div class="row">
+      <div class="info-label">API Key</div>
+      <div class="info-val">any-string (proxy manages real keys)</div>
+    </div>
+    <div class="row">
+      <div class="info-label">OpenAI SDK</div>
+      <div class="info-val">openai.base_url = "http://localhost:8000/v1"</div>
+    </div>
+    <div class="row">
+      <div class="info-label">Chat model</div>
+      <div class="info-val">google/gemini-2.0-flash-001 · anthropic/claude-3.5-sonnet · etc.</div>
+    </div>
+  </div>
+
+  <!-- Keys Management -->
+  <h2>API Keys</h2>
+  <div class="card" style="margin-bottom:32px">
+    <div class="alert" id="alert"></div>
+    <div class="add-key-form">
+      <input id="newKey" placeholder="sk-or-v1-… or ollama bearer key" />
+      <button class="btn btn-green" onclick="addKey()">+ Add Key</button>
+      <button class="btn btn-muted" onclick="reloadKeys()">↻ Reload</button>
+    </div>
+    <table class="keys-table">
+      <thead>
+        <tr>
+          <th>Key (masked)</th>
+          <th>Type</th>
+          <th>Requests</th>
+          <th>Failures</th>
+          <th>Last Used</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="keysBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Live Log -->
+  <h2>Live Activity</h2>
+  <div class="log-box" id="logBox">
+    <div class="log-line info">Waiting for requests…</div>
+  </div>
+
+</main>
+
+<script>
+const BASE = window.location.origin;
+
+function fmt(n) { return n?.toLocaleString() ?? '—'; }
+function ago(ts) {
+  if (!ts) return '—';
+  const s = Math.floor(Date.now()/1000 - ts);
+  if (s < 60) return s+'s ago';
+  if (s < 3600) return Math.floor(s/60)+'m ago';
+  return Math.floor(s/3600)+'h ago';
+}
+function fmtUptime(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return `${h}h ${m}m ${sec}s`;
+}
+
+async function fetchStats() {
+  try {
+    const r = await fetch(`${BASE}/v1/admin/stats`);
+    const d = await r.json();
+
+    document.getElementById('stat-total').textContent   = fmt(d.total);
+    document.getElementById('stat-or').textContent      = fmt(d.openrouter);
+    document.getElementById('stat-ollama').textContent  = fmt(d.ollama);
+    document.getElementById('stat-errors').textContent  = fmt(d.errors);
+    document.getElementById('stat-or-keys').textContent = fmt(d.or_key_count);
+    document.getElementById('stat-ollama-keys').textContent = fmt(d.ollama_key_count);
+    document.getElementById('uptimeEl').textContent     = 'uptime: ' + fmtUptime(d.uptime_seconds);
+
+    // Render keys table
+    const tbody = document.getElementById('keysBody');
+    tbody.innerHTML = '';
+    for (const k of d.keys) {
+      const tr = document.createElement('tr');
+      const badge = k.type === 'OpenRouter'
+        ? `<span class="badge or">OpenRouter</span>`
+        : `<span class="badge ollama">Ollama</span>`;
+      tr.innerHTML = `
+        <td>${k.key}</td>
+        <td>${badge}</td>
+        <td>${fmt(k.requests)}</td>
+        <td>${k.failures > 0 ? `<span style="color:var(--err)">${k.failures}</span>` : '0'}</td>
+        <td>${ago(k.last_used)}</td>
+        <td><button class="del-btn" onclick="removeKey('${k.key}')">remove</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    // log activity
+    if (d.total > 0) {
+      const box = document.getElementById('logBox');
+      const line = document.createElement('div');
+      const cls = d.errors > 0 ? 'err' : 'info';
+      line.className = `log-line ${cls}`;
+      line.textContent = `[${new Date().toLocaleTimeString()}] total=${d.total} or=${d.openrouter} ollama=${d.ollama} err=${d.errors}`;
+      box.appendChild(line);
+      if (box.children.length > 50) box.removeChild(box.firstChild);
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch(e) {
+    document.getElementById('dot').style.background = 'var(--err)';
+    document.getElementById('dot').style.boxShadow = '0 0 8px var(--err)';
+  }
+}
+
+async function addKey() {
+  const val = document.getElementById('newKey').value.trim();
+  if (!val) return;
+  const r = await fetch(`${BASE}/v1/admin/keys/add`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({key: val})
+  });
+  const d = await r.json();
+  showAlert(r.ok ? `Key added! Total: ${d.total}` : d.detail, r.ok);
+  if (r.ok) { document.getElementById('newKey').value = ''; fetchStats(); }
+}
+
+async function removeKey(key) {
+  // reconstruct full key from masked — we need the full list
+  const r = await fetch(`${BASE}/v1/admin/keys`);
+  const d = await r.json();
+  // find the matching key by prefix
+  const prefix = key.replace('…','');
+  const fullKey = d.keys.find(k => k.startsWith(prefix));
+  if (!fullKey) { showAlert('Could not find key', false); return; }
+  const r2 = await fetch(`${BASE}/v1/admin/keys/remove`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({key: fullKey})
+  });
+  const d2 = await r2.json();
+  showAlert(`Key removed. Remaining: ${d2.total}`, r2.ok);
+  fetchStats();
+}
+
+async function reloadKeys() {
+  await fetch(`${BASE}/v1/admin/keys/reload`, {method:'POST'});
+  showAlert('Keys reloaded from keys.txt', true);
+  fetchStats();
+}
+
+function showAlert(msg, ok) {
+  const el = document.getElementById('alert');
+  el.className = `alert show ${ok ? 'ok' : 'bad'}`;
+  el.textContent = msg;
+  setTimeout(() => el.className = 'alert', 3000);
+}
+
+function copy(id) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+}
+
+// Set base URL dynamically
+document.getElementById('base-url').textContent = `${window.location.origin}/v1`;
+
+fetchStats();
+setInterval(fetchStats, 3000);
+</script>
+</body>
+</html>

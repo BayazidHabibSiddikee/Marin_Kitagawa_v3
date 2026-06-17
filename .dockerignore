@@ -6,6 +6,8 @@ settings.json
 storage/*.db
 storage/*.json
 storage/faiss_db/
+storage/vault.enc
+storage/ollama/
 
 # Logs
 logs/*.log

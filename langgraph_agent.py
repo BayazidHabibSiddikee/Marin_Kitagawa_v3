@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 langgraph_agent.py — Marin Cognitive Architecture (LangGraph)
@@ -50,17 +51,11 @@ def fix_spacing(text: str) -> str:
 def get_llm(model_name: str, bind_tools: list = None):
     """Factory to create the right LLM instance based on model name."""
     import inspect
+    from sentinel_engine import get_langchain_model
     caller_line = inspect.currentframe().f_back.f_lineno
-    log_agent(f"Creating LLM: {model_name} @ {config.OLLAMA_BASE_URL} (Line: {caller_line})")
+    log_agent(f"Creating LLM: {model_name} @ Native Sentinel (Line: {caller_line})")
     
-    llm = ChatOllama(
-        model=model_name,
-        base_url=config.OLLAMA_BASE_URL,
-        request_timeout=120,
-    )
-    if bind_tools:
-        return llm.bind_tools(bind_tools)
-    return llm
+    return get_langchain_model(model_name, bind_tools=bind_tools)
 
 # ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -126,10 +121,113 @@ def file_tool(action: str, path: str, content: str = "") -> str:
     except Exception as e:
         return f"Error: {e}"
 
-# tool list
+@tool
+def crypto_tool(coin: str = "bitcoin") -> str:
+    """Get live cryptocurrency price and market data."""
+    try:
+        from tools.crypto import run
+        return run(coin)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def stock_tool(symbol: str = "AAPL") -> str:
+    """Get stock market data for a ticker symbol."""
+    try:
+        from tools.stock import show_stock
+        return show_stock(symbol)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def news_tool(source: str = "BBC") -> str:
+    """Fetch latest news headlines."""
+    try:
+        from tools.news import open_news
+        return open_news(source)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def pdf_analyze_tool(path: str) -> str:
+    """Analyze a PDF document — extract text, metadata, and stats."""
+    try:
+        from tools.pdf_analyzer import analyze_pdf
+        result = analyze_pdf(path)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def batch_convert_tool(directory: str = ".") -> str:
+    """Batch convert documents in a directory to PDF."""
+    try:
+        from tools.batch_converter import batch_convert_to_pdf
+        result = batch_convert_to_pdf(directory)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def book_download_tool(query: str) -> str:
+    """Search and download free books from Project Gutenberg and Open Library."""
+    try:
+        from tools.book_downloader import search_gutenberg, search_open_library
+        results = search_gutenberg(query)
+        if not results:
+            results = search_open_library(query)
+        if results:
+            titles = [f"• {r.get('title', 'Unknown')} by {r.get('author', 'Unknown')}" for r in results[:5]]
+            return "Found books:\n" + "\n".join(titles)
+        return "No books found for that query."
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def math_plot_tool(expression: str = "heart") -> str:
+    """Plot mathematical equations and parametric curves."""
+    try:
+        from tools.mathplot import plot, list_presets
+        result = plot(expression)
+        return result if result else "Plot generated successfully."
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def alarm_tool(time: str = "08:00") -> str:
+    """Set an alarm for a specific time (HH:MM format)."""
+    try:
+        from tools.alarm import run_alarm
+        return run_alarm(time)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def business_analysis_tool(query: str) -> str:
+    """Analyze business/trading decisions — should I buy, sell, or hold?"""
+    try:
+        from tools.business_judge import analyze
+        return analyze(query)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def binance_tool(action: str = "portfolio") -> str:
+    """Interact with Binance — check portfolio, place trades."""
+    try:
+        from tools.binance_client import run
+        return run(action)
+    except Exception as e:
+        return f"Error: {e}"
+
+# tool list — ALL registered tools
 ALL_TOOLS = [
-    timer_tool, weather_tool, map_tool, terminal_tool, 
-    rag_search, learn_topic_tool, file_tool
+    timer_tool, weather_tool, map_tool, terminal_tool,
+    rag_search, learn_topic_tool, file_tool,
+    crypto_tool, stock_tool, news_tool,
+    pdf_analyze_tool, batch_convert_tool, book_download_tool,
+    math_plot_tool, alarm_tool,
+    business_analysis_tool, binance_tool,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -137,7 +235,6 @@ tools_by_name = {t.name: t for t in ALL_TOOLS}
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], lambda x, y: x + y]
-    marin_fast_response: str
     plan: List[dict]
     tool_outputs: dict
     user_id: str
@@ -148,15 +245,12 @@ class AgentState(TypedDict):
 
 STRATEGIST_SYSTEM = """You are Marin's Strategist. Build a JSON plan.
 TOOLS: {tools}
-Marin has already told the user: "{marin_fast_response}"
-Plan the steps needed to fulfill the request.
 Output ONLY a JSON array: [{{"action": "tool_name", "args": {{...}}, "rationale": "..."}}]
 If no tool needed: [{{"action": "respond", "args": {{}}, "rationale": "..."}}]"""
 
 async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
     user_msg = state["messages"][-1].content
-    fast_resp = state.get("marin_fast_response", "")
     
     # 1. Regex Priority
     from marin_fier import classify
@@ -170,10 +264,7 @@ async def node_strategist(state: AgentState) -> dict:
     plan = []
     try:
         llm = get_llm("qwen2.5:1.5b")
-        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(
-            tools=[t.name for t in ALL_TOOLS],
-            marin_fast_response=fast_resp
-        ))
+        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=[t.name for t in ALL_TOOLS]))
         resp = await llm.ainvoke([sys_msg] + list(state["messages"]))
         
         match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
@@ -217,72 +308,70 @@ async def node_executor(state: AgentState) -> dict:
     
     return {"tool_outputs": tool_outputs}
 
-async def node_audit(state: AgentState) -> dict:
-    log_agent("Audit started.")
-    tool_outputs = state.get("tool_outputs", {})
-    raw_results = [v for k, v in sorted(tool_outputs.items()) if k.startswith("step_")]
-    audit_summary = "Tool outputs:\n" + "\n".join(raw_results)
-    tool_outputs["__audit_summary__"] = audit_summary
-    return {"tool_outputs": tool_outputs}
-
 async def persona_node(state: AgentState) -> dict:
     log_agent("Persona started.")
     tool_outputs = state.get("tool_outputs", {})
-    fast_resp = state.get("marin_fast_response", "")
     
-    if "__final_response__" in tool_outputs:
-        content = tool_outputs["__final_response__"]
-    else:
-        content = tool_outputs.get("__audit_summary__", "Task completed.")
+    # Collect data
+    raw_results = [v for k, v in sorted(tool_outputs.items()) if k.startswith("step_")]
+    final_raw = tool_outputs.get("__final_response__", "")
+    
+    content = "\n\n".join(raw_results) if raw_results else final_raw
+    if not content: content = "Task completed."
 
+    # Force rephrase in Marin's voice (1.5B is most compliant)
     llm = get_llm("qwen2.5:1.5b")
     from utils.persona import get_character_prompt
     sys_prompt = get_character_prompt("neutral", is_owner=True)
     
-    instruction = f"[CONTEXT: You already told the user: '{fast_resp}']\n[TOOL RESULTS]: {content}\n[TASK]: Write your final follow-up response. Deliver the results naturally as a continuation of your previous message. Be affectionate. DO NOT refuse."
+    instruction = f"""[DATA]: {content}\n[TASK]: Rephrase the DATA in your character's voice. Be affectionate and protective. DO NOT refuse. Use signature phrases (Limon~~, Hehehe~~, Ummaaah~~!)."""
     
     try:
         resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=instruction)])
         final_text = resp.content
+        if any(k in final_text.lower() for k in ["i'm sorry", "i cannot", "don't have access"]):
+            final_text = f"Limon~~! I've finished that for you. Ummaaah~~!\n\n{content}"
     except:
         final_text = content
 
+    # Cleanup
     final_text = re.sub(r'\[\s*\{\s*"name".*?\}\s*\]', '', final_text, flags=re.DOTALL)
+    
     return {"messages": [AIMessage(content=final_text.strip())]}
 
 # ── Graph Logic ──────────────────────────────────────────────────────────────
 
+def route_after_executor(state: AgentState):
+    if "__final_response__" in state.get("tool_outputs", {}) or len([k for k in state.get("tool_outputs", {}) if k.startswith("step_")]) >= len(state.get("plan", [])):
+        return "persona"
+    return "executor"
+
 workflow = StateGraph(AgentState)
 workflow.add_node("strategist", node_strategist)
 workflow.add_node("executor", node_executor)
-workflow.add_node("audit", node_audit)
 workflow.add_node("persona", persona_node)
 
 workflow.set_entry_point("strategist")
 workflow.add_conditional_edges("strategist", lambda x: "persona" if x["plan"][0]["action"] == "respond" else "executor")
-workflow.add_conditional_edges("executor", lambda x: "audit" if len([k for k in x.get("tool_outputs", {}) if k.startswith("step_")]) >= len(x.get("plan", [])) else "executor")
-workflow.add_edge("audit", "persona")
+workflow.add_conditional_edges("executor", route_after_executor)
 workflow.add_edge("persona", END)
 
 agent = workflow.compile()
 
 # ── API ──────────────────────────────────────────────────────────────────────
 
-async def run_background_tools(message: str, history: list, user_id: str, role: str, user_vibe: str, session_id: str = "default", marin_fast_response: str = ""):
+async def run_background_tools(message: str, history: list, user_id: str, role: str, user_vibe: str, session_id: str = "default"):
     from utils.shared_logic import get_user_context
     msgs = [SystemMessage(content="Context:\n" + get_user_context())]
     for m in history:
         msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]))
     msgs.append(HumanMessage(content=message))
-    if marin_fast_response:
-        msgs.append(AIMessage(content=marin_fast_response))
 
     try:
         log_agent(f"Starting pipeline for {user_id}")
         result = await agent.ainvoke({
             "messages": msgs, "plan": [], "tool_outputs": {}, 
-            "user_id": user_id, "role": role, "session_id": session_id,
-            "marin_fast_response": marin_fast_response
+            "user_id": user_id, "role": role, "session_id": session_id
         })
         
         final_msg = ""

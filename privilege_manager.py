@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 from utils.shared_logic import MASTER_USER
 
-STORAGE_DIR = Path(__file__).parent.parent / "storage"
+STORAGE_DIR = Path(__file__).parent / "storage"
 BREACH_LOG = STORAGE_DIR / "breach_log.json"
 PRIV_STATE = STORAGE_DIR / "priv_state.json"
 AI_AUDIT_LOG = Path("/var/log/marin_ai_audit/ai_actions.log")
