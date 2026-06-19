@@ -220,6 +220,36 @@ def binance_tool(action: str = "portfolio") -> str:
     except Exception as e:
         return f"Error: {e}"
 
+@tool
+def youtube_search_tool(query: str) -> str:
+    """Search youtube for a video or music and return the video ID."""
+    try:
+        import yt_dlp
+        ydl_opts = {'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            if 'entries' in info and len(info['entries']) > 0:
+                video = info['entries'][0]
+            else:
+                video = info
+            
+            vid_id = video.get('id')
+            if vid_id:
+                return f"Found video: {video.get('title')}. You MUST include __YOUTUBE__{vid_id} in your response to play it on the projector, and __ANIM__Dancing to dance."
+        return "No results found."
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def youtube_transcript_tool(url: str) -> str:
+    """Get the transcript/subtitles of a YouTube video URL."""
+    try:
+        from tools.youtube_transcript import get_youtube_transcript
+        res = get_youtube_transcript(url)
+        return res if res else "Could not fetch transcript."
+    except Exception as e:
+        return f"Error: {e}"
+
 # tool list — ALL registered tools
 ALL_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
@@ -228,6 +258,7 @@ ALL_TOOLS = [
     pdf_analyze_tool, batch_convert_tool, book_download_tool,
     math_plot_tool, alarm_tool,
     business_analysis_tool, binance_tool,
+    youtube_search_tool, youtube_transcript_tool,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -319,6 +350,14 @@ async def persona_node(state: AgentState) -> dict:
     content = "\n\n".join(raw_results) if raw_results else final_raw
     if not content: content = "Task completed."
 
+    # Extract UI control tags to prevent the LLM from dropping or mangling them
+    tags_to_preserve = []
+    for pattern in [r'__YOUTUBE__[\w-]+', r'__STREAM__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__']:
+        matches = re.findall(pattern, content)
+        for m in matches:
+            tags_to_preserve.append(m)
+            content = content.replace(m, '')
+
     # Force rephrase in Marin's voice (1.5B is most compliant)
     llm = get_llm("qwen2.5:1.5b")
     from utils.persona import get_character_prompt
@@ -336,6 +375,10 @@ async def persona_node(state: AgentState) -> dict:
 
     # Cleanup
     final_text = re.sub(r'\[\s*\{\s*"name".*?\}\s*\]', '', final_text, flags=re.DOTALL)
+    
+    # Re-append extracted tags
+    if tags_to_preserve:
+        final_text += "\n\n" + " ".join(tags_to_preserve)
     
     return {"messages": [AIMessage(content=final_text.strip())]}
 

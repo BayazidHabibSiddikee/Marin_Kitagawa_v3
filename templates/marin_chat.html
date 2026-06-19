@@ -13,6 +13,7 @@
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/renderers/CSS3DRenderer.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/@pixiv/three-vrm@0.6.11/lib/three-vrm.js"></script>
     <style>
@@ -1038,7 +1039,9 @@
     let vrmClock     = new THREE.Clock();
 
     let vrmControls  = null;
-    let vrmMixer     = null;
+    let vrmMixer, vrmAction;
+    let projectorObject = null;
+    let vrmCssRenderer = null;
     let currentAction = null;
 
     let audioContext = null;
@@ -1114,18 +1117,32 @@
     async function initVRM() {
         const canvas = document.getElementById('vrm-canvas');
         vrmScene = new THREE.Scene();
-        vrmScene.background = new THREE.Color(0x1a1a1a);
         
         vrmCamera = new THREE.PerspectiveCamera(35.0, canvas.clientWidth / canvas.clientHeight, 0.1, 50.0);
         vrmCamera.position.set(0.0, 1.4, 3.0);
 
-        vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+        vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        vrmRenderer.setClearColor(0x1a1a1a, 1.0);
         vrmRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
         vrmRenderer.outputEncoding = THREE.sRGBEncoding;
         vrmRenderer.shadowMap.enabled = true;
 
-        vrmControls = new THREE.OrbitControls(vrmCamera, canvas);
+        // Initialize CSS3DRenderer
+        vrmCssRenderer = new THREE.CSS3DRenderer();
+        vrmCssRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        vrmCssRenderer.domElement.style.position = 'absolute';
+        vrmCssRenderer.domElement.style.top = '0px';
+        vrmCssRenderer.domElement.style.left = '0px';
+        vrmCssRenderer.domElement.style.zIndex = '1';
+        
+        canvas.style.position = 'relative';
+        canvas.style.zIndex = '2';
+        canvas.style.pointerEvents = 'none';
+
+        canvas.parentElement.appendChild(vrmCssRenderer.domElement);
+
+        vrmControls = new THREE.OrbitControls(vrmCamera, vrmCssRenderer.domElement);
         vrmControls.screenSpacePanning = true;
         vrmControls.target.set(0.0, 1.0, 0.0);
         vrmControls.update();
@@ -1270,13 +1287,14 @@
 
         // ── PICTURES (back wall) ──
         // Large frame (center-ish) - wide in X, thin in Z
-        room.add(box(0.8, 0.6, 0.03, 0x3a2a1a, -0.5, 1.9, -D/2 + 0.06));
-        room.add(box(0.74, 0.54, 0.01, 0xf5e6d3, -0.5, 1.9, -D/2 + 0.075));
-        // Adventure photo
+        // Adventure photo (moved to left wall)
+        room.add(box(0.03, 0.6, 0.8, 0x3a2a1a, -W/2 + 0.06, 1.9, 0));
+        room.add(box(0.01, 0.54, 0.74, 0xf5e6d3, -W/2 + 0.075, 1.9, 0));
         const frame1Geo = new THREE.PlaneGeometry(0.7, 0.5);
         const frame1Mat = new THREE.MeshBasicMaterial({ color: 0x5b8c5a });
         const frame1Mesh = new THREE.Mesh(frame1Geo, frame1Mat);
-        frame1Mesh.position.set(-0.5, 1.9, -D/2 + 0.082);
+        frame1Mesh.rotation.y = Math.PI / 2;
+        frame1Mesh.position.set(-W/2 + 0.082, 1.9, 0);
         room.add(frame1Mesh);
         texLoader.load('/static/images/frame_adventure.png', (tex) => {
             tex.minFilter = THREE.LinearFilter;
@@ -1534,6 +1552,43 @@
         fillLight.position.set(3, 1.5, 1);
         vrmScene.add(fillLight);
 
+        // Projector Screen (VideoTexture)
+        const videoElement = document.createElement('video');
+        videoElement.id = 'vrm-projector-video';
+        videoElement.crossOrigin = 'anonymous';
+        videoElement.playsInline = true;
+        // Projector Screen (CSS3D iframe)
+        const projDiv = document.createElement('div');
+        projDiv.id = 'vrm-projector';
+        projDiv.style.width = '1280px';
+        projDiv.style.height = '720px';
+        projDiv.style.backgroundColor = '#000';
+        projDiv.style.border = '6px solid var(--surface-2)';
+        projDiv.style.borderRadius = '12px';
+        projDiv.style.boxShadow = '0 0 50px rgba(77, 184, 164, 0.5)';
+        projDiv.style.pointerEvents = 'auto'; // allow clicking inside iframe
+        projDiv.style.display = 'none';
+        projDiv.innerHTML = `<iframe id="vrm-projector-frame" width="100%" height="100%" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+        
+        projectorObject = new THREE.CSS3DObject(projDiv);
+        projectorObject.scale.set(0.0016, 0.0016, 0.0016);
+        projectorObject.position.set(0, 2.2, -2.9); // On the back wall, high center
+        projectorObject.rotation.y = 0; // Flat against the wall
+        vrmScene.add(projectorObject);
+
+        // Punch a hole in the WebGL canvas so the CSS3D video shows through
+        const holeGeo = new THREE.PlaneGeometry(1280 * 0.0016, 720 * 0.0016);
+        const holeMat = new THREE.MeshBasicMaterial({
+            blending: THREE.NoBlending,
+            color: 0x000000,
+            opacity: 0.0,
+            transparent: true
+        });
+        const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+        holeMesh.position.copy(projectorObject.position);
+        holeMesh.rotation.copy(projectorObject.rotation);
+        vrmScene.add(holeMesh);
+
         const loader = new THREE.GLTFLoader();
         loader.crossOrigin = 'anonymous';
 
@@ -1565,7 +1620,7 @@
                         vrmCamera.lookAt(headPos);
                     }
 
-                    // Hands down pose
+                    // Hands down pose (T-pose/idle first)
                     const lArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftUpperArm);
                     const rArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightUpperArm);
                     if (lArm) lArm.rotation.z = 1.35;
@@ -1576,6 +1631,9 @@
                     if (lLowerArm) lLowerArm.rotation.z = 0.1;
                     if (rLowerArm) rLowerArm.rotation.z = -0.1;
                 });
+                
+                // Play Happy animation by default
+                setTimeout(() => playAnimation('Happy'), 500);
             },
             (progress) => console.log('Loading progress: ' + (100.0 * progress.loaded / progress.total) + '%'),
             (error) => console.error('VRM Load Error:', error)
@@ -1595,6 +1653,7 @@
         vrmCamera.aspect = width / height;
         vrmCamera.updateProjectionMatrix();
         vrmRenderer.setSize(width, height);
+        if (vrmCssRenderer) vrmCssRenderer.setSize(width, height);
     }
 
     function animateVRM() {
@@ -1628,6 +1687,27 @@
             }
         }
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
+        if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
+    }
+
+    function showProjector(url) {
+        if (!projectorObject) return;
+        projectorObject.element.style.display = 'block';
+        const iframe = document.getElementById('vrm-projector-frame');
+        
+        // Autoplay if youtube
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            if (!url.includes('autoplay=1')) {
+                url += (url.includes('?') ? '&' : '?') + 'autoplay=1';
+            }
+        }
+        iframe.src = url;
+    }
+
+    function hideProjector() {
+        if (!projectorObject) return;
+        projectorObject.element.style.display = 'none';
+        document.getElementById('vrm-projector-frame').src = '';
     }
 
     async function playAnimation(name) {
@@ -1973,6 +2053,8 @@
         }
     }
 
+    window.streamAbortController = null;
+
     async function sendMessage() {
         const inp  = document.getElementById('msg-input');
         const text = inp.value.trim();
@@ -1995,8 +2077,14 @@
         fd.append('agent', currentAgent);
         if (attachedImage) { fd.append('image', attachedImage); attachedImage = null; document.getElementById('attach-preview').textContent = ''; }
 
+        window.streamAbortController = new AbortController();
+
         try {
-            const resp = await fetch('/message', { method:'POST', body:fd });
+            const resp = await fetch('/message', { 
+                method:'POST', 
+                body:fd,
+                signal: window.streamAbortController.signal
+            });
             if (!resp.ok) throw new Error(resp.statusText);
             const reader = resp.body.getReader();
             const dec    = new TextDecoder();
@@ -2009,7 +2097,45 @@
                 if (done) break;
                 let chunk = dec.decode(value);
 
-                // Handle Tags
+                // Handle Animation and Projector Tags
+                if (chunk.includes('__ANIM__')) {
+                    const match = chunk.match(/__ANIM__(\w+)/);
+                    if (match) {
+                        playAnimation(match[1]);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+                
+                if (chunk.includes('__YOUTUBE__')) {
+                    const match = chunk.match(/__YOUTUBE__([\w-]+)/);
+                    if (match) {
+                        showProjector(`https://www.youtube.com/embed/${match[1]}`);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+
+                if (chunk.includes('__STREAM__')) {
+                    const match = chunk.match(/__STREAM__(https?:\/\/[^\s<]+)/);
+                    if (match) {
+                        showProjector(match[1]);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+
+                if (chunk.includes('__SEARCH__')) {
+                    const match = chunk.match(/__SEARCH__(https?:\/\/[^\s<]+)/);
+                    if (match) {
+                        showProjector(match[1]);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+
+                if (chunk.includes('__PROJECTOR_OFF__')) {
+                    hideProjector();
+                    chunk = chunk.replace('__PROJECTOR_OFF__', '');
+                }
+
+                // Handle Voice Tags
                 if (chunk.includes('__TALK_ON__')) {
                     shouldSpeak = true;
                     toggleThinking(false);
@@ -2048,7 +2174,14 @@
             if (!full) typingBubble.innerHTML = '<em style="color:var(--text-muted)">No response.</em>';
             else {
                 // Final render with full markdown + LaTeX once complete
-                const cleanText = full.replace(/__VIBE__\w+/g, '').replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
+                const cleanText = full.replace(/__VIBE__\w+/g, '')
+                                     .replace(/__ANIM__\w+/g, '')
+                                     .replace(/__YOUTUBE__[\w-]+/g, '')
+                                     .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
+                                     .replace('__PROJECTOR_OFF__', '')
+                                     .replace('__TALK_ON__','')
+                                     .replace('__TALK_OFF__','')
+                                     .trim();
                 try { typingBubble.innerHTML = renderWithLatex(cleanText); }
                 catch { typingBubble.textContent = cleanText; }
                 
@@ -2059,7 +2192,11 @@
                 }
             }
         } catch(e) {
-            typingBubble.textContent = 'Connection error. Try again.';
+            if (e.name === 'AbortError') {
+                typingBubble.innerHTML += '<em style="color:var(--text-muted)"> [Stopped]</em>';
+            } else {
+                typingBubble.textContent = 'Connection error. Try again.';
+            }
         }
 
         isStreaming = false;
@@ -2075,7 +2212,18 @@
     }
 
     async function stopSpeech() {
-        await fetch('/audio/stop', { method:'POST' });
+        // Stop audio playback if active
+        if (audioSource) {
+            try { audioSource.stop(); } catch(e) {}
+            try { audioSource.disconnect(); } catch(e) {}
+        }
+        
+        // Stop text stream if active
+        if (window.streamAbortController) {
+            window.streamAbortController.abort();
+        }
+        
+        toggleTalking(false);
         document.getElementById('stop-speech-btn').style.display = 'none';
     }
 
