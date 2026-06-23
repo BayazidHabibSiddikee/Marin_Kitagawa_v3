@@ -69,4 +69,5 @@ busi_doc/
 *.pdf
 *.tar.xz
 storage/latest_news.json
+storage/api_keys.txt
 ?.py
