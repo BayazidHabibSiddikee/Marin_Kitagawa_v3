@@ -24,6 +24,9 @@ import os
 import sys
 import time
 import asyncio
+import ipaddress
+import socket
+from urllib.parse import urlparse
 from functools import lru_cache
 from duckduckgo_search import DDGS
 from geopy.geocoders import Nominatim
@@ -47,6 +50,43 @@ def _geocode(query: str):
     result = _geolocator.geocode(query)
     _last_geocode_call = time.time()
     return result
+
+
+# ── SSRF PROTECTION ──────────────────────────────────────────────────────────
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),      # loopback
+    ipaddress.ip_network("10.0.0.0/8"),       # private Class A
+    ipaddress.ip_network("172.16.0.0/12"),    # private Class B
+    ipaddress.ip_network("192.168.0.0/16"),   # private Class C
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 private
+]
+
+_BLOCKED_HOSTS = {
+    "localhost", "127.0.0.1", "::1",
+    "0.0.0.0", "metadata.google.internal",
+    "169.254.169.254",  # AWS/GCP metadata
+}
+
+def _is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if hostname in _BLOCKED_HOSTS:
+            return False
+        try:
+            ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+            for net in _BLOCKED_NETWORKS:
+                if ip in net: return False
+        except (socket.gaierror, ValueError):
+            pass
+        if parsed.scheme not in ("http", "https"):
+            return False
+        return True
+    except Exception:
+        return False
+
 
 
 # ── BUG1+BUG6 FIX: Overpass API for amenity/POI search ───────────────────────
@@ -510,6 +550,9 @@ def scrape_content(url: str) -> str:
     Now fully synchronous using httpx.Client.
     """
     try:
+        if not _is_safe_url(url):
+            return "Scraping failed: SSRF blocked. URL targets an internal network."
+
         with httpx.Client(follow_redirects=True, timeout=20) as client:
             # Try Jina Reader first — returns clean markdown
             jina_url = f"https://r.jina.ai/{url}"

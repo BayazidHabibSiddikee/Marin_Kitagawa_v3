@@ -2,6 +2,7 @@ import sys
 import os
 import requests
 import json
+import urllib.parse
 
 # Configuration
 CAMOFOX_URL = "http://localhost:9377"
@@ -15,10 +16,11 @@ def stealth_search(query):
     
     try:
         # 1. Open a new tab directly with DuckDuckGo query
-        search_url = f"https://duckduckgo.com/?q={query.replace(' ', '+')}"
+        search_url = f"https://duckduckgo.com/?q={urllib.parse.quote_plus(query)}"
         open_res = requests.post(
             f"{CAMOFOX_URL}/tabs/open",
-            json={"userId": USER_ID, "url": search_url, "timeout": 90000}
+            json={"userId": USER_ID, "url": search_url, "timeout": 90000},
+            timeout=15
         )
         open_data = open_res.json()
         
@@ -31,7 +33,8 @@ def stealth_search(query):
         # 2. Extract page text using evaluate (more reliable than /extract for search results)
         eval_res = requests.post(
             f"{CAMOFOX_URL}/tabs/{tab_id}/evaluate",
-            json={"userId": USER_ID, "expression": "document.body.innerText"}
+            json={"userId": USER_ID, "expression": "document.body.innerText"},
+            timeout=15
         )
         eval_data = eval_res.json()
         

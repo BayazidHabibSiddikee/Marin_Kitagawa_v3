@@ -1552,11 +1552,6 @@
         fillLight.position.set(3, 1.5, 1);
         vrmScene.add(fillLight);
 
-        // Projector Screen (VideoTexture)
-        const videoElement = document.createElement('video');
-        videoElement.id = 'vrm-projector-video';
-        videoElement.crossOrigin = 'anonymous';
-        videoElement.playsInline = true;
         // Projector Screen (CSS3D iframe)
         const projDiv = document.createElement('div');
         projDiv.id = 'vrm-projector';
@@ -1568,7 +1563,27 @@
         projDiv.style.boxShadow = '0 0 50px rgba(77, 184, 164, 0.5)';
         projDiv.style.pointerEvents = 'auto'; // allow clicking inside iframe
         projDiv.style.display = 'none';
-        projDiv.innerHTML = `<iframe id="vrm-projector-frame" width="100%" height="100%" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+        
+        // Native HTML5 video element for raw streams (Chrome/Firefox)
+        const vid = document.createElement('video');
+        vid.id = 'vrm-projector-video';
+        vid.style.width = '100%';
+        vid.style.height = '100%';
+        vid.style.backgroundColor = 'black';
+        vid.controls = true;
+        vid.autoplay = true;
+        vid.style.display = 'none';
+        projDiv.appendChild(vid);
+
+        // Iframe for YouTube embeds (PySide6 fallback)
+        const iframe = document.createElement('iframe');
+        iframe.id = 'vrm-projector-iframe';
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        iframe.style.display = 'none';
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+        projDiv.appendChild(iframe);
         
         projectorObject = new THREE.CSS3DObject(projDiv);
         projectorObject.scale.set(0.0016, 0.0016, 0.0016);
@@ -1690,24 +1705,33 @@
         if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
     }
 
-    function showProjector(url) {
+    function showProjector(url, type='stream') {
         if (!projectorObject) return;
         projectorObject.element.style.display = 'block';
-        const iframe = document.getElementById('vrm-projector-frame');
         
-        // Autoplay if youtube
-        if (url.includes('youtube.com') || url.includes('youtu.be')) {
-            if (!url.includes('autoplay=1')) {
-                url += (url.includes('?') ? '&' : '?') + 'autoplay=1';
-            }
+        const video = document.getElementById('vrm-projector-video');
+        const iframe = document.getElementById('vrm-projector-iframe');
+        
+        if (type === 'stream') {
+            iframe.style.display = 'none';
+            iframe.src = '';
+            video.style.display = 'block';
+            video.src = url;
+            video.play().catch(e => console.error("Autoplay prevented:", e));
+        } else if (type === 'youtube') {
+            video.style.display = 'none';
+            video.pause();
+            video.src = '';
+            iframe.style.display = 'block';
+            iframe.src = url;
         }
-        iframe.src = url;
     }
 
     function hideProjector() {
         if (!projectorObject) return;
         projectorObject.element.style.display = 'none';
-        document.getElementById('vrm-projector-frame').src = '';
+        document.getElementById('vrm-projector-video').src = '';
+        document.getElementById('vrm-projector-iframe').src = '';
     }
 
     async function playAnimation(name) {
@@ -2106,21 +2130,31 @@
                     }
                 }
                 
-                if (chunk.includes('__YOUTUBE__')) {
-                    const match = chunk.match(/__YOUTUBE__([\w-]+)/);
-                    if (match) {
-                        showProjector(`https://www.youtube.com/embed/${match[1]}`);
-                        chunk = chunk.replace(match[0], '');
-                    }
+                const isPySide = navigator.userAgent.includes('QtWebEngine');
+                
+                const youtubeMatch = chunk.match(/__YOUTUBE__([\w-]+)/);
+                const streamMatch = chunk.match(/__STREAM__(https?:\/\/[^\s<]+)/);
+                const browserMatch = chunk.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
+
+                if (isPySide && youtubeMatch) {
+                    // PySide6 IS Chromium — YouTube embed works natively in iframe
+                    showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                } else if (isPySide && streamMatch) {
+                    // Route through backend proxy so <video> loads from same-origin
+                    showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
+                } else if (!isPySide && streamMatch) {
+                    showProjector(streamMatch[1], 'stream');
+                } else if (youtubeMatch) {
+                    showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                } else if (streamMatch) {
+                    showProjector(streamMatch[1], 'stream');
+                } else if (browserMatch) {
+                    showProjector(browserMatch[1], 'youtube');
                 }
 
-                if (chunk.includes('__STREAM__')) {
-                    const match = chunk.match(/__STREAM__(https?:\/\/[^\s<]+)/);
-                    if (match) {
-                        showProjector(match[1]);
-                        chunk = chunk.replace(match[0], '');
-                    }
-                }
+                if (youtubeMatch) chunk = chunk.replace(youtubeMatch[0], '');
+                if (streamMatch) chunk = chunk.replace(streamMatch[0], '');
+                if (browserMatch) chunk = chunk.replace(browserMatch[0], '');
 
                 if (chunk.includes('__SEARCH__')) {
                     const match = chunk.match(/__SEARCH__(https?:\/\/[^\s<]+)/);
@@ -2177,6 +2211,8 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                      .replace(/__ANIM__\w+/g, '')
                                      .replace(/__YOUTUBE__[\w-]+/g, '')
+                                     .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
+                                     .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
                                      .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
                                      .replace('__PROJECTOR_OFF__', '')
                                      .replace('__TALK_ON__','')
@@ -2489,7 +2525,42 @@
                 const res = await fetch('/api/pending');
                 const data = await res.json();
                 if (data.has_pending && data.message) {
-                    appendMessage('ai', data.message);
+                    let msg = data.message;
+                    // Process projector/animation tags from background tool results
+                    const isPySide = navigator.userAgent.includes('QtWebEngine');
+                    
+                    const youtubeMatch = msg.match(/__YOUTUBE__([\w-]+)/);
+                    const streamMatch = msg.match(/__STREAM__(https?:\/\/[^\s<]+)/);
+                    const browserMatch = msg.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
+                    
+                    if (isPySide && youtubeMatch) {
+                        showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                    } else if (isPySide && streamMatch) {
+                        showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
+                    } else if (!isPySide && streamMatch) {
+                        showProjector(streamMatch[1], 'stream');
+                    } else if (youtubeMatch) {
+                        showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                    } else if (streamMatch) {
+                        showProjector(streamMatch[1], 'stream');
+                    } else if (browserMatch) {
+                        showProjector(browserMatch[1], 'youtube');
+                    }
+                    
+                    if (streamMatch) msg = msg.replace(streamMatch[0], '');
+                    if (youtubeMatch) msg = msg.replace(youtubeMatch[0], '');
+                    if (browserMatch) msg = msg.replace(browserMatch[0], '');
+                    const animMatch = msg.match(/__ANIM__(\w+)/);
+                    if (animMatch) {
+                        playAnimation(animMatch[1]);
+                        msg = msg.replace(animMatch[0], '');
+                    }
+                    if (msg.includes('__PROJECTOR_OFF__')) {
+                        hideProjector();
+                        msg = msg.replace('__PROJECTOR_OFF__', '');
+                    }
+                    msg = msg.trim();
+                    if (msg) appendMessage('ai', msg);
                     // If VRM was talking, ensure it stays/restarts for the tool result
                     toggleTalking(true);
                     setTimeout(() => toggleTalking(false), 3000); 

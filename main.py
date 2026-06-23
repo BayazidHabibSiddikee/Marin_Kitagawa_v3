@@ -144,6 +144,11 @@ async def set_rag_setting(request: Request):
     marin.RAG_ENABLED = bool(enabled)
     return {"status": "success", "rag_enabled": marin.RAG_ENABLED}
 
+@app.get("/settings/wordlimit")
+async def get_wordlimit():
+    import marin
+    return {"word_limit": getattr(marin, "WORD_LIMIT", 0)}
+
 @app.post("/settings/wordlimit")
 async def set_wordlimit(request: Request):
     import marin
@@ -333,8 +338,33 @@ async def get_todo_stats_api():
 @app.get("/api/market/quotes")
 async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):
     data = []
-    for s in symbols.split(","):
-        data.append({"symbol": s, "price": "63,240.50", "change": "+1.2%"})
+    try:
+        sym_list = [s.upper().strip() for s in symbols.split(",") if s.strip()]
+        binance_syms = [s for s in sym_list if s.endswith("USDT") or s.endswith("BTC")]
+        
+        market_data = {}
+        if binance_syms:
+            import httpx, json
+            url = f"https://api.binance.com/api/v3/ticker/24hr?symbols={json.dumps(binance_syms).replace(' ', '')}"
+            async with httpx.AsyncClient(timeout=5) as client:
+                res = await client.get(url)
+                if res.status_code == 200:
+                    for item in res.json():
+                        market_data[item['symbol']] = {
+                            "price": f"{float(item['lastPrice']):,.2f}",
+                            "change": f"{float(item['priceChangePercent']):+.2f}%"
+                        }
+        
+        for s in sym_list:
+            if s in market_data:
+                data.append({"symbol": s, "price": market_data[s]["price"], "change": market_data[s]["change"]})
+            else:
+                data.append({"symbol": s, "price": "N/A", "change": "N/A"})
+    except Exception as e:
+        print(f"Market quotes error: {e}")
+        for s in symbols.split(","):
+            data.append({"symbol": s.strip(), "price": "Error", "change": "Error"})
+            
     return JSONResponse(data)
 
 @app.post("/api/authorize")
@@ -444,6 +474,54 @@ async def upload_image(image: UploadFile = File(...)):
     with open(filepath, "wb") as buf:
         buf.write(await image.read())
     return {"ok": True, "path": f"/{filepath}"}
+
+# ── VIDEO PROXY — streams external video through localhost ──────────────────
+# Bypasses CORS and iframe restrictions. The <video> element loads from
+# localhost while this endpoint fetches from googlevideo.com / youtube.com
+# with the correct Referer and User-Agent headers.
+
+@app.get("/proxy/stream")
+async def proxy_stream(request: Request, url: str = ""):
+    """Proxy a video stream URL so the browser can play it from same-origin."""
+    import urllib.parse
+    if not url:
+        raise HTTPException(400, "Missing 'url' parameter")
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.youtube.com/",
+            "Origin": "https://www.youtube.com",
+        }
+
+        range_header = request.headers.get("range")
+        if range_header:
+            headers["Range"] = range_header
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            resp = await client.get(url, headers=headers)
+
+            # Build response headers
+            resp_headers = {}
+            if "content-type" in resp.headers:
+                resp_headers["Content-Type"] = resp.headers["content-type"]
+            if "content-length" in resp.headers:
+                resp_headers["Content-Length"] = resp.headers["content-length"]
+            if "content-range" in resp.headers:
+                resp_headers["Content-Range"] = resp.headers["content-range"]
+            if "accept-ranges" in resp.headers:
+                resp_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+
+            status = resp.status_code if resp.status_code in (200, 206) else 200
+
+            return StreamingResponse(
+                resp.aiter_bytes(chunk_size=65536),
+                status_code=status,
+                headers=resp_headers,
+                media_type=resp_headers.get("Content-Type", "video/mp4"),
+            )
+    except Exception as e:
+        raise HTTPException(502, f"Proxy error: {e}")
 
 # ── MODULEFLOW ────────────────────────────────────────────────────────────
 

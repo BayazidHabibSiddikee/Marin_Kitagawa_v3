@@ -32,7 +32,8 @@ _MATH_PAT    = re.compile(r'\b(plot|draw|graph|math|equation|calculate)\b')
 _BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|finance|market)\b')
 _STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
-_BOOK_PAT    = re.compile(r'\b(search|find|lookup|book|textbook|epub|download)\b')
+_BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
+_YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|play|music|song|watch)\b')
 
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
@@ -51,6 +52,12 @@ def _regex_stage(text: str) -> dict | None:
         elif "arena" in lower or "judge" in lower or "should i" in lower:
             return {"intent": "business_analysis_tool", "params": {"query": lower}, "confidence": 1.0}
         return {"intent": "binance_tool", "params": {"action": action}, "confidence": 0.9}
+
+    # YouTube / Video
+    if _YOUTUBE_PAT.search(lower):
+        # Remove action words to get a cleaner query
+        query = re.sub(r'\b(search|find|play|watch|youtube|video|videos|song|music|for)\b', '', lower).strip()
+        return {"intent": "youtube_search_tool", "params": {"query": query or lower}, "confidence": 0.95}
 
     # PDF / Documents
     if _PDF_PAT.search(lower):

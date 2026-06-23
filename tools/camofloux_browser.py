@@ -15,7 +15,7 @@ import ipaddress
 import socket
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote_plus
 
 LOG_DIR = Path.home() / "logs"
 DOWNLOAD_DIR = Path.home() / "Documents"
@@ -87,31 +87,36 @@ def get_stealth_browser():
         from playwright.sync_api import sync_playwright
     except ImportError:
         log.error("Playwright not installed. Run: pip install playwright && playwright install chromium")
-        return None, None
+        return None, None, None
 
     pw = sync_playwright().start()
 
-    # Stealth browser with anti-detection
-    browser = pw.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--disable-web-security",
-            "--disable-features=IsolateOrigins,site-per-process",
-        ]
-    )
+    try:
+        # Stealth browser with anti-detection
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ]
+        )
 
-    context = browser.new_context(
-        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        viewport={"width": 1920, "height": 1080},
-        locale="en-US",
-        timezone_id="Asia/Dhaka",
-        permissions=["geolocation"],
-        java_script_enabled=True,
-    )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1920, "height": 1080},
+            locale="en-US",
+            timezone_id="Asia/Dhaka",
+            permissions=["geolocation"],
+            java_script_enabled=True,
+        )
+    except Exception as e:
+        log.error(f"Failed to launch playwright browser: {e}")
+        pw.stop()
+        return None, None, None
 
     # Anti-detection scripts
     context.add_init_script("""
@@ -187,7 +192,7 @@ def download_pdf(page, url: str, save_dir: Path) -> str | None:
             return None
 
         # Download using page context
-        response = page.request.get(url)
+        response = page.request.get(url, timeout=15000)
         if response.ok:
             save_path.write_bytes(response.body())
             log.info(f"  Downloaded: {filename} ({len(response.body())} bytes)")
@@ -278,7 +283,7 @@ def search_google_pdfs(query: str, max_results: int = 10) -> dict:
     downloaded = []
 
     try:
-        search_url = f"https://www.google.com/search?q={query}+filetype:pdf&num={max_results}"
+        search_url = f"https://www.google.com/search?q={quote_plus(query + ' filetype:pdf')}&num={max_results}"
         log.info(f"Google search: {query}")
         page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)

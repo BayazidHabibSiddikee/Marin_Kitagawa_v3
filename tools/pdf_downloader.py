@@ -2,6 +2,36 @@ import os
 import re
 import sys
 import requests
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
+# ── SSRF PROTECTION ──────────────────────────────────────────────────────────
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "metadata.google.internal", "169.254.169.254"}
+
+def _is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if hostname in _BLOCKED_HOSTS: return False
+        try:
+            ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+            for net in _BLOCKED_NETWORKS:
+                if ip in net: return False
+        except (socket.gaierror, ValueError): pass
+        return parsed.scheme in ("http", "https")
+    except Exception:
+        return False
 
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -154,29 +184,35 @@ def download_pdf(url: str, book_name: str, output_dir: str = None) -> str:
         return filepath
 
     try:
-        print(f"  [download] {url[:80]}...")
-        resp = requests.get(url, timeout=REQUEST_TIMEOUT, stream=True, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
-        resp.raise_for_status()
-
-        content_type = resp.headers.get("Content-Type", "")
-        data = resp.content
-
-        # Validate PDF
-        if not validate_pdf(data):
-            # Check if server returned HTML error page
-            if b"<html" in data[:500].lower():
-                print(f"  [reject] Got HTML instead of PDF from {url[:60]}")
-                return ""
-            # Some servers don't set correct content-type but data is valid PDF
-            print(f"  [warn] PDF validation failed (content-type: {content_type})")
+        if not _is_safe_url(url):
+            print(f"  [reject] SSRF blocked: {url}")
             return ""
 
-        with open(filepath, "wb") as f:
-            f.write(data)
+        print(f"  [download] {url[:80]}...")
+        with requests.get(url, timeout=REQUEST_TIMEOUT, stream=True, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }) as resp:
+            resp.raise_for_status()
 
-        size_kb = len(data) / 1024
+            # Read first chunk to validate PDF
+            first_chunk = next(resp.iter_content(chunk_size=4096), b"")
+            if not validate_pdf(first_chunk):
+                if b"<html" in first_chunk.lower():
+                    print(f"  [reject] Got HTML instead of PDF from {url[:60]}")
+                else:
+                    print(f"  [warn] PDF validation failed")
+                return ""
+
+            # Stream the rest to file
+            size_bytes = len(first_chunk)
+            with open(filepath, "wb") as f:
+                f.write(first_chunk)
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        size_bytes += len(chunk)
+
+        size_kb = size_bytes / 1024
         print(f"  [saved] {filepath} ({size_kb:.1f} KB)")
         return filepath
 

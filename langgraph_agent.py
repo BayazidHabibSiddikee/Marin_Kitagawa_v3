@@ -225,7 +225,12 @@ def youtube_search_tool(query: str) -> str:
     """Search youtube for a video or music and return the video ID."""
     try:
         import yt_dlp
-        ydl_opts = {'quiet': True, 'default_search': 'ytsearch1', 'noplaylist': True}
+        ydl_opts = {
+            'quiet': True, 
+            'default_search': 'ytsearch1', 
+            'noplaylist': True,
+            'format': 'best[ext=webm]/best[ext=mp4]/best'
+        }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
             if 'entries' in info and len(info['entries']) > 0:
@@ -233,10 +238,17 @@ def youtube_search_tool(query: str) -> str:
             else:
                 video = info
             
-            vid_id = video.get('id')
-            if vid_id:
-                return f"Found video: {video.get('title')}. You MUST include __YOUTUBE__{vid_id} in your response to play it on the projector, and __ANIM__Dancing to dance."
-        return "No results found."
+            url = video.get('url')
+            video_id = video.get('id')
+            import urllib.parse
+            browser_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+            
+            if url and video_id:
+                return f"Found video: {video.get('title')}. You MUST include __STREAM__{url} and __YOUTUBE__{video_id} and __BROWSER__{browser_url} in your response to play it on the projector, and __ANIM__Dancing to dance."
+            elif video_id:
+                return f"Found video: {video.get('title')}. You MUST include __YOUTUBE__{video_id} and __BROWSER__{browser_url} in your response to play it."
+            else:
+                return f"Video direct extraction failed, but you can show the search results on the projector! You MUST include __BROWSER__{browser_url} in your response, and __ANIM__Happy."
     except Exception as e:
         return f"Error: {e}"
 
@@ -250,6 +262,24 @@ def youtube_transcript_tool(url: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+@tool
+def playground_tool(description: str) -> str:
+    """Build an interactive HTML widget, simulator, or visual tool. Use when the user asks to 'build', 'create', 'make', or 'simulate' something interactive like a logic gate simulator, countdown timer, quiz, game, calculator, etc."""
+    try:
+        from tools.playground import generate_widget
+        return generate_widget(description)
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def resource_tool(url: str) -> str:
+    """Download or analyze any resource. PDFs are downloaded and indexed. Webpages are fetched and summarized. GitHub repos are cloned. Use for any URL the user provides."""
+    try:
+        from tools.resource_tool import resource_download_analyze
+        return resource_download_analyze(url)
+    except Exception as e:
+        return f"Error: {e}"
+
 # tool list — ALL registered tools
 ALL_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
@@ -259,6 +289,7 @@ ALL_TOOLS = [
     math_plot_tool, alarm_tool,
     business_analysis_tool, binance_tool,
     youtube_search_tool, youtube_transcript_tool,
+    playground_tool, resource_tool,
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -276,12 +307,14 @@ class AgentState(TypedDict):
 
 STRATEGIST_SYSTEM = """You are Marin's Strategist. Build a JSON plan.
 TOOLS: {tools}
-Output ONLY a JSON array: [{{"action": "tool_name", "args": {{...}}, "rationale": "..."}}]
-If no tool needed: [{{"action": "respond", "args": {{}}, "rationale": "..."}}]"""
+Output ONLY a JSON array: [{"action": "tool_name", "args": {...}, "rationale": "..."}]
+If no tool needed: [{"action": "respond", "args": {}, "rationale": "..."}]
+To show a website or YouTube search on the projector directly, you can skip tools and just respond with: [{"action": "respond", "args": {}, "rationale": "Opening browser to __BROWSER__https://www.youtube.com/results?search_query=query"}]"""
 
 async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
-    user_msg = state["messages"][-1].content
+    last = state["messages"][-1]
+    user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
     
     # 1. Regex Priority
     from marin_fier import classify
@@ -296,7 +329,20 @@ async def node_strategist(state: AgentState) -> dict:
     try:
         llm = get_llm("qwen2.5:1.5b")
         sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=[t.name for t in ALL_TOOLS]))
-        resp = await llm.ainvoke([sys_msg] + list(state["messages"]))
+        # LangGraph may serialize messages to dicts — convert back to BaseMessage
+        raw_msgs = list(state["messages"])
+        clean_msgs = []
+        for m in raw_msgs:
+            if isinstance(m, BaseMessage):
+                clean_msgs.append(m)
+            elif isinstance(m, dict):
+                role = m.get("role", "user")
+                content = m.get("content", "")
+                if role == "assistant":
+                    clean_msgs.append(AIMessage(content=content))
+                else:
+                    clean_msgs.append(HumanMessage(content=content))
+        resp = await llm.ainvoke([sys_msg] + clean_msgs)
         
         match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
         plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
@@ -352,7 +398,7 @@ async def persona_node(state: AgentState) -> dict:
 
     # Extract UI control tags to prevent the LLM from dropping or mangling them
     tags_to_preserve = []
-    for pattern in [r'__YOUTUBE__[\w-]+', r'__STREAM__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__']:
+    for pattern in [r'__YOUTUBE__[\w-]+', r'__STREAM__\S+', r'__BROWSER__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__']:
         matches = re.findall(pattern, content)
         for m in matches:
             tags_to_preserve.append(m)
