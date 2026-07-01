@@ -222,12 +222,9 @@ def binance_tool(action: str = "portfolio") -> str:
 
 @tool
 def youtube_search_tool(query: str) -> str:
-    """Search youtube for a video or music and return the video ID."""
+    """Search YouTube for a video or music, classify its mood from the transcript,
+    and return a timed director animation sequence for Marin to perform."""
     import random
-    DANCE_ANIMS = ["dance_1", "dance_2", "dance_rumba", "dance_gangnam_style",
-                   "dance_marachinostep", "dance_northern_soul_spin", "dance_headdrop"]
-    dance_anim = random.choice(DANCE_ANIMS)
-    is_music = any(w in query.lower() for w in ["music","song","dance","beat","remix","playlist","vibe","party"])
     try:
         import yt_dlp
         ydl_opts = {
@@ -238,27 +235,47 @@ def youtube_search_tool(query: str) -> str:
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
-            if 'entries' in info and len(info['entries']) > 0:
-                video = info['entries'][0]
-            else:
-                video = info
+            video = info['entries'][0] if 'entries' in info else info
 
-            url = video.get('url')
-            video_id = video.get('id')
-            title = video.get('title', query)
+        video_id = video.get('id', '')
+        title    = video.get('title', query)
+
+        if not video_id:
             import urllib.parse
-            browser_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+            burl = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
+            return f"Search failed. Show results: __BROWSER__{burl} __ANIM__curiosity"
 
-            anim_tag = f"__ANIM__{dance_anim}__DANCE__" if is_music else "__ANIM__excitement"
-            if url and video_id:
-                return (f"Found: {title}. Cast it to the TV now! "
-                        f"You MUST include __YOUTUBE__{video_id} {anim_tag} in your response.")
-            elif video_id:
-                return (f"Found: {title}. You MUST include __YOUTUBE__{video_id} {anim_tag} in your response.")
-            else:
-                return (f"Showing search results. You MUST include __BROWSER__{browser_url} {anim_tag} in your response.")
+        # ── Fetch transcript for mood classification ──────────────────────────
+        transcript = ""
+        try:
+            from tools.youtube_transcript import get_youtube_transcript
+            raw = get_youtube_transcript(f"https://www.youtube.com/watch?v={video_id}")
+            transcript = raw[:2000] if raw else ""
+        except Exception:
+            pass  # transcript is optional — we'll classify on title alone
+
+        # ── Classify mood and build timed director script ──────────────────────
+        from director_engine import make_video_director_script
+        director_tag, mood = make_video_director_script(video_id, transcript, title)
+
+        mood_line = {
+            "sad":        "I found it... I'll feel every note with you 🥺",
+            "emotional":  "This one hits deep. I'll be right here with you 💕",
+            "hype":       "LET'S GOOO!! Hehehe~~ 🔥",
+            "chill":      "Perfect vibe~ I'll chill with you 🌙",
+            "dance":      "Time to dance!! Ummaaah~~ 💃",
+            "hype_metal": "YESSS!! This is FIRE!! 🤘",
+            "normal":     "Casting it to the TV now~",
+        }.get(mood, "Casting it to the TV now~")
+
+        return (
+            f"{mood_line} "
+            f"You MUST include __YOUTUBE__{video_id} {director_tag} in your response. "
+            f"[video: {title}] [mood: {mood}]"
+        )
+
     except Exception as e:
-        return f"Error searching YouTube: {e}"
+        return f"YouTube search error: {e}"
 
 @tool
 def youtube_transcript_tool(url: str) -> str:

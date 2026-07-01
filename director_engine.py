@@ -227,3 +227,165 @@ _VIBE_TO_EMOTION = {
 
 def vibe_to_emotion(vibe: str) -> str:
     return _VIBE_TO_EMOTION.get(vibe, "neutral")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIDEO MOOD CLASSIFIER
+# Takes a YouTube transcript + title → classifies mood/genre →
+# returns a timed __DIRECTOR__ animation sequence for Marin to perform
+# while the video plays.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Mood keyword banks
+_VIDEO_MOOD_KEYWORDS = {
+    "sad": [
+        "miss you", "goodbye", "crying", "tears", "heartbreak", "alone", "lost",
+        "pain", "hurt", "grief", "sorrow", "broken", "farewell", "lonely",
+        "remember", "gone", "never come back", "rain", "darkness", "empty",
+        "last time", "dying", "sorry", "forgive", "mourn",
+    ],
+    "emotional": [
+        "love", "feel", "soul", "emotion", "beautiful", "touch my heart",
+        "inspire", "powerful", "story", "journey", "believe", "hope",
+        "dream", "together", "forever", "promise", "life", "moment",
+        "meaningful", "deep", "connection", "vulnerable",
+    ],
+    "hype": [
+        "fire", "lit", "hype", "bass", "drop", "beat", "banger", "energy",
+        "party", "jump", "crowd", "turn up", "loud", "hard", "trap",
+        "drill", "bounce", "club", "night", "wild", "go crazy",
+        "100", "skrrt", "yeah", "aye", "let's go",
+    ],
+    "chill": [
+        "lofi", "lo-fi", "chill", "relax", "study", "calm", "smooth",
+        "vibe", "mellow", "soft", "gentle", "ambient", "peaceful",
+        "rain sounds", "coffee", "night", "slow", "cozy", "sleepy",
+    ],
+    "dance": [
+        "dance", "dancing", "disco", "groove", "rhythm", "move",
+        "floor", "spin", "shake", "funk", "choreography", "tiktok",
+        "rumba", "salsa", "k-pop", "kpop", "hip hop",
+    ],
+    "hype_metal": [
+        "metal", "scream", "rage", "destroy", "shred", "guitar", "riff",
+        "breakdown", "mosh", "heavy", "brutal", "intense", "distortion",
+    ],
+}
+
+# Mood → timed animation sequences
+# Each entry: (t_offset_seconds, animation_name)
+_VIDEO_MOOD_SEQUENCES = {
+    "sad": [
+        (0.0,  "sadness"),
+        (8.0,  "remorse"),
+        (18.0, "grief"),
+        (30.0, "sadness2"),
+        (42.0, "neutral_idle"),
+        (55.0, "remorse2"),
+        (70.0, "sadness"),
+        (85.0, "neutral_idle"),
+    ],
+    "emotional": [
+        (0.0,  "caring"),
+        (10.0, "love"),
+        (22.0, "admiration"),
+        (35.0, "neutral_idle2"),
+        (48.0, "caring1"),
+        (62.0, "love3"),
+        (78.0, "neutral_idle"),
+    ],
+    "hype": [
+        (0.0,  "dance_1"),
+        (8.0,  "dance_dab"),
+        (16.0, "excitement"),
+        (24.0, "dance_2"),
+        (32.0, "dance_pushback"),
+        (40.0, "joy"),
+        (48.0, "dance_gangnam_style"),
+        (58.0, "dance_northern_soul_spin"),
+        (68.0, "excitement2"),
+        (76.0, "dance_1"),
+    ],
+    "chill": [
+        (0.0,  "neutral_idle"),
+        (12.0, "sit_idle"),
+        (28.0, "neutral_idle2"),
+        (45.0, "sit_idle2"),
+        (62.0, "neutral4"),
+        (80.0, "neutral_idle"),
+    ],
+    "dance": [
+        (0.0,  "dance_rumba"),
+        (9.0,  "dance_marachinostep"),
+        (18.0, "dance_headdrop"),
+        (27.0, "dance_ontop"),
+        (36.0, "dance_backup"),
+        (45.0, "dance_northern_soul_spin"),
+        (54.0, "dance_gangnam_style"),
+        (63.0, "dance_1"),
+        (72.0, "dance_2"),
+        (81.0, "dance_rumba"),
+    ],
+    "hype_metal": [
+        (0.0,  "excitement"),
+        (7.0,  "anger"),
+        (14.0, "dance_1"),
+        (21.0, "excitement3"),
+        (28.0, "anger2"),
+        (35.0, "dance_2"),
+        (42.0, "joy"),
+        (50.0, "excitement2"),
+        (58.0, "dance_dab"),
+    ],
+    "normal": [
+        (0.0,  "neutral_idle"),
+        (15.0, "curiosity"),
+        (32.0, "neutral2"),
+        (50.0, "neutral_idle2"),
+        (68.0, "curiosity2"),
+        (85.0, "neutral_idle"),
+    ],
+}
+
+
+def classify_video_mood(transcript: str, title: str = "") -> str:
+    """
+    Classify the mood of a YouTube video from its transcript + title.
+    Returns one of: sad | emotional | hype | chill | dance | hype_metal | normal
+    """
+    text = (title + " " + (transcript or "")).lower()
+    scores: dict[str, int] = {mood: 0 for mood in _VIDEO_MOOD_KEYWORDS}
+
+    for mood, keywords in _VIDEO_MOOD_KEYWORDS.items():
+        for kw in keywords:
+            if kw in text:
+                scores[mood] += 1
+
+    best = max(scores, key=lambda k: scores[k])
+    # Require at least 1 match, else fall back to normal
+    if scores[best] == 0:
+        return "normal"
+    return best
+
+
+def make_video_director_script(video_id: str, transcript: str = "", title: str = "") -> str:
+    """
+    Build a timed __DIRECTOR__ tag for a YouTube video.
+    Marin performs mood-matched animations while the video plays.
+    Returns the full __DIRECTOR__<base64> stream tag.
+    """
+    mood = classify_video_mood(transcript, title)
+    sequence = _VIDEO_MOOD_SEQUENCES.get(mood, _VIDEO_MOOD_SEQUENCES["normal"])
+
+    script = []
+    for t, anim in sequence:
+        script.append({"t": t, "type": "anim", "value": anim, "dur": 8.0})
+
+    # Add __DANCE__ flag for dance/hype moods so frontend knows to loop
+    is_dance_mood = mood in ("dance", "hype", "hype_metal")
+
+    encoded = encode_director_script(script)
+    tag = f"__DIRECTOR__{encoded}"
+    if is_dance_mood:
+        tag += "__DANCE__"
+    return tag, mood
