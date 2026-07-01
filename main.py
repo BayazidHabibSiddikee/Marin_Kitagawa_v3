@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 import secrets
 import threading
 import tempfile
@@ -61,6 +62,7 @@ async def auto_auth_middleware(request: Request, call_next):
 # ── SETUP ───────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.mount("/books", StaticFiles(directory=os.path.join(BASE_DIR, "static", "downloads")), name="books")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # ── MOUNT COMMAND API AS SUB-ROUTER ──────────────────────────────────────
@@ -390,6 +392,10 @@ async def vault_page(request: Request):
 async def research_hub_page(request: Request):
     return templates.TemplateResponse(request=request, name="research_hub.html")
 
+@app.get("/pdf-library", response_class=HTMLResponse)
+async def pdf_library_page(request: Request):
+    return templates.TemplateResponse(request=request, name="pdf_library.html")
+
 @app.get("/command-center", response_class=HTMLResponse)
 async def command_center_page(request: Request):
     return templates.TemplateResponse(request=request, name="command_center.html")
@@ -441,8 +447,16 @@ async def research_search_api(request: Request):
 @app.post("/api/research/browse")
 async def research_browse_api(request: Request):
     from tools.knowledge_hub import scrape_content
+    import urllib.parse
     data = await request.json()
-    url = data.get("url")
+    url = data.get("url", "")
+    # Basic SSRF guard: only http/https schemes
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
+    except Exception:
+        return JSONResponse({"error": "Invalid URL"}, status_code=400)
     try:
         text = scrape_content(url)
         return JSONResponse({"text": text})
@@ -464,6 +478,68 @@ async def research_download_api(request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+# /api/documents — single definition scanning both downloads + books
+@app.get("/api/documents")
+async def list_documents():
+    docs = []
+    seen = set()
+    for scan_dir in [
+        os.path.join(BASE_DIR, "static", "downloads"),
+        os.path.join(BASE_DIR, "books"),
+    ]:
+        if not os.path.exists(scan_dir):
+            continue
+        for f in sorted(os.listdir(scan_dir)):
+            if f in seen:
+                continue
+            if f.endswith((".pdf", ".docx", ".txt", ".md")):
+                path = os.path.join(scan_dir, f)
+                size_bytes = os.path.getsize(path)
+                size_str = (
+                    f"{size_bytes / (1024 * 1024):.1f} MB"
+                    if size_bytes >= 1024 * 1024
+                    else f"{size_bytes / 1024:.0f} KB"
+                )
+                docs.append({"filename": f, "size": size_str, "type": f.split(".")[-1]})
+                seen.add(f)
+    return {"documents": docs[:50]}
+
+@app.post("/api/documents/upload")
+async def upload_document(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".pdf", ".docx", ".txt", ".md"):
+        return {"error": "Unsupported file type. Use PDF, DOCX, TXT, or MD."}
+    content = await file.read()
+    uploads_dir = os.path.join(BASE_DIR, "static", "downloads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    safe_filename = os.path.basename(file.filename.replace('\\', '/'))
+    filepath = os.path.join(uploads_dir, safe_filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+    upload_size_mb = len(content) / (1024 * 1024)
+    # Trigger RAG re-indexing in background
+    async def _trigger_reindex():
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post("http://127.0.0.1:5091/reindex")
+        except Exception:
+            pass
+    asyncio.create_task(_trigger_reindex())
+    return {"success": True, "filename": file.filename, "size": f"{upload_size_mb:.1f}MB"}
+
+@app.delete("/api/documents/{filename}")
+async def delete_document(filename: str):
+    # Search both directories for the file
+    for scan_dir in [
+        os.path.join(BASE_DIR, "static", "downloads"),
+        os.path.join(BASE_DIR, "books"),
+    ]:
+        candidate = os.path.realpath(os.path.join(scan_dir, filename))
+        if candidate.startswith(os.path.realpath(scan_dir) + os.sep) and os.path.exists(candidate):
+            os.remove(candidate)
+            return {"success": True, "message": f"Deleted {filename}"}
+    return {"error": "File not found"}
+
 @app.post("/upload")
 async def upload_image(image: UploadFile = File(...)):
     import re
@@ -480,12 +556,35 @@ async def upload_image(image: UploadFile = File(...)):
 # localhost while this endpoint fetches from googlevideo.com / youtube.com
 # with the correct Referer and User-Agent headers.
 
+# Allowlist of safe domains for video proxy (SSRF mitigation)
+_PROXY_ALLOWED_DOMAINS = (
+    "googlevideo.com",
+    "youtube.com",
+    "youtu.be",
+    "ytimg.com",
+)
+
 @app.get("/proxy/stream")
 async def proxy_stream(request: Request, url: str = ""):
-    """Proxy a video stream URL so the browser can play it from same-origin."""
+    """Proxy a video stream URL so the browser can play it from same-origin.
+    Only allows requests to whitelisted video CDN domains (SSRF mitigation).
+    """
     import urllib.parse
     if not url:
         raise HTTPException(400, "Missing 'url' parameter")
+
+    # SSRF guard: only allow whitelisted video domains
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or ""
+        if parsed.scheme not in ("http", "https") or not any(
+            host == d or host.endswith("." + d) for d in _PROXY_ALLOWED_DOMAINS
+        ):
+            raise HTTPException(403, "URL not in allowed domain list")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "Invalid URL")
 
     try:
         headers = {
@@ -501,7 +600,6 @@ async def proxy_stream(request: Request, url: str = ""):
         async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
             resp = await client.get(url, headers=headers)
 
-            # Build response headers
             resp_headers = {}
             if "content-type" in resp.headers:
                 resp_headers["Content-Type"] = resp.headers["content-type"]
@@ -520,6 +618,8 @@ async def proxy_stream(request: Request, url: str = ""):
                 headers=resp_headers,
                 media_type=resp_headers.get("Content-Type", "video/mp4"),
             )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"Proxy error: {e}")
 
@@ -534,6 +634,278 @@ async def moduleflow_page(request: Request):
 async def moduleflow_graph(request: Request):
     with open(os.path.join(BASE_DIR, "moduleflow", "graph.json"), "r", encoding="utf-8") as f:
         return HTMLResponse(f.read(), media_type="application/json")
+
+@app.get("/api/settings")
+async def get_settings():
+    import llm_manager
+    from fastapi.responses import JSONResponse
+    response = JSONResponse({
+        "user_name": database.get_state("USER_NAME") or "Bayazid",
+        "location": database.get_state("LOCATION") or "Rajshahi",
+        "openrouter_key": database.get_state("OPENROUTER_API_KEY") or "",
+        "image_model": database.get_state("IMAGE_MODEL") or "black-forest-labs/flux-schnell",
+        "vision_model": database.get_state("VISION_MODEL") or "",
+        "selected_models": database.get_state("SELECTED_MODELS") or [],
+        "fallback_models": database.get_state("FALLBACK_MODELS") or [],
+        "active_model": database.get_state("ACTIVE_MODEL") or "",
+        "user_avatar": database.get_state("USER_AVATAR") or "",
+        "hf_token": database.get_state("HF_TOKEN") or "",
+        # ── Multi-provider fields ──
+        "providers": llm_manager.get_providers(),
+        "deep_models": llm_manager.get_deep_models(),
+    })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+@app.post("/api/settings/avatar")
+async def upload_avatar(avatar: UploadFile = File(...)):
+    ext = os.path.splitext(avatar.filename)[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        return {"error": "Unsupported image type"}
+    content = await avatar.read()
+    if len(content) > 2 * 1024 * 1024:
+        return {"error": "Image too large (max 2MB)"}
+    avatar_path = os.path.join("static", "images", f"user_avatar{ext}")
+    os.makedirs(os.path.dirname(avatar_path), exist_ok=True)
+    with open(avatar_path, "wb") as f:
+        f.write(content)
+    url = f"/static/images/user_avatar{ext}?t={int(time.time())}"
+    database.set_state("USER_AVATAR", url)
+    return {"url": url}
+
+@app.post("/api/settings")
+async def save_settings(request: Request):
+    import llm_manager
+    data = await request.json()
+    database.set_state("USER_NAME", data.get("user_name", "Bayazid"))
+    database.set_state("LOCATION", data.get("location", "Rajshahi"))
+    if data.get("openrouter_key"): database.set_state("OPENROUTER_API_KEY", data.get("openrouter_key"))
+    if data.get("image_model") is not None: database.set_state("IMAGE_MODEL", data.get("image_model"))
+    if data.get("vision_model") is not None: database.set_state("VISION_MODEL", data.get("vision_model"))
+    if data.get("selected_models") is not None: database.set_state("SELECTED_MODELS", data.get("selected_models"))
+    if data.get("fallback_models") is not None: database.set_state("FALLBACK_MODELS", data.get("fallback_models"))
+    if data.get("active_model") is not None: database.set_state("ACTIVE_MODEL", data.get("active_model"))
+    if "user_avatar" in data: database.set_state("USER_AVATAR", data.get("user_avatar", ""))
+    if data.get("hf_token") is not None: database.set_state("HF_TOKEN", data.get("hf_token", ""))
+    # ── Multi-provider fields ──
+    if data.get("providers") is not None:
+        llm_manager.save_providers(data["providers"])
+    if data.get("deep_models") is not None:
+        llm_manager.save_deep_models(data["deep_models"])
+
+    database.set_state("ONBOARDING_COMPLETE", "true")
+    return {"status": "success"}
+
+@app.post("/api/settings/uninstall")
+async def uninstall(request: Request):
+    """
+    Clears downloaded data. Flags in body:
+      clear_faiss: bool  — deletes FAISS index files from disk
+      clear_hf_cache: bool — deletes HuggingFace model cache (~/.cache/huggingface)
+      clear_all_state: bool — wipes all user_state DB keys (keeps chat history)
+    """
+    data = await request.json()
+    results = {}
+
+    if data.get("clear_faiss"):
+        from config import FAISS_DIR
+        import shutil
+        try:
+            if os.path.exists(FAISS_DIR):
+                shutil.rmtree(FAISS_DIR)
+                os.makedirs(FAISS_DIR, exist_ok=True)
+            results["faiss"] = "cleared"
+        except Exception as e:
+            results["faiss"] = f"error: {e}"
+
+    if data.get("clear_hf_cache"):
+        hf_cache = os.path.expanduser("~/.cache/huggingface")
+        import shutil
+        try:
+            if os.path.exists(hf_cache):
+                shutil.rmtree(hf_cache)
+            results["hf_cache"] = "cleared"
+        except Exception as e:
+            results["hf_cache"] = f"error: {e}"
+
+    if data.get("clear_all_state"):
+        try:
+            database.clear_all_state()
+            results["state"] = "cleared"
+        except Exception as e:
+            results["state"] = f"error: {e}"
+
+    return {"status": "ok", "results": results}
+
+# ── LIBRARY API ─────────────────────────────────────────────────────────────
+@app.get("/library", response_class=HTMLResponse)
+async def library_page(request: Request):
+    return templates.TemplateResponse(request=request, name="library.html", context={"request": request})
+
+@app.get("/api/rag/health")
+async def rag_health_proxy():
+    """Proxy to the RAG server's /health so the library UI can read storage stats."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://127.0.0.1:5091/health")
+            return r.json()
+    except Exception as e:
+        return {"status": "unavailable", "error": str(e)}
+
+@app.get("/api/rag/index_progress")
+async def rag_index_progress_proxy():
+    """Proxy to the RAG server's /index_progress for UI status polling."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://127.0.0.1:5091/index_progress")
+            return r.json()
+    except Exception:
+        return {"state": "idle", "current": 0, "total": 0, "file": ""}
+
+# ── MISSING API ENDPOINTS (called by library.html, pdf_library.html, marin_chat.html) ──
+
+@app.post("/api/chat/context")
+async def save_chat_tool_context(request: Request):
+    """Save a tool result as system context so Marin knows what happened."""
+    try:
+        data = await request.json()
+        tool_name = data.get("tool", "tool")
+        result = data.get("result", "")
+        if result:
+            database.save_message("marin", "system", f"[TOOL RESULTS — {tool_name}] {str(result)[:2000]}")
+            return {"ok": True}
+        return {"ok": False, "error": "No result"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.post("/api/validate-key")
+async def validate_api_key_endpoint(request: Request):
+    """Validate an LLM provider API key."""
+    try:
+        import llm_manager
+        data = await request.json()
+        key = data.get("key", "")
+        base_url = data.get("base_url", "https://openrouter.ai/api/v1")
+        if not key:
+            return {"valid": False, "error": "No key provided"}
+        success, message = llm_manager.validate_api_key(key, base_url)
+        return {"valid": success, "error": message if not success else "Key is valid"}
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
+
+from pydantic import BaseModel as _BaseModel
+class PlaygroundRequest(_BaseModel):
+    title: str = ""
+    description: str = ""
+    html: str = ""
+    css: str = ""
+    js: str = ""
+
+@app.post("/api/playground/build")
+async def build_playground(req: PlaygroundRequest):
+    """Build a sandboxed HTML playground page from html/css/js fragments."""
+    page = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ font-family: 'Inter', -apple-system, sans-serif; background: #0d1117; color: #e6edf3; padding: 16px; min-height: 100vh; }}
+{req.css}
+</style>
+</head>
+<body>
+{req.html}
+<script>
+(function() {{
+{req.js}
+}})();
+</script>
+</body>
+</html>"""
+    return {"html": page, "title": req.title, "description": req.description}
+
+@app.get("/api/documents/{filename}/content")
+async def get_document_content(filename: str):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    books_dir = os.path.join(base_dir, "books")
+    path = os.path.realpath(os.path.join(books_dir, filename))
+
+    if not path.startswith(os.path.realpath(books_dir)) or not os.path.exists(path):
+        return {"error": "File not found"}
+
+    ext = filename.split(".")[-1].lower()
+    content = ""
+
+    try:
+        if ext == "pdf":
+            import fitz
+            try:
+                import pymupdf4llm
+                content = pymupdf4llm.to_markdown(path)
+            except ImportError:
+                doc = fitz.open(path)
+                for page in doc:
+                    content += page.get_text() + "\n\n"
+        elif ext == "docx":
+            import mammoth
+            with open(path, "rb") as f:
+                result = mammoth.extract_raw_text(f)
+                content = result.value
+        elif ext in ["txt", "md"]:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+        return {"content": content[:50000]}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/documents/{filename}/page/{page_num}")
+async def get_document_page(filename: str, page_num: int):
+    """Extract text from a single PDF page (1-indexed). Used by library chat for page-aware context."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    books_dir = os.path.join(base_dir, "books")
+    path = os.path.realpath(os.path.join(books_dir, filename))
+
+    if not path.startswith(os.path.realpath(books_dir)) or not os.path.exists(path):
+        return {"error": "File not found"}
+
+    ext = filename.split(".")[-1].lower()
+    if ext != "pdf":
+        return {"error": "Page extraction only supported for PDF files"}
+
+    try:
+        import fitz
+        # BUG 6 fix: use context manager so doc.close() is guaranteed on any exception
+        with fitz.open(path) as doc:
+            total = doc.page_count
+
+            if page_num < 1 or page_num > total:
+                return {"error": f"Page {page_num} out of range (1-{total})", "total_pages": total}
+
+            text = doc[page_num - 1].get_text()  # fitz uses 0-indexed
+
+        if not text.strip():
+            return {
+                "page": page_num,
+                "total_pages": total,
+                "content": "",
+                "warning": "This page appears to be a scanned image with no extractable text."
+            }
+
+        return {
+            "page": page_num,
+            "total_pages": total,
+            "content": text
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+# Duplicate /api/documents DELETE and POST removed — single definitions kept above (lines ~472-530)
+
 
 if __name__ == "__main__":
     import uvicorn

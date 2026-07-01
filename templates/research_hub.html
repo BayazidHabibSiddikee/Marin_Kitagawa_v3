@@ -466,7 +466,7 @@
                                 <div class="result-meta">
                                     <span><i class="fas fa-spider"></i> Camofox · Result ${i + 1}</span>
                                 </div>
-                                <a href="/api/research/download" onclick="return downloadViaPdfDownloader('${escapeHtml(r.href || '')}')" class="btn-download" title="Download via PDF Downloader">
+                                <a href="#" onclick="return downloadViaPdfDownloader(event, '${escapeHtml(r.href || '')}')" class="btn-download" title="Download via PDF Downloader">
                                     <i class="fas fa-download"></i> Download PDF
                                 </a>
                             </div>
@@ -488,9 +488,35 @@
             return div.innerHTML;
         }
 
-        async function downloadViaPdfDownloader(url) {
+        async function downloadViaPdfDownloader(event, url) {
+            event.preventDefault();
             if (!url) return false;
-            window.open(url, '_blank');
+            
+            const btn = event.currentTarget;
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...';
+            btn.style.pointerEvents = 'none';
+            
+            try {
+                const response = await fetch('/api/research/download', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: url})
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    btn.innerHTML = '<i class="fas fa-check"></i> Downloaded!';
+                    btn.style.backgroundColor = '#2ecc71';
+                    btn.style.color = 'white';
+                } else {
+                    btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+                    btn.style.pointerEvents = 'auto';
+                }
+            } catch (err) {
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                btn.style.pointerEvents = 'auto';
+            }
             return false;
         }
     </script>
