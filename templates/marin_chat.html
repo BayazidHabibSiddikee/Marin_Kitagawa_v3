@@ -855,7 +855,7 @@
     </style>
 </head>
 <body>
-<div id="vrm-debug" style="position:absolute; top:0; left:0; background:rgba(0,0,0,0.8); color:red; z-index:9999; font-family:monospace; padding:10px; max-height:50%; overflow-y:auto; pointer-events:none;"></div>
+
 
 
 <!-- TOP BAR -->
@@ -923,6 +923,89 @@
         <button class="sidebar-btn" onclick="sendAction('/habits stats')"><span class="icon">📊</span> Daily Brief</button>
         <button class="sidebar-btn" onclick="sendAction('/timer status')"><span class="icon">⏱️</span> Timer Status</button>
         
+        
+        <div class="dropdown-wrapper" id="actions-dropdown">
+            <button class="sidebar-btn" onclick="document.getElementById('actions-dropdown').classList.toggle('active')">
+                <span class="icon">🏃</span> Actions <span class="icon-arrow">▼</span>
+            </button>
+            <div class="sidebar-dropdown">
+                 <button class="sidebar-btn" onclick="playAnimation('action_attention_seeking')">Attention Seeking</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_crawling')">Crawling</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_crouch')">Crouch</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_gaming')">Gaming</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_greeting')">Greeting</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_greeting1')">Greeting1</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_jog')">Jog</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_jump')">Jump</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_laydown')">Laydown</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_pat')">Pat</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_pickingup')">Pickingup</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_run')">Run</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_standup')">Standup</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_walk')">Walk</button>
+            </div>
+        </div>
+        <div class="dropdown-wrapper" id="dances-dropdown">
+            <button class="sidebar-btn" onclick="document.getElementById('dances-dropdown').classList.toggle('active')">
+                <span class="icon">💃</span> Dances <span class="icon-arrow">▼</span>
+            </button>
+            <div class="sidebar-dropdown">
+                 <button class="sidebar-btn" onclick="playAnimation('dance_1')">1</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_2')">2</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_backup')">Backup</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_dab')">Dab</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_gangnam_style')">Gangnam Style</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_headdrop')">Headdrop</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_marachinostep')">Marachinostep</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_northern_soul_spin')">Northern Soul Spin</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_ontop')">Ontop</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_pushback')">Pushback</button>
+                 <button class="sidebar-btn" onclick="playAnimation('dance_rumba')">Rumba</button>
+            </div>
+        </div>
+        <div class="dropdown-wrapper" id="emotions-dropdown">
+            <button class="sidebar-btn" onclick="document.getElementById('emotions-dropdown').classList.toggle('active')">
+                <span class="icon">😊</span> Emotions <span class="icon-arrow">▼</span>
+            </button>
+            <div class="sidebar-dropdown">
+                 <button class="sidebar-btn" onclick="playAnimation('admiration')">Admiration</button>
+                 <button class="sidebar-btn" onclick="playAnimation('anger')">Anger</button>
+                 <button class="sidebar-btn" onclick="playAnimation('caring')">Caring</button>
+                 <button class="sidebar-btn" onclick="playAnimation('confusion')">Confusion</button>
+                 <button class="sidebar-btn" onclick="playAnimation('curiosity')">Curiosity</button>
+                 <button class="sidebar-btn" onclick="playAnimation('desire')">Desire</button>
+                 <button class="sidebar-btn" onclick="playAnimation('disappointment')">Disappointment</button>
+                 <button class="sidebar-btn" onclick="playAnimation('disapproval')">Disapproval</button>
+                 <button class="sidebar-btn" onclick="playAnimation('disgust')">Disgust</button>
+                 <button class="sidebar-btn" onclick="playAnimation('embarrassment')">Embarrassment</button>
+                 <button class="sidebar-btn" onclick="playAnimation('excitement')">Excitement</button>
+                 <button class="sidebar-btn" onclick="playAnimation('fear')">Fear</button>
+                 <button class="sidebar-btn" onclick="playAnimation('gratitude')">Gratitude</button>
+                 <button class="sidebar-btn" onclick="playAnimation('grief')">Grief</button>
+                 <button class="sidebar-btn" onclick="playAnimation('joy')">Joy</button>
+                 <button class="sidebar-btn" onclick="playAnimation('love')">Love</button>
+                 <button class="sidebar-btn" onclick="playAnimation('nervousness')">Nervousness</button>
+                 <button class="sidebar-btn" onclick="playAnimation('optimism')">Optimism</button>
+                 <button class="sidebar-btn" onclick="playAnimation('pride')">Pride</button>
+                 <button class="sidebar-btn" onclick="playAnimation('realization')">Realization</button>
+                 <button class="sidebar-btn" onclick="playAnimation('relief')">Relief</button>
+                 <button class="sidebar-btn" onclick="playAnimation('remorse')">Remorse</button>
+                 <button class="sidebar-btn" onclick="playAnimation('sadness')">Sadness</button>
+                 <button class="sidebar-btn" onclick="playAnimation('surprise')">Surprise</button>
+            </div>
+        </div>
+        <div class="dropdown-wrapper" id="idles-dropdown">
+            <button class="sidebar-btn" onclick="document.getElementById('idles-dropdown').classList.toggle('active')">
+                <span class="icon">🧍</span> Idles <span class="icon-arrow">▼</span>
+            </button>
+            <div class="sidebar-dropdown">
+                 <button class="sidebar-btn" onclick="playAnimation('kneel_idle')">Kneel Idle</button>
+                 <button class="sidebar-btn" onclick="playAnimation('laying_idle')">Laying Idle</button>
+                 <button class="sidebar-btn" onclick="playAnimation('neutral_idle')">Neutral Idle</button>
+                 <button class="sidebar-btn" onclick="playAnimation('sit_idle')">Sit Idle</button>
+            </div>
+        </div>
+
         <div class="dropdown-wrapper" id="motions-dropdown">
             <button class="sidebar-btn" onclick="document.getElementById('motions-dropdown').classList.toggle('active')">
                 <span class="icon">💃</span> Motions <span class="icon-arrow">▼</span>
@@ -2192,21 +2275,17 @@
     }
 
     
-    function logDebug(msg) {
-        const d = document.getElementById('vrm-debug');
-        if (d) { d.innerHTML += msg + "<br/>"; }
-        console.log(msg);
-    }
+    
 
     async function playAnimation(name) {
-        if (!vrmModel) { logDebug("[VRM] Model not loaded yet."); return; }
+        if (!vrmModel) { console.error("[VRM] Model not loaded yet."); return; }
         stopAnimation();
 
-        logDebug(`[VRM] Loading BVH animation: ${name}...`);
+        console.log(`[VRM] Loading BVH animation: ${name}...`);
         const loader = new THREE.BVHLoader();
         loader.load(`/static/vrm/animation/${name}.bvh`, (result) => {
             const clip = result.clip;
-            if (!clip) { logDebug("[VRM] No animation found in BVH"); return; }
+            if (!clip) { console.error("[VRM] No animation found in BVH"); return; }
 
             const tracks = [];
             const boneMap = {
@@ -2286,7 +2365,7 @@
             vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
             currentAction = vrmMixer.clipAction(finalClip);
             currentAction.play();
-            logDebug(`[VRM] Now playing: ${name} | Tracks: ${tracks.length}`);
+            console.log(`[VRM] Now playing: ${name}`);
         }, (p) => {}, (err) => console.error("[VRM] BVH Load Error:", err));
     }
     function stopAnimation() {
