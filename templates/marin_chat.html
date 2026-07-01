@@ -1709,7 +1709,6 @@
         localStorage.setItem('marinNightMode', document.body.classList.contains('night-mode'));
     }
 
-    window.onload = () => {
 
     // ── VRM VIEWER ──────────────────────────────────────────────────────────
     function toggleVRM() {
@@ -1781,19 +1780,24 @@
         const canvas = document.getElementById('vrm-canvas');
         const container = document.getElementById('vrm-container');
 
+        canvas.addEventListener("webglcontextcreationerror", function(e) {
+            console.error("WebGL context error:", e.statusMessage);
+            alert("WebGL Error: " + e.statusMessage);
+        }, false);
+
         vrmScene = new THREE.Scene();
-        vrmScene.background = new THREE.Color(0x1a1510);
 
         vrmCamera = new THREE.PerspectiveCamera(35.0, canvas.clientWidth / canvas.clientHeight, 0.1, 50.0);
         vrmCamera.position.set(0.0, 1.4, 3.0);
 
-        vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-        vrmRenderer.setClearColor(0x1a1510, 1.0);
+        vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        // We must clear to transparent so the CSS3D TV shows through the punched hole
+        vrmRenderer.setClearColor(0x000000, 0);
         vrmRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
         vrmRenderer.outputEncoding = THREE.sRGBEncoding;
-        vrmRenderer.shadowMap.enabled = true;
-        vrmRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        vrmRenderer.shadowMap.enabled = false;
+        // vrmRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         // CSS3DRenderer sits behind WebGL canvas for DOM elements
         vrmCssRenderer = new THREE.CSS3DRenderer();
@@ -2006,6 +2010,15 @@
         const loader = new THREE.GLTFLoader();
         loader.crossOrigin = 'anonymous';
         console.log('[VRM] Loading model...');
+        
+        // ADD A TEST CUBE
+        const testGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const testMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const testCube = new THREE.Mesh(testGeo, testMat);
+        testCube.position.set(0, 1.5, 0);
+        vrmScene.add(testCube);
+        window.testCube = testCube; // so we can animate it
+
         loader.load(
             '/static/models/marin.vrm',
             (gltf) => {
@@ -2013,10 +2026,13 @@
                     vrmModel = vrm;
                     vrmScene.add(vrm.scene);
                     vrm.scene.rotation.y = Math.PI;
+                    // Disable shadows on VRM just in case they cause a crash
                     vrm.scene.traverse((obj) => {
-                        if (obj.isMesh) { obj.castShadow = true; obj.receiveShadow = true; }
+                        if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
                     });
                     console.log('[VRM] Model loaded:', vrm);
+                    if (window.testCube) window.testCube.visible = false; // Hide test cube once VRM loads
+                    
                     const head = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.Head);
                     if (head) {
                         const hp = new THREE.Vector3();
@@ -2043,12 +2059,12 @@
     }
 
     // ── YOUTUBE OVERLAY (outside Three.js — avoids iframe/CSP issues) ─────────
-    function openYTOverlay() {
+    window.openYTOverlay = function openYTOverlay() {
         const overlay = document.getElementById('yt-overlay');
         if (overlay) overlay.classList.remove('hidden');
-    }
+    };
 
-    function loadYTVideo() {
+    window.loadYTVideo = function loadYTVideo() {
         const input = document.getElementById('yt-url-input').value.trim();
         if (!input) return;
         let videoId = '';
@@ -2066,14 +2082,14 @@
         if (!videoId) { alert('Could not parse YouTube video ID.'); return; }
         const frame = document.getElementById('yt-iframe');
         frame.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`;
-    }
+    };
 
-    function closeYTOverlay() {
+    window.closeYTOverlay = function closeYTOverlay() {
         const overlay = document.getElementById('yt-overlay');
         if (overlay) overlay.classList.add('hidden');
         const frame = document.getElementById('yt-iframe');
         if (frame) frame.src = '';
-    }
+    };
 
     function onWindowResize() {
         if (!vrmRenderer) return;
@@ -2093,31 +2109,44 @@
         const delta = vrmClock.getDelta();
         if (vrmControls) vrmControls.update();
         if (vrmMixer) vrmMixer.update(delta);
-        if (vrmModel) {
-            vrmModel.update(delta);
-            
-            // Simple blinking
-            const blinkStrength = Math.sin(vrmClock.elapsedTime * 2) > 0.98 ? 1.0 : 0.0;
-            vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.Blink, blinkStrength);
-            
-            // Lip sync simulation if talking
-            if (document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
-                let mouthOpen = 0;
-                if (audioAnalyser) {
-                    const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
-                    audioAnalyser.getByteFrequencyData(dataArray);
-                    let sum = 0;
-                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-                    const avg = sum / dataArray.length;
-                    mouthOpen = Math.min(1.0, avg / 60.0);
-                } else {
-                    mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 8) * 0.5;
-                }
-                vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, mouthOpen);
-            } else {
-                vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, 0);
-            }
+        
+        if (window.testCube) {
+            window.testCube.rotation.x += 0.01;
+            window.testCube.rotation.y += 0.02;
         }
+        
+        try {
+            if (vrmModel) {
+                vrmModel.update(delta);
+                
+                if (vrmModel.blendShapeProxy) {
+                    // Simple blinking
+                    const blinkStrength = Math.sin(vrmClock.elapsedTime * 2) > 0.98 ? 1.0 : 0.0;
+                    vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.Blink, blinkStrength);
+                    
+                    // Lip sync simulation if talking
+                    if (document.getElementById('logo-wrap') && document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
+                        let mouthOpen = 0;
+                        if (typeof audioAnalyser !== 'undefined' && audioAnalyser) {
+                            const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                            audioAnalyser.getByteFrequencyData(dataArray);
+                            let sum = 0;
+                            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                            const avg = sum / dataArray.length;
+                            mouthOpen = Math.min(1.0, avg / 60.0);
+                        } else {
+                            mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 8) * 0.5;
+                        }
+                        vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, mouthOpen);
+                    } else {
+                        vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, 0);
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("VRM Animation Error:", e);
+        }
+
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
         if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
     }
@@ -2987,17 +3016,19 @@
     }
 
     // ── INIT ───────────────────────────────────────────────────────────────
-    try {
-        fetchTodayTotal();
-        setInterval(fetchTodayTotal, 60000);
-        loadVoice();
-        loadWordLimit();
-        loadRag();
-        fetchIntelligence();
-        setInterval(fetchIntelligence, 300000);
-        initAgent();
-        startPolling();
-    } catch(e) { console.error('Init error:', e); }
+    window.onload = () => {
+        try {
+            fetchTodayTotal();
+            setInterval(fetchTodayTotal, 60000);
+            loadVoice();
+            loadWordLimit();
+            loadRag();
+            fetchIntelligence();
+            setInterval(fetchIntelligence, 300000);
+            initAgent();
+            startPolling();
+        } catch(e) { console.error('Init error:', e); }
+    };
 </script>
 
 </body>
