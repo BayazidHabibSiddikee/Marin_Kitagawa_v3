@@ -564,6 +564,23 @@ _PROXY_ALLOWED_DOMAINS = (
     "ytimg.com",
 )
 
+
+@app.get("/api/youtube/stream")
+async def get_youtube_stream(url: str):
+    import yt_dlp
+    ydl_opts = {
+        'format': 'best[ext=mp4]/best',
+        'noplaylist': True,
+        'quiet': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {"ok": True, "stream_url": info.get("url")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/proxy/stream")
 async def proxy_stream(request: Request, url: str = ""):
     """Proxy a video stream URL so the browser can play it from same-origin.
