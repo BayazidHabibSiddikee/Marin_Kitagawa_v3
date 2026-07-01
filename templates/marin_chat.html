@@ -2099,20 +2099,45 @@
         fillLight.position.set(3, 1.5, 1);
         vrmScene.add(fillLight);
 
-        // ── PROJECTOR SCREEN — using a CSS3DObject with a plain div ──────────
-        // YouTube iframes are blocked by X-Frame-Options. Instead, we render
-        // a plain interactive div on the back wall.  Videos are loaded via the
-        // floating #yt-overlay panel (see below).
+        // ── PROJECTOR SCREEN — CSS3DObject with iframe on back wall ──────────
+        // The iframe lives inside a CSS3D div that's placed on the back wall.
+        // youtube-nocookie.com/embed works fine inside CSS3DRenderer.
         const projDiv = document.createElement('div');
         projDiv.id = 'vrm-projector';
-        projDiv.style.cssText = 'width:1280px;height:720px;background:rgba(10,20,30,0.92);border:2px solid rgba(77,184,164,0.3);border-radius:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:40px;';
+        projDiv.style.cssText = [
+            'width:1280px', 'height:720px',
+            'background:#0a0e14',
+            'border:2px solid rgba(77,184,164,0.35)',
+            'border-radius:10px',
+            'overflow:hidden',
+            'position:relative',
+            'display:flex',
+            'align-items:center',
+            'justify-content:center',
+        ].join(';');
+
+        // Standby screen shown when no video is loaded
         projDiv.innerHTML = `
-            <video id="vrm-projector-video" width="1280" height="720" autoplay muted loop style="display:none;position:absolute;top:0;left:0;object-fit:cover;pointer-events:none;background:black;"></video>
-            <div id="vrm-projector-standby" style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background:#111;">
-                <div style="font-size:48px;color:rgba(255,255,255,0.6);font-family:'JetBrains Mono',monospace;margin-bottom:20px;text-align:center;">Marin OS — Smart TV</div>
-                <div style="font-size:24px;color:rgba(255,255,255,0.4);font-family:'JetBrains Mono',monospace;text-align:center;">Use the sidebar controls to cast a YouTube video!</div>
+            <div id="vrm-projector-standby" style="
+                display:flex; flex-direction:column; align-items:center;
+                justify-content:center; width:100%; height:100%;
+                background:linear-gradient(160deg,#0d1a22 0%,#111 100%);
+            ">
+                <div style="font-size:52px;color:rgba(77,184,164,0.55);font-family:'JetBrains Mono',monospace;margin-bottom:18px;">Marin OS</div>
+                <div style="font-size:22px;color:rgba(255,255,255,0.3);font-family:'JetBrains Mono',monospace;">Paste a YouTube link in the sidebar →</div>
             </div>
+            <iframe id="vrm-tv-iframe"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+                style="
+                    position:absolute; inset:0;
+                    width:100%; height:100%;
+                    border:none; display:none;
+                    border-radius:8px;
+                "
+                src=""></iframe>
         `;
+
         projectorObject = new THREE.CSS3DObject(projDiv);
         projectorObject.scale.set(0.0016, 0.0016, 0.0016);
         projectorObject.position.set(0, 1.5, -D/2 + 0.05);
@@ -2191,49 +2216,25 @@
 
     // ── YOUTUBE OVERLAY (outside Three.js — avoids iframe/CSP issues) ─────────
     window.openYTOverlay = function openYTOverlay() {
-        // Auto-open VRM panel if it's not visible
-        if (!vrmVisible) {
-            vrmVisible = true;
-            const container = document.getElementById('vrm-container');
-            const resizer   = document.getElementById('vrm-resizer');
-            const label     = document.getElementById('vrm-label');
-            const btn       = document.getElementById('vrm-toggle-btn');
-            container.style.display = 'block';
-            resizer.style.display   = 'block';
-            if (label) label.textContent = 'avatar: on';
-            if (btn) { btn.style.color = 'var(--teal)'; btn.style.borderColor = 'var(--teal-dim)'; }
-            if (!vrmRenderer) {
-                requestAnimationFrame(() => { initVRM(); if (typeof initResizer === 'function') initResizer(); });
-            } else {
-                requestAnimationFrame(() => onWindowResize());
-            }
+        // The TV now lives inside the 3D room — just focus the sidebar input
+        const input = document.getElementById('sidebar-tv-input');
+        if (input) {
+            input.focus();
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        const overlay = document.getElementById('yt-overlay');
-        if (overlay) {
-            overlay.classList.remove('hidden');
-            // Force flex display since .hidden !important overrides inline style
-            overlay.style.display = 'flex';
+        // Also open sidebar if it's closed
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && sidebar.style.display === 'none') {
+            sidebar.style.display = '';
         }
     };
 
     window.loadYTVideo = function loadYTVideo() {
         const input = document.getElementById('yt-url-input').value.trim();
         if (!input) return;
-        let videoId = '';
-        try {
-            const u = new URL(input);
-            if (u.hostname.includes('youtu.be')) {
-                videoId = u.pathname.slice(1);
-            } else {
-                videoId = u.searchParams.get('v') || '';
-            }
-        } catch(_) {
-            // Assume raw video ID
-            videoId = input;
-        }
-        if (!videoId) { alert('Could not parse YouTube video ID.'); return; }
-        const frame = document.getElementById('yt-iframe');
-        frame.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`;
+        // Close the overlay and cast to the in-room TV
+        closeYTOverlay();
+        handleSidebarTV(input);
     };
 
     window.closeYTOverlay = function closeYTOverlay() {
@@ -2425,52 +2426,106 @@
     }
 
     window.handleSidebarTV = function(val) {
-        if (!val) return;
-        let youtubeMatch = val.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([\w-]+)/);
-        if (youtubeMatch) {
-            showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
-        } else {
-            let embedMatch = val.match(/src="([^"]+)"/);
-            if (embedMatch) {
-                showProjector(embedMatch[1], 'youtube');
+        if (!val || !val.trim()) return;
+        val = val.trim();
+
+        // Ensure VRM panel is visible (TV is inside it)
+        if (!vrmVisible) {
+            vrmVisible = true;
+            const container = document.getElementById('vrm-container');
+            const resizer   = document.getElementById('vrm-resizer');
+            const label     = document.getElementById('vrm-label');
+            const btn       = document.getElementById('vrm-toggle-btn');
+            container.style.display = 'block';
+            resizer.style.display   = 'block';
+            if (label) label.textContent = 'avatar: on';
+            if (btn) { btn.style.color = 'var(--teal)'; btn.style.borderColor = 'var(--teal-dim)'; }
+            if (!vrmRenderer) {
+                requestAnimationFrame(() => { initVRM(); if (typeof initResizer === 'function') initResizer(); });
+                // Delay showProjector until VRM is ready
+                setTimeout(() => _castToTV(val), 1200);
+                const input = document.getElementById('sidebar-tv-input');
+                if (input) input.value = '';
+                return;
             } else {
-                showProjector(val, 'stream');
+                requestAnimationFrame(() => onWindowResize());
             }
         }
+
+        _castToTV(val);
         const input = document.getElementById('sidebar-tv-input');
         if (input) input.value = '';
     };
 
-    function showProjector(url, type='stream') {
-        if (type === 'youtube') {
-            const match = url.match(/\/embed\/([\w-]+)/);
-            if (match) {
-                openYTOverlay();
-                const frame = document.getElementById('yt-iframe');
-                if (frame) frame.src = `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0`;
+    function _castToTV(val) {
+        // Extract YouTube video ID from any URL format
+        const ytPatterns = [
+            /(?:youtube\.com\/watch\?v=)([\w-]+)/,
+            /(?:youtu\.be\/)([\w-]+)/,
+            /(?:youtube\.com\/shorts\/)([\w-]+)/,
+            /(?:youtube\.com\/embed\/)([\w-]+)/,
+        ];
+        for (const pat of ytPatterns) {
+            const m = val.match(pat);
+            if (m) {
+                showProjector(m[1], 'youtube');
+                return;
             }
+        }
+        // Check for src="..." embed code
+        const srcMatch = val.match(/src="([^"]+)"/);
+        if (srcMatch) {
+            showProjector(srcMatch[1], 'youtube');
+            return;
+        }
+        // Raw 11-char video ID
+        if (/^[\w-]{11}$/.test(val)) {
+            showProjector(val, 'youtube');
+            return;
+        }
+        // Fallback: treat as a generic URL
+        showProjector(val, 'stream');
+    }
+
+    function showProjector(url, type='stream') {
+        if (!projectorObject) return;
+
+        const standby  = document.getElementById('vrm-projector-standby');
+        const tvIframe = document.getElementById('vrm-tv-iframe');
+
+        if (type === 'youtube') {
+            // Extract video ID from embed URL or raw ID
+            let videoId = '';
+            const embedMatch = url.match(/\/embed\/([\w-]+)/);
+            const rawMatch   = url.match(/^([\w-]{11})$/);
+            if (embedMatch) videoId = embedMatch[1];
+            else if (rawMatch) videoId = rawMatch[1];
+            else videoId = url; // pass-through
+
+            if (!videoId) return;
+
+            // Load iframe in the room — no overlay needed
+            if (tvIframe) {
+                tvIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+                tvIframe.style.display = 'block';
+            }
+            if (standby) standby.style.display = 'none';
             return;
         }
 
-        if (!projectorObject) return;
-        projectorObject.element.style.display = 'block';
-        
-        const video = document.getElementById('vrm-projector-video');
-        
-        document.getElementById('vrm-projector-standby').style.display = 'none';
-        if (type === 'stream') {
-            video.style.display = 'block';
-            video.src = url;
-            video.play().catch(e => console.error("Autoplay prevented:", e));
+        // Stream / other URL — use video element inside the iframe div
+        if (tvIframe) {
+            tvIframe.src = url;
+            tvIframe.style.display = 'block';
         }
+        if (standby) standby.style.display = 'none';
     }
 
     function hideProjector() {
-        if (!projectorObject) return;
-        projectorObject.element.style.display = 'flex';
-        document.getElementById('vrm-projector-standby').style.display = 'flex';
-        document.getElementById('vrm-projector-video').src = '';
-        closeYTOverlay();
+        const standby  = document.getElementById('vrm-projector-standby');
+        const tvIframe = document.getElementById('vrm-tv-iframe');
+        if (tvIframe) { tvIframe.src = ''; tvIframe.style.display = 'none'; }
+        if (standby)  standby.style.display = 'flex';
     }
 
     
@@ -2916,15 +2971,14 @@
                 const browserMatch = chunk.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
 
                 if (isPySide && youtubeMatch) {
-                    // PySide6 IS Chromium — YouTube embed works natively in iframe
-                    showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
+                    showProjector(youtubeMatch[1], 'youtube');
                 } else if (isPySide && streamMatch) {
                     // Route through backend proxy so <video> loads from same-origin
                     showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
                 } else if (!isPySide && streamMatch) {
                     showProjector(streamMatch[1], 'stream');
                 } else if (youtubeMatch) {
-                    showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
+                    showProjector(youtubeMatch[1], 'youtube');
                 } else if (streamMatch) {
                     showProjector(streamMatch[1], 'stream');
                 } else if (browserMatch) {
