@@ -2107,12 +2107,12 @@
         projDiv.id = 'vrm-projector';
         projDiv.style.cssText = 'width:1280px;height:720px;background:rgba(10,20,30,0.92);border:2px solid rgba(77,184,164,0.3);border-radius:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:40px;';
         projDiv.innerHTML = `
-            <div style="color:#4db8a4;font-family:'DM Serif Display',serif;font-size:52px;letter-spacing:4px;text-shadow:0 0 20px rgba(77,184,164,0.6);">Marin's Room</div>
-            <div style="display:flex;gap:40px;">
-                <button id="proj-yt-btn" onclick="openYTOverlay()" style="padding:20px 40px;font-size:26px;background:rgba(233,69,96,0.15);border:2px solid #e94560;border-radius:12px;color:#e94560;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.2s;">▶ YouTube</button>
-                <button onclick="document.getElementById('yt-overlay').classList.toggle('hidden')" style="padding:20px 40px;font-size:26px;background:rgba(77,184,164,0.1);border:2px solid #4db8a4;border-radius:12px;color:#4db8a4;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.2s;">🔍 Search</button>
+            <iframe id="vrm-projector-iframe" width="1280" height="720" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen style="display:none;position:absolute;top:0;left:0;pointer-events:auto;background:black;"></iframe>
+            <video id="vrm-projector-video" width="1280" height="720" autoplay muted loop style="display:none;position:absolute;top:0;left:0;object-fit:cover;pointer-events:none;background:black;"></video>
+            <div id="vrm-projector-standby" style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background:#111;">
+                <div style="font-size:48px;color:rgba(255,255,255,0.6);font-family:'JetBrains Mono',monospace;margin-bottom:20px;text-align:center;">Marin OS — Smart TV</div>
+                <div style="font-size:24px;color:rgba(255,255,255,0.4);font-family:'JetBrains Mono',monospace;text-align:center;">Use the sidebar controls to cast a YouTube video!</div>
             </div>
-            <div style="font-size:20px;color:rgba(255,255,255,0.4);font-family:'JetBrains Mono',monospace;">click YouTube to embed a video</div>
         `;
         projectorObject = new THREE.CSS3DObject(projDiv);
         projectorObject.scale.set(0.0016, 0.0016, 0.0016);
@@ -2129,52 +2129,63 @@
         vrmScene.add(holeMesh);
 
         // ── VRM MODEL ─────────────────────────────────────────────────────────
-        const loader = new THREE.GLTFLoader();
-        loader.crossOrigin = 'anonymous';
-        // Install VRMLoaderPlugin for three-vrm 2.0.0+
-        loader.register((parser) => {
-            return new THREE.VRMLoaderPlugin(parser);
-        });
-
-        console.log('[VRM] Loading model...');
-        
-        loader.load(
-            '/static/models/marin.vrm',
-            (gltf) => {
-                const vrm = gltf.userData.vrm;
-                if (!vrm) {
-                    console.error("VRM failed to parse from GLTF! (userData.vrm is undefined)");
-                    return;
-                }
-                vrmModel = vrm;
-                vrmScene.add(vrm.scene);
-                vrm.scene.rotation.y = Math.PI;
-                // Disable shadows on VRM just in case they cause a crash
-                vrm.scene.traverse((obj) => {
-                    if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
+        window.loadVRMModel = function(filename) {
+            console.log('[VRM] Loading model: ' + filename + '...');
+            if (typeof stopAnimation === 'function') stopAnimation();
+            if (typeof vrmModel !== 'undefined' && vrmModel) {
+                if (typeof vrmScene !== 'undefined') vrmScene.remove(vrmModel.scene);
+                vrmModel.scene.traverse((obj) => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                        else obj.material.dispose();
+                    }
                 });
-                console.log('[VRM] Model loaded:', vrm);
-                
-                const head = vrm.humanoid.getNormalizedBoneNode('head');
-                if (head) {
-                    const hp = new THREE.Vector3();
-                    head.getWorldPosition(hp);
-                    vrmCamera.lookAt(hp);
-                }
-                const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-                const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                if (lArm) lArm.rotation.z = 1.35;
-                if (rArm) rArm.rotation.z = -1.35;
-                const lLower = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
-                const rLower = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
-                if (lLower) lLower.rotation.z = 0.1;
-                if (rLower) rLower.rotation.z = -0.1;
-                setTimeout(() => playAnimation('neutral_idle'), 800);
-            },
-            (progress) => console.log('Loading: ' + (100.0 * progress.loaded / progress.total).toFixed(1) + '%'),
-            (error) => console.error('VRM Load Error:', error)
-        );
+            }
 
+            const loader = new THREE.GLTFLoader();
+            loader.crossOrigin = 'anonymous';
+            loader.register((parser) => {
+                return new THREE.VRMLoaderPlugin(parser);
+            });
+
+            loader.load(
+                '/static/models/' + filename,
+                (gltf) => {
+                    const vrm = gltf.userData.vrm;
+                    if (!vrm) return;
+
+                    vrmModel = vrm;
+                    vrmScene.add(vrm.scene);
+                    vrm.scene.rotation.y = Math.PI;
+                    vrm.scene.traverse((obj) => {
+                        if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
+                    });
+                    
+                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    if (head) {
+                        const hp = new THREE.Vector3();
+                        head.getWorldPosition(hp);
+                        vrmCamera.lookAt(hp);
+                    }
+                    const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                    const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                    if (lArm) lArm.rotation.z = 1.35;
+                    if (rArm) rArm.rotation.z = -1.35;
+                    const lLower = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
+                    const rLower = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
+                    if (lLower) lLower.rotation.z = 0.1;
+                    if (rLower) rLower.rotation.z = -0.1;
+                    
+                    if (typeof vrmClock !== 'undefined') vrmClock.start();
+                    setTimeout(() => playAnimation('neutral_idle'), 800);
+                },
+                undefined,
+                (error) => console.error('VRM Load Error:', error)
+            );
+        };
+        
+        loadVRMModel('marin.vrm');
         window.addEventListener('resize', onWindowResize);
         animateVRM();
     }
@@ -2271,6 +2282,23 @@
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
         if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
     }
+
+    window.handleSidebarTV = function(val) {
+        if (!val) return;
+        let youtubeMatch = val.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+        if (youtubeMatch) {
+            showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+        } else {
+            let embedMatch = val.match(/src="([^"]+)"/);
+            if (embedMatch) {
+                showProjector(embedMatch[1], 'youtube');
+            } else {
+                showProjector(val, 'stream');
+            }
+        }
+        const input = document.getElementById('sidebar-tv-input');
+        if (input) input.value = '';
+    };
 
     function showProjector(url, type='stream') {
         if (!projectorObject) return;
