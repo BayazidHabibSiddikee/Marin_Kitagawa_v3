@@ -2280,21 +2280,47 @@
                     vrmModel.expressionManager.setValue('blink', blinkStrength);
 
                     // Lip sync simulation if talking
-                    if (document.getElementById('logo-wrap') && document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
+                    if (document.getElementById('logo-wrap') && (
+                        document.getElementById('logo-wrap').classList.contains('avatar-talking') ||
+                        (typeof _directorTalkActive !== 'undefined' && _directorTalkActive)
+                    )) {
                         let mouthOpen = 0;
                         if (typeof audioAnalyser !== 'undefined' && audioAnalyser) {
+                            // ── Audio-driven lipsync (TTS mode) ──────────────────────
                             const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
                             audioAnalyser.getByteFrequencyData(dataArray);
                             let sum = 0;
-                            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-                            const avg = sum / dataArray.length;
-                            mouthOpen = Math.min(1.0, avg / 60.0);
+                            // Focus on speech-frequency bands (roughly 300–3000 Hz)
+                            const binStart = Math.floor(300 / (audioContext.sampleRate / audioAnalyser.fftSize));
+                            const binEnd   = Math.min(dataArray.length, Math.floor(3000 / (audioContext.sampleRate / audioAnalyser.fftSize)));
+                            let count = 0;
+                            for (let i = binStart; i < binEnd; i++) { sum += dataArray[i]; count++; }
+                            const avg = count > 0 ? sum / count : 0;
+                            // Smooth the value to avoid jitter
+                            const target = Math.min(1.0, avg / 80.0);
+                            mouthOpen = (window._prevMouthOpen || 0) * 0.4 + target * 0.6;
                         } else {
-                            mouthOpen = Math.random() * 0.5 + 0.2;
+                            // ── Text-chunk-based lipsync (no TTS) ────────────────────
+                            // Simulate syllable rhythm: modulate between open/closed at ~4 Hz
+                            const now = performance.now() / 1000;
+                            const syllableRate = 4.2;   // syllables/sec (avg speech)
+                            const phase = (now * syllableRate) % 1.0;
+                            // Envelope: smooth sine wave clipped to [0, 1]
+                            mouthOpen = Math.max(0, Math.sin(phase * Math.PI * 2) * 0.55 + 0.1);
                         }
+                        window._prevMouthOpen = mouthOpen;
                         vrmModel.expressionManager.setValue('aa', mouthOpen);
                     } else {
-                        vrmModel.expressionManager.setValue('aa', 0);
+                        // Smoothly close mouth when not talking
+                        const prevOpen = window._prevMouthOpen || 0;
+                        if (prevOpen > 0.01) {
+                            const closing = prevOpen * 0.85;
+                            window._prevMouthOpen = closing;
+                            vrmModel.expressionManager.setValue('aa', closing);
+                        } else {
+                            window._prevMouthOpen = 0;
+                            vrmModel.expressionManager.setValue('aa', 0);
+                        }
                     }
                 }
             }
@@ -2304,6 +2330,98 @@
 
         if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
         if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
+    }
+
+    // ── DIRECTOR PLAYBACK ENGINE ───────────────────────────────────────────────
+    // Plays a timed action script from the Director model.
+    // Each action: { t: float (seconds), type: string, value: string, dur: float }
+
+    let _directorTimers = [];   // active setTimeout handles
+    let _directorTalkActive = false;
+
+    // Expression name → VRM expression key mappings
+    const _exprMap = {
+        'happy':     'happy',
+        'sad':       'sad',
+        'angry':     'angry',
+        'surprised': 'surprised',
+        'relaxed':   'relaxed',
+        'neutral':   'neutral',
+        'thinking':  'relaxed',   // VRM has no "thinking" — relaxed is closest
+    };
+
+    function setVRMExpression(name, strength = 1.0) {
+        if (!vrmModel || !vrmModel.expressionManager) return;
+        try {
+            // Reset all expressions first (except blink / aa)
+            const allExprs = ['happy', 'sad', 'angry', 'surprised', 'relaxed', 'neutral'];
+            for (const e of allExprs) {
+                try { vrmModel.expressionManager.setValue(e, 0); } catch(_) {}
+            }
+            const vrmKey = _exprMap[name] || name;
+            vrmModel.expressionManager.setValue(vrmKey, strength);
+        } catch(e) { /* ignore unsupported expressions */ }
+    }
+
+    window.playDirectorScript = function playDirectorScript(script) {
+        // Cancel any pending director actions
+        for (const tid of _directorTimers) clearTimeout(tid);
+        _directorTimers = [];
+
+        if (!Array.isArray(script) || script.length === 0) return;
+
+        // Track mouth activity for text-driven lipsync
+        let talkSegments = script.filter(a => a.type === 'talk');
+
+        for (const action of script) {
+            const delayMs = Math.max(0, action.t * 1000);
+            const durMs   = (action.dur || 1.0) * 1000;
+
+            const tid = setTimeout(() => {
+                try {
+                    switch (action.type) {
+                        case 'anim':
+                            if (typeof playAnimation === 'function') {
+                                playAnimation(action.value);
+                            }
+                            break;
+
+                        case 'expr':
+                            setVRMExpression(action.value, 1.0);
+                            // Fade back to neutral after duration
+                            if (action.value !== 'neutral' && durMs < 90000) {
+                                const ftid = setTimeout(() => {
+                                    setVRMExpression('neutral', 0.3);
+                                }, durMs);
+                                _directorTimers.push(ftid);
+                            }
+                            break;
+
+                        case 'talk':
+                            // Mark that mouth should be active for this duration
+                            _directorTalkActive = true;
+                            const endTid = setTimeout(() => {
+                                _directorTalkActive = false;
+                            }, durMs);
+                            _directorTimers.push(endTid);
+                            break;
+
+                        case 'pause':
+                            // Future: could show a thinking pose
+                            break;
+                    }
+                } catch(e) { console.warn('[Director] Action error:', e); }
+            }, delayMs);
+
+            _directorTimers.push(tid);
+        }
+    };
+
+    // ── Director-aware talking state ──────────────────────────────────────────
+    // The lipsync uses avatar-talking class OR _directorTalkActive to drive mouth
+    function _isTalking() {
+        const logoWrap = document.getElementById('logo-wrap');
+        return (logoWrap && logoWrap.classList.contains('avatar-talking')) || _directorTalkActive;
     }
 
     window.handleSidebarTV = function(val) {
@@ -2871,7 +2989,9 @@
 
                 full += chunk;
                 // Clean all tags from full text
-                const cleanText = full.replace(/__VIBE__\w+/g, '').replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
+                const cleanText = full.replace(/__VIBE__\w+/g, '')
+                                      .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
+                                      .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
                 
                 // During streaming: plain text only (avoids broken mid-stream markdown)
                 typingBubble.textContent = cleanText;
@@ -2884,6 +3004,7 @@
                 // Final render with full markdown + LaTeX once complete
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                      .replace(/__ANIM__\w+/g, '')
+                                     .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
                                      .replace(/__YOUTUBE__[\w-]+/g, '')
                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')

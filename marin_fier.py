@@ -112,14 +112,44 @@ def _detect_vibe(text: str) -> str:
         return "flirty"
     if any(w in lower for w in ["hate","mad","angry","fuck","ugh","damn"]):
         return "angry"
+    if any(w in lower for w in ["excited","amazing","awesome","wow","let's go","yes!","yay"]):
+        return "excited"
+    if any(w in lower for w in ["sad","sorry","miss you","feel bad","hurts"]):
+        return "sad"
+    if any(w in lower for w in ["curious","interesting","wonder","what if","tell me"]):
+        return "curious"
     return "neutral"
+
+# Director emotion hints — used to set the base_emotion for the Director script
+_DIRECTOR_EMOTIONS = {
+    "greeting":    ["hello", "hi", "hey", "welcome", "good morning", "good evening"],
+    "excited":     ["excited", "amazing", "awesome", "incredible", "let's go", "yay", "wow"],
+    "explaining":  ["so basically", "the idea is", "what this means", "in other words", "let me explain", "here's how"],
+    "curious":     ["interesting", "wonder", "curious", "what if", "fascinating"],
+    "sad":         ["sad", "unfortunately", "sorry to hear", "that's tough", "miss you"],
+    "dancing":     ["dance", "party", "celebrate", "🎵", "🎶", "🕺", "💃"],
+    "love":        ["love", "adore", "my dear", "sweetheart", "❤️", "💖"],
+    "confident":   ["absolutely", "definitely", "for sure", "trust me", "i know"],
+}
+
+def _detect_director_emotion(text: str) -> str:
+    """Detect the dominant emotion for Director script generation."""
+    lower = text.lower()
+    scores: dict[str, int] = {}
+    for emotion, keywords in _DIRECTOR_EMOTIONS.items():
+        for kw in keywords:
+            if kw in lower:
+                scores[emotion] = scores.get(emotion, 0) + 1
+    if not scores:
+        return "neutral"
+    return max(scores, key=lambda k: scores[k])
 
 # ── PUBLIC API ─────────────────────────────────────────────────────────────
 
 def classify(text: str) -> dict:
     """
     Unified classifier for Marin Tools.
-    Returns: {intent, params, user_vibe, confidence}
+    Returns: {intent, params, user_vibe, director_emotion, confidence}
     """
     result = _regex_stage(text)
     
@@ -127,6 +157,7 @@ def classify(text: str) -> dict:
         result = {"intent": "chat", "params": {}, "confidence": 0.8}
         
     result["user_vibe"] = _detect_vibe(text)
+    result["director_emotion"] = _detect_director_emotion(text)
     return result
 
 async def execute_tool(intent: str, params: dict, user_id: str = "USR-00000000") -> str | None:
