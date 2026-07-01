@@ -924,6 +924,25 @@
         <button class="sidebar-btn" onclick="sendAction('/timer status')"><span class="icon">⏱️</span> Timer Status</button>
         
         
+        <div class="dropdown-wrapper" id="models-dropdown">
+            <button class="sidebar-btn" onclick="document.getElementById('models-dropdown').classList.toggle('active')">
+                <span class="icon">👤</span> Models <span class="icon-arrow">▼</span>
+            </button>
+            <div class="sidebar-dropdown">
+                 <button class="sidebar-btn" onclick="loadVRMModel('marin.vrm')">Marin</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Aera.vrm')">Aera</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Dhahlia.vrm')">Dhahlia</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Epithet.vrm')">Epithet</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Lara Lightland.vrm')">Lara Lightland</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Onyx.vrm')">Onyx</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Velara.vrm')">Velara</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('1204999165323567084.vrm')">Model 1</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('61121190575213457.vrm')">Model 2</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('7931905149146643613.vrm')">Model 3</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042.vrm')">Model 4</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042 (1).vrm')">Model 5</button>
+            </div>
+        </div>
         <div class="dropdown-wrapper" id="actions-dropdown">
             <button class="sidebar-btn" onclick="document.getElementById('actions-dropdown').classList.toggle('active')">
                 <span class="icon">🏃</span> Actions <span class="icon-arrow">▼</span>
