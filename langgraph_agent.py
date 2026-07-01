@@ -340,7 +340,7 @@ async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
     last = state["messages"][-1]
     user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
-    
+
     # 1. Regex Priority
     from marin_fier import classify
     cls = classify(user_msg)
@@ -349,11 +349,23 @@ async def node_strategist(state: AgentState) -> dict:
         log_agent(f"Strategist (Regex): {plan}")
         return {"plan": plan}
 
-    # 2. LLM Fallback (Force 1.5B for tool support)
+    # 2. Level-1 Semantic Router (Tool Classification)
+    from utils.tool_registry import get_relevant_tools
+    relevant_tool_names = get_relevant_tools(user_msg)
+    
+    # If no domain matched, zero tools!
+    if not relevant_tool_names:
+        log_agent("Strategist (Semantic Router): Dropped to zero tools. Responding directly.")
+        return {"plan": [{"action": "respond", "args": {}, "rationale": "No tools needed."}]}
+        
+    filtered_tools = [t.name for t in ALL_TOOLS if t.name in relevant_tool_names]
+    log_agent(f"Strategist (Semantic Router): Filtered {len(ALL_TOOLS)} down to {len(filtered_tools)} tools.")
+
+    # 3. LLM Fallback (Force 1.5B for tool support)
     plan = []
     try:
         llm = get_llm("qwen2.5:1.5b")
-        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=[t.name for t in ALL_TOOLS]))
+        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=filtered_tools))
         # LangGraph may serialize messages to dicts — convert back to BaseMessage
         raw_msgs = list(state["messages"])
         clean_msgs = []
