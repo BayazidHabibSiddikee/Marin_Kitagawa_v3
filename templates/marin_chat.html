@@ -1046,6 +1046,14 @@
             </div>
         </div>
 
+        <div class="sidebar-section">Smart TV</div>
+        <div style="padding: 0 16px 12px; display:flex; flex-direction:column; gap:8px;">
+            <input type="text" id="sidebar-tv-input" placeholder="Paste YouTube link here..." style="width:100%; padding:8px; background:var(--ink2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12px; outline:none;" onkeydown="if(event.key==='Enter') handleSidebarTV(this.value)">
+            <div style="display:flex; gap:8px;">
+                <button class="set-dashed-btn" onclick="handleSidebarTV(document.getElementById('sidebar-tv-input').value)" style="flex:1;">Cast to TV</button>
+                <button class="set-dashed-btn" onclick="hideProjector()" style="flex:1; color:var(--danger); border-color:var(--danger);">Turn Off</button>
+            </div>
+        </div>
         <div class="sidebar-section">Commands</div>
         <div id="active-tasks" style="padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-dim);">
             <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
@@ -2271,6 +2279,7 @@
         const video = document.getElementById('vrm-projector-video');
         const iframe = document.getElementById('vrm-projector-iframe');
         
+        document.getElementById('vrm-projector-standby').style.display = 'none';
         if (type === 'stream') {
             iframe.style.display = 'none';
             iframe.src = '';
@@ -2288,7 +2297,8 @@
 
     function hideProjector() {
         if (!projectorObject) return;
-        projectorObject.element.style.display = 'none';
+        projectorObject.element.style.display = 'flex';
+        document.getElementById('vrm-projector-standby').style.display = 'flex';
         document.getElementById('vrm-projector-video').src = '';
         document.getElementById('vrm-projector-iframe').src = '';
     }
