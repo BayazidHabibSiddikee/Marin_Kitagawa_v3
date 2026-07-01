@@ -1090,7 +1090,7 @@
                     style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);
                            background:transparent;color:var(--text-dim);cursor:pointer;font-size:.82rem;">✕</button>
             </div>
-            <iframe id="yt-iframe" allowfullscreen allow="autoplay; encrypted-media"
+            <iframe id="yt-iframe" allowfullscreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 style="flex:1;width:100%;border:none;border-radius:8px;background:#000;" src=""></iframe>
         </div>
     </div>
@@ -2107,7 +2107,6 @@
         projDiv.id = 'vrm-projector';
         projDiv.style.cssText = 'width:1280px;height:720px;background:rgba(10,20,30,0.92);border:2px solid rgba(77,184,164,0.3);border-radius:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:40px;';
         projDiv.innerHTML = `
-            <iframe id="vrm-projector-iframe" width="1280" height="720" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen style="display:none;position:absolute;top:0;left:0;pointer-events:auto;background:black;"></iframe>
             <video id="vrm-projector-video" width="1280" height="720" autoplay muted loop style="display:none;position:absolute;top:0;left:0;object-fit:cover;pointer-events:none;background:black;"></video>
             <div id="vrm-projector-standby" style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:100%; background:#111;">
                 <div style="font-size:48px;color:rgba(255,255,255,0.6);font-family:'JetBrains Mono',monospace;margin-bottom:20px;text-align:center;">Marin OS — Smart TV</div>
@@ -2301,25 +2300,26 @@
     };
 
     function showProjector(url, type='stream') {
+        if (type === 'youtube') {
+            const match = url.match(/\/embed\/([\w-]+)/);
+            if (match) {
+                openYTOverlay();
+                const frame = document.getElementById('yt-iframe');
+                if (frame) frame.src = `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0`;
+            }
+            return;
+        }
+
         if (!projectorObject) return;
         projectorObject.element.style.display = 'block';
         
         const video = document.getElementById('vrm-projector-video');
-        const iframe = document.getElementById('vrm-projector-iframe');
         
         document.getElementById('vrm-projector-standby').style.display = 'none';
         if (type === 'stream') {
-            iframe.style.display = 'none';
-            iframe.src = '';
             video.style.display = 'block';
             video.src = url;
             video.play().catch(e => console.error("Autoplay prevented:", e));
-        } else if (type === 'youtube') {
-            video.style.display = 'none';
-            video.pause();
-            video.src = '';
-            iframe.style.display = 'block';
-            iframe.src = url;
         }
     }
 
@@ -2328,7 +2328,7 @@
         projectorObject.element.style.display = 'flex';
         document.getElementById('vrm-projector-standby').style.display = 'flex';
         document.getElementById('vrm-projector-video').src = '';
-        document.getElementById('vrm-projector-iframe').src = '';
+        closeYTOverlay();
     }
 
     
