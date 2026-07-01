@@ -15,7 +15,7 @@
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/BVHLoader.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/renderers/CSS3DRenderer.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://unpkg.com/@pixiv/three-vrm@0.6.11/lib/three-vrm.js"></script>
+    <script src="https://unpkg.com/@pixiv/three-vrm@2.0.0/lib/three-vrm.js"></script>
     <style>
         #vrm-container {
             width: 35%;
@@ -855,6 +855,8 @@
     </style>
 </head>
 <body>
+<div id="vrm-debug" style="position:absolute; top:0; left:0; background:rgba(0,0,0,0.8); color:red; z-index:9999; font-family:monospace; padding:10px; max-height:50%; overflow-y:auto; pointer-events:none;"></div>
+
 
 <!-- TOP BAR -->
 <header class="topbar">
@@ -1726,10 +1728,14 @@
         btn.style.borderColor = vrmVisible ? 'var(--teal-dim)' : '';
 
         if (vrmVisible && !vrmRenderer) {
-            initVRM();
-            initResizer();
+            requestAnimationFrame(() => {
+                initVRM();
+                initResizer();
+            });
         } else if (vrmVisible) {
-            onWindowResize();
+            requestAnimationFrame(() => {
+                onWindowResize();
+            });
         }
     }
 
@@ -1787,13 +1793,19 @@
 
         vrmScene = new THREE.Scene();
 
-        vrmCamera = new THREE.PerspectiveCamera(35.0, canvas.clientWidth / canvas.clientHeight, 0.1, 50.0);
+        // Ensure width and height are valid (minimum 100px) in case layout hasn't finished
+        let cWidth = canvas.clientWidth || container.clientWidth || 300;
+        let cHeight = canvas.clientHeight || container.clientHeight || 500;
+        if (cWidth < 10) cWidth = 300;
+        if (cHeight < 10) cHeight = 500;
+
+        vrmCamera = new THREE.PerspectiveCamera(35.0, cWidth / cHeight, 0.1, 50.0);
         vrmCamera.position.set(0.0, 1.4, 3.0);
 
         vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
         // We must clear to transparent so the CSS3D TV shows through the punched hole
         vrmRenderer.setClearColor(0x000000, 0);
-        vrmRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        vrmRenderer.setSize(cWidth, cHeight, false); // false prevents style override if already 100%
         vrmRenderer.setPixelRatio(window.devicePixelRatio);
         vrmRenderer.outputEncoding = THREE.sRGBEncoding;
         vrmRenderer.shadowMap.enabled = false;
@@ -1801,7 +1813,7 @@
 
         // CSS3DRenderer sits behind WebGL canvas for DOM elements
         vrmCssRenderer = new THREE.CSS3DRenderer();
-        vrmCssRenderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        vrmCssRenderer.setSize(cWidth, cHeight);
         vrmCssRenderer.domElement.style.position = 'absolute';
         vrmCssRenderer.domElement.style.top = '0';
         vrmCssRenderer.domElement.style.left = '0';
@@ -2009,46 +2021,45 @@
         // ── VRM MODEL ─────────────────────────────────────────────────────────
         const loader = new THREE.GLTFLoader();
         loader.crossOrigin = 'anonymous';
+        // Install VRMLoaderPlugin for three-vrm 2.0.0+
+        loader.register((parser) => {
+            return new THREE.VRMLoaderPlugin(parser);
+        });
+
         console.log('[VRM] Loading model...');
         
-        // ADD A TEST CUBE
-        const testGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        const testMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-        const testCube = new THREE.Mesh(testGeo, testMat);
-        testCube.position.set(0, 1.5, 0);
-        vrmScene.add(testCube);
-        window.testCube = testCube; // so we can animate it
-
         loader.load(
             '/static/models/marin.vrm',
             (gltf) => {
-                THREE.VRM.from(gltf).then((vrm) => {
-                    vrmModel = vrm;
-                    vrmScene.add(vrm.scene);
-                    vrm.scene.rotation.y = Math.PI;
-                    // Disable shadows on VRM just in case they cause a crash
-                    vrm.scene.traverse((obj) => {
-                        if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
-                    });
-                    console.log('[VRM] Model loaded:', vrm);
-                    if (window.testCube) window.testCube.visible = false; // Hide test cube once VRM loads
-                    
-                    const head = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.Head);
-                    if (head) {
-                        const hp = new THREE.Vector3();
-                        head.getWorldPosition(hp);
-                        vrmCamera.lookAt(hp);
-                    }
-                    const lArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftUpperArm);
-                    const rArm = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightUpperArm);
-                    if (lArm) lArm.rotation.z = 1.35;
-                    if (rArm) rArm.rotation.z = -1.35;
-                    const lLower = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.LeftLowerArm);
-                    const rLower = vrm.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName.RightLowerArm);
-                    if (lLower) lLower.rotation.z = 0.1;
-                    if (rLower) rLower.rotation.z = -0.1;
+                const vrm = gltf.userData.vrm;
+                if (!vrm) {
+                    console.error("VRM failed to parse from GLTF! (userData.vrm is undefined)");
+                    return;
+                }
+                vrmModel = vrm;
+                vrmScene.add(vrm.scene);
+                vrm.scene.rotation.y = Math.PI;
+                // Disable shadows on VRM just in case they cause a crash
+                vrm.scene.traverse((obj) => {
+                    if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
                 });
-                setTimeout(() => playAnimation('joy'), 800);
+                console.log('[VRM] Model loaded:', vrm);
+                
+                const head = vrm.humanoid.getNormalizedBoneNode('head');
+                if (head) {
+                    const hp = new THREE.Vector3();
+                    head.getWorldPosition(hp);
+                    vrmCamera.lookAt(hp);
+                }
+                const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                if (lArm) lArm.rotation.z = 1.35;
+                if (rArm) rArm.rotation.z = -1.35;
+                const lLower = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
+                const rLower = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
+                if (lLower) lLower.rotation.z = 0.1;
+                if (rLower) rLower.rotation.z = -0.1;
+                setTimeout(() => playAnimation('neutral_idle'), 800);
             },
             (progress) => console.log('Loading: ' + (100.0 * progress.loaded / progress.total).toFixed(1) + '%'),
             (error) => console.error('VRM Load Error:', error)
@@ -2119,11 +2130,11 @@
             if (vrmModel) {
                 vrmModel.update(delta);
                 
-                if (vrmModel.blendShapeProxy) {
+                if (vrmModel.expressionManager) {
                     // Simple blinking
                     const blinkStrength = Math.sin(vrmClock.elapsedTime * 2) > 0.98 ? 1.0 : 0.0;
-                    vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.Blink, blinkStrength);
-                    
+                    vrmModel.expressionManager.setValue('blink', blinkStrength);
+
                     // Lip sync simulation if talking
                     if (document.getElementById('logo-wrap') && document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
                         let mouthOpen = 0;
@@ -2135,11 +2146,11 @@
                             const avg = sum / dataArray.length;
                             mouthOpen = Math.min(1.0, avg / 60.0);
                         } else {
-                            mouthOpen = 0.5 + Math.sin(vrmClock.elapsedTime * 8) * 0.5;
+                            mouthOpen = Math.random() * 0.5 + 0.2;
                         }
-                        vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, mouthOpen);
+                        vrmModel.expressionManager.setValue('aa', mouthOpen);
                     } else {
-                        vrmModel.blendShapeProxy.setValue(THREE.VRMSchema.BlendShapePresetName.A, 0);
+                        vrmModel.expressionManager.setValue('aa', 0);
                     }
                 }
             }
@@ -2180,15 +2191,22 @@
         document.getElementById('vrm-projector-iframe').src = '';
     }
 
+    
+    function logDebug(msg) {
+        const d = document.getElementById('vrm-debug');
+        if (d) { d.innerHTML += msg + "<br/>"; }
+        console.log(msg);
+    }
+
     async function playAnimation(name) {
-        if (!vrmModel) { console.error("[VRM] Model not loaded yet."); return; }
+        if (!vrmModel) { logDebug("[VRM] Model not loaded yet."); return; }
         stopAnimation();
 
-        console.log(`[VRM] Loading BVH animation: ${name}...`);
+        logDebug(`[VRM] Loading BVH animation: ${name}...`);
         const loader = new THREE.BVHLoader();
-        loader.load(`/static/vrm/animation/${name}.bvh`, (bvh) => {
-            const clip = bvh.clip;
-            if (!clip) { console.error("[VRM] No animation found in BVH"); return; }
+        loader.load(`/static/vrm/animation/${name}.bvh`, (result) => {
+            const clip = result.clip;
+            if (!clip) { logDebug("[VRM] No animation found in BVH"); return; }
 
             const tracks = [];
             const boneMap = {
@@ -2200,26 +2218,66 @@
                 'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot'
             };
 
+            const restRotationInverse = new THREE.Quaternion();
+            const parentRestWorldRotation = new THREE.Quaternion();
+            const _quatA = new THREE.Quaternion();
+
+            // Ensure BVH matrices are updated before querying getWorldQuaternion
+            if (result.skeleton.bones[0]) {
+                result.skeleton.bones[0].updateMatrixWorld(true);
+            }
+
+            // Find Hips to calculate scale
+            const hipsBone = result.skeleton.bones.find(b => b.name.toLowerCase() === 'hips');
+            const motionHipsHeight = hipsBone ? hipsBone.position.y : 1.0;
+            // Provide a sensible fallback if we can't accurately get the VRM hip height, usually ~1.0 for standard humanoids
+            const vrmHipsHeight = 1.0; 
+            const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
+
             clip.tracks.forEach((track) => {
-                const parts = track.name.split('.');
-                const boneName = parts[0];
-                const type = parts[1];
-                const vrmName = boneMap[boneName];
+                const match = track.name.match(/\.bones\[(.*?)\]\.(.*)/) || track.name.match(/(.*?)\.(.*)/);
+                if (!match) return;
+                const boneName = match[1];
+                const type = match[2];
+                const vrmName = boneMap[boneName] || boneName;
+                const vrmNode = vrmModel.humanoid.getNormalizedBoneNode(vrmName);
+                const bvhRigNode = result.skeleton.bones.find(b => b.name === boneName);
 
-                if (vrmName && type) {
-                    const node = vrmModel.humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[vrmName.charAt(0).toUpperCase() + vrmName.slice(1)]);
-                    if (node) {
-                        const newTrack = track.clone();
-                        newTrack.name = `${node.name}.${type}`;
+                if (vrmNode && bvhRigNode) {
+                    const vrmNodeName = vrmNode.name;
+                    const propertyName = type;
 
-                        if (type === 'position' && vrmName === 'hips') {
-                            for (let i = 0; i < newTrack.values.length; i++) {
-                                newTrack.values[i] *= 0.01;
-                            }
-                            tracks.push(newTrack);
-                        } else if (type === 'quaternion') {
-                            tracks.push(newTrack);
+                    // Store rotations of rest-pose.
+                    bvhRigNode.getWorldQuaternion(restRotationInverse).invert();
+                    if (bvhRigNode.parent) {
+                        bvhRigNode.parent.getWorldQuaternion(parentRestWorldRotation);
+                    } else {
+                        parentRestWorldRotation.identity();
+                    }
+
+                    if (track instanceof THREE.QuaternionKeyframeTrack) {
+                        // Retarget rotation of bvhRig to NormalizedBone.
+                        for (let i = 0; i < track.values.length; i += 4) {
+                            const flatQuaternion = track.values.slice(i, i + 4);
+                            _quatA.fromArray(flatQuaternion);
+                            _quatA.premultiply(parentRestWorldRotation).multiply(restRotationInverse);
+                            _quatA.toArray(flatQuaternion);
+                            flatQuaternion.forEach((v, index) => {
+                                track.values[index + i] = v;
+                            });
                         }
+                        
+                        // VRM 0.0 requires X/Y axis inversion
+                        tracks.push(
+                            new THREE.QuaternionKeyframeTrack(
+                                `${vrmNodeName}.${propertyName}`,
+                                track.times,
+                                track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 2 === 0 ? -v : v))
+                            )
+                        );
+                    } else if (track instanceof THREE.VectorKeyframeTrack) {
+                        const value = track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 3 !== 1 ? -v : v) * hipsPositionScale);
+                        tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.${propertyName}`, track.times, value));
                     }
                 }
             });
@@ -2228,10 +2286,9 @@
             vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
             currentAction = vrmMixer.clipAction(finalClip);
             currentAction.play();
-            console.log(`[VRM] Now playing: ${name}`);
+            logDebug(`[VRM] Now playing: ${name} | Tracks: ${tracks.length}`);
         }, (p) => {}, (err) => console.error("[VRM] BVH Load Error:", err));
     }
-
     function stopAnimation() {
         if (currentAction) { currentAction.stop(); currentAction = null; }
         if (vrmMixer) { vrmMixer.stopAllAction(); vrmMixer = null; }
@@ -2239,7 +2296,7 @@
         if (vrmModel) {
             const humanoid = vrmModel.humanoid;
             const resetBone = (name, x, y, z) => {
-                const node = humanoid.getBoneNode(THREE.VRMSchema.HumanoidBoneName[name]);
+                const node = humanoid.getNormalizedBoneNode([name]);
                 if (node) {
                     node.rotation.set(x || 0, y || 0, z || 0);
                     if (name === 'Hips') node.position.set(0, 0, 0);
