@@ -929,18 +929,18 @@
                 <span class="icon">👤</span> Models <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
-                 <button class="sidebar-btn" onclick="loadVRMModel('marin.vrm')">Marin</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('marin.vrm')">Marin (Default)</button>
                  <button class="sidebar-btn" onclick="loadVRMModel('Aera.vrm')">Aera</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('Dhahlia.vrm')">Dhahlia</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Dhahlia.vrm')">Dahlia</button>
                  <button class="sidebar-btn" onclick="loadVRMModel('Epithet.vrm')">Epithet</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('Lara Lightland.vrm')">Lara Lightland</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('Lara Lightland.vrm')">Lara</button>
                  <button class="sidebar-btn" onclick="loadVRMModel('Onyx.vrm')">Onyx</button>
                  <button class="sidebar-btn" onclick="loadVRMModel('Velara.vrm')">Velara</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('1204999165323567084.vrm')">Model 1</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('61121190575213457.vrm')">Model 2</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('7931905149146643613.vrm')">Model 3</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042.vrm')">Model 4</button>
-                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042 (1).vrm')">Model 5</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('1204999165323567084.vrm')">Seraph</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('61121190575213457.vrm')">Nova</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('7931905149146643613.vrm')" style="color:var(--teal);border-color:var(--teal-dim);">Lyra ★</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042.vrm')">Zara</button>
+                 <button class="sidebar-btn" onclick="loadVRMModel('8755100585825430042 (1).vrm')">Zara Alt</button>
             </div>
         </div>
         <div class="dropdown-wrapper" id="actions-dropdown">
@@ -1910,7 +1910,7 @@
         if (cHeight < 10) cHeight = 500;
 
         vrmCamera = new THREE.PerspectiveCamera(35.0, cWidth / cHeight, 0.1, 50.0);
-        vrmCamera.position.set(0.0, 1.4, 3.0);
+        vrmCamera.position.set(0.3, 1.5, 3.2);
 
         vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
         // We must clear to transparent so the CSS3D TV shows through the punched hole
@@ -1943,172 +1943,514 @@
         vrmControls = new THREE.OrbitControls(vrmCamera, vrmCssRenderer.domElement);
         vrmCssRenderer.domElement.style.pointerEvents = 'auto';
         vrmControls.screenSpacePanning = true;
-        vrmControls.target.set(0.0, 1.0, 0.0);
-        vrmControls.minDistance = 1.0;
+        vrmControls.target.set(0.0, 1.1, 0.0);
+        vrmControls.minDistance = 0.8;
         vrmControls.maxDistance = 8.0;
         vrmControls.update();
 
-        // ── COZY ROOM GEOMETRY ────────────────────────────────────────────────
-        const W = 8, H = 3.2, D = 7;
-        const deskX = 1.8, deskZ = -0.5, winZ = -D / 2 + 0.1;
+        // ── COZY BEDROOM GEOMETRY ─────────────────────────────────────────────
+        const W = 9, H = 3.4, D = 8;
+        const deskX = 2.2, deskZ = -1.0;
 
-        const matFloor  = new THREE.MeshLambertMaterial({ color: 0x3d2b1f });
-        const matWall   = new THREE.MeshLambertMaterial({ color: 0x2c2018 });
-        const matCeil   = new THREE.MeshLambertMaterial({ color: 0x1e180f });
-        const matDesk   = new THREE.MeshLambertMaterial({ color: 0x5c3d1e });
-        const matWood   = new THREE.MeshLambertMaterial({ color: 0x7a4f28 });
-        const matScreen = new THREE.MeshBasicMaterial({ color: 0x1a3a4a, emissive: 0x0d2233 });
-        const matLamp   = new THREE.MeshBasicMaterial({ color: 0xffeaa7, emissive: 0xffeaa7 });
+        // ── Materials ────────────────────────────────────────────────────────
+        // Floor: warm oak planks
+        const matFloor   = new THREE.MeshLambertMaterial({ color: 0x8b6340 });
+        // Walls: soft dusty-rose wallpaper with warm cream
+        const matWallBack = new THREE.MeshLambertMaterial({ color: 0x3a2e38 });
+        const matWallSide = new THREE.MeshLambertMaterial({ color: 0x332833 });
+        // Ceiling: off-white
+        const matCeil    = new THREE.MeshLambertMaterial({ color: 0x2a2230 });
+        // Furniture woods
+        const matDarkWood= new THREE.MeshLambertMaterial({ color: 0x3b2510 });
+        const matMidWood = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
+        const matLightWood=new THREE.MeshLambertMaterial({ color: 0x8a5c30 });
+        // Bed
+        const matBedFrame= new THREE.MeshLambertMaterial({ color: 0x2a1a0e });
+        const matBedSheet= new THREE.MeshLambertMaterial({ color: 0x4a3f6b });
+        const matPillow  = new THREE.MeshLambertMaterial({ color: 0x7a6890 });
+        const matBlanket = new THREE.MeshLambertMaterial({ color: 0x6a4a7a });
+        // Couch
+        const matCouch   = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
+        const matCushion = new THREE.MeshLambertMaterial({ color: 0x3d5166 });
+        // Plants
+        const matPot     = new THREE.MeshLambertMaterial({ color: 0x7a4f28 });
+        const matLeaf    = new THREE.MeshLambertMaterial({ color: 0x2d5a27 });
+        const matLeafDark= new THREE.MeshLambertMaterial({ color: 0x1a3d18 });
+        // Screen / lamp
+        const matScreen  = new THREE.MeshBasicMaterial({ color: 0x1a3a4a });
+        const matLamp    = new THREE.MeshBasicMaterial({ color: 0xfff0c0, emissive: 0xfff0c0 });
+        const matMetal   = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        // Window / curtain
+        const matCurtain = new THREE.MeshLambertMaterial({ color: 0x4a2a5a, side: THREE.DoubleSide });
+        const matWindowFr= new THREE.MeshLambertMaterial({ color: 0x3a2010 });
+        // Wardrobe
+        const matWardrobe= new THREE.MeshLambertMaterial({ color: 0x3b2818 });
+        const matWardDoor= new THREE.MeshLambertMaterial({ color: 0x4a3322 });
+        // Rug
+        const matRug     = new THREE.MeshLambertMaterial({ color: 0x6b3a5a });
+        // Wall accent / baseboard
+        const matBase    = new THREE.MeshLambertMaterial({ color: 0x2a1e10 });
+        const matTVMount = new THREE.MeshLambertMaterial({ color: 0x111111 });
 
-        // Floor
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), matFloor);
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        vrmScene.add(floor);
+        // ── Floor with plank pattern (alternating brightness strips) ─────────
+        const floorBase = new THREE.Mesh(new THREE.PlaneGeometry(W, D),
+            new THREE.MeshLambertMaterial({ color: 0x7a5230 }));
+        floorBase.rotation.x = -Math.PI / 2;
+        floorBase.position.y = 0;
+        vrmScene.add(floorBase);
+        // Plank strips
+        for (let i = -4; i <= 4; i++) {
+            const plank = new THREE.Mesh(new THREE.PlaneGeometry(0.14, D),
+                new THREE.MeshLambertMaterial({ color: i % 2 === 0 ? 0x8b6340 : 0x7a5230 }));
+            plank.rotation.x = -Math.PI / 2;
+            plank.position.set(i * 0.14 * 2, 0.001, 0);
+            vrmScene.add(plank);
+        }
 
+        // ── Walls ─────────────────────────────────────────────────────────────
         // Back wall
-        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(W, H), matWall);
+        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(W, H), matWallBack);
         backWall.position.set(0, H/2, -D/2);
-        backWall.receiveShadow = true;
         vrmScene.add(backWall);
-
         // Left wall
-        const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWall);
+        const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWallSide);
         leftWall.position.set(-W/2, H/2, 0);
         leftWall.rotation.y = Math.PI / 2;
-        leftWall.receiveShadow = true;
         vrmScene.add(leftWall);
-
         // Right wall
-        const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWall);
+        const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWallSide);
         rightWall.position.set(W/2, H/2, 0);
         rightWall.rotation.y = -Math.PI / 2;
-        rightWall.receiveShadow = true;
         vrmScene.add(rightWall);
-
         // Ceiling
         const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), matCeil);
         ceil.rotation.x = Math.PI / 2;
         ceil.position.y = H;
         vrmScene.add(ceil);
+        // Baseboard trim on all walls
+        [
+            [new THREE.BoxGeometry(W, 0.08, 0.04), [0, 0.04, -D/2+0.02], 0],
+            [new THREE.BoxGeometry(D, 0.08, 0.04), [-W/2+0.02, 0.04, 0], Math.PI/2],
+            [new THREE.BoxGeometry(D, 0.08, 0.04), [W/2-0.02, 0.04, 0], -Math.PI/2],
+        ].forEach(([geo, pos, ry]) => {
+            const b = new THREE.Mesh(geo, matBase);
+            b.position.set(...pos); b.rotation.y = ry;
+            vrmScene.add(b);
+        });
+        // ── Ceiling beams ──────────────────────────────────────────────────────
+        [-2, 0, 2].forEach(bx => {
+            const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, D), matDarkWood);
+            beam.position.set(bx, H - 0.08, 0);
+            vrmScene.add(beam);
+        });
+        // Ceiling center light fixture
+        const ceilFixture = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.08, 12), matMidWood);
+        ceilFixture.position.set(0, H - 0.04, 0);
+        vrmScene.add(ceilFixture);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), matLamp);
+        bulb.position.set(0, H - 0.22, 0);
+        vrmScene.add(bulb);
 
-        // Desk surface
-        const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, 0.9), matDesk);
+        // ── Desk (L-shaped corner desk) ───────────────────────────────────────
+        const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 1.0), matMidWood);
         deskTop.position.set(deskX, 0.78, deskZ);
-        deskTop.castShadow = true;
-        deskTop.receiveShadow = true;
         vrmScene.add(deskTop);
-
-        // Desk legs
-        [[0.95, 0.4], [-0.95, 0.4], [0.95, -0.4], [-0.95, -0.4]].forEach(([lx, lz]) => {
-            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.78, 0.06), matWood);
-            leg.position.set(deskX + lx, 0.39, deskZ + lz);
-            leg.castShadow = true;
+        // Side extension
+        const deskSide = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.7), matMidWood);
+        deskSide.position.set(deskX + 0.75, 0.78, deskZ + 0.85);
+        vrmScene.add(deskSide);
+        // Legs
+        [[1.1,0.45],[1.1,-0.45],[-1.1,0.45],[-1.1,-0.45]].forEach(([lx,lz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.78,0.06), matDarkWood);
+            leg.position.set(deskX+lx, 0.39, deskZ+lz);
             vrmScene.add(leg);
         });
-
-        // Monitor on desk
-        const monBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.3), matWood);
-        monBase.position.set(deskX - 0.2, 0.835, deskZ - 0.15);
-        vrmScene.add(monBase);
-        const monStand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.35, 0.04), matWood);
-        monStand.position.set(deskX - 0.2, 1.03, deskZ - 0.15);
+        // Monitor (ultrawide)
+        const monStand = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.32,0.12), matMetal);
+        monStand.position.set(deskX-0.1, 0.97, deskZ-0.35);
         vrmScene.add(monStand);
-        const monScreen = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.38, 0.03), matScreen);
-        monScreen.position.set(deskX - 0.2, 1.25, deskZ - 0.15);
-        vrmScene.add(monScreen);
+        const monBase2 = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.03,0.18), matMetal);
+        monBase2.position.set(deskX-0.1, 0.815, deskZ-0.35);
+        vrmScene.add(monBase2);
+        const monScr = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.42,0.025), matScreen);
+        monScr.position.set(deskX-0.1, 1.28, deskZ-0.36);
+        vrmScene.add(monScr);
+        // Screen glow
+        const monGlow = new THREE.PointLight(0x4db8a4, 0.5, 1.5);
+        monGlow.position.set(deskX-0.1, 1.28, deskZ-0.1);
+        vrmScene.add(monGlow);
+        // Keyboard on desk
+        const kbd = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.02,0.16), matDarkWood);
+        kbd.position.set(deskX-0.1, 0.81, deskZ+0.1);
+        vrmScene.add(kbd);
+        // Desk lamp (gooseneck style)
+        const lpBase = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.03,8), matMetal);
+        lpBase.position.set(deskX+0.9, 0.815, deskZ-0.35);
+        vrmScene.add(lpBase);
+        const lpArm  = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.5,6), matMetal);
+        lpArm.position.set(deskX+0.9, 1.065, deskZ-0.35);
+        vrmScene.add(lpArm);
+        const lpHead = new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6), matLamp);
+        lpHead.position.set(deskX+0.9, 1.32, deskZ-0.35);
+        vrmScene.add(lpHead);
+        const deskLampLight = new THREE.PointLight(0xffd580, 1.1, 2.2);
+        deskLampLight.position.set(deskX+0.9, 1.32, deskZ-0.1);
+        vrmScene.add(deskLampLight);
+        // Small items: mug, notebook
+        const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.035,0.09,10), new THREE.MeshLambertMaterial({color:0xd4a0a0}));
+        mug.position.set(deskX+0.6, 0.835, deskZ-0.1);
+        vrmScene.add(mug);
+        const notebook = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.015,0.16), new THREE.MeshLambertMaterial({color:0x334466}));
+        notebook.position.set(deskX+0.3, 0.81, deskZ+0.15);
+        vrmScene.add(notebook);
 
-        // Bookshelf on left wall
-        const shelfBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.8, 0.8), matWood);
-        shelfBase.position.set(-W/2 + 0.1, 0.9, -1.5);
-        shelfBase.castShadow = true;
-        vrmScene.add(shelfBase);
-        // Books on shelf — colourful
-        [[0xc0392b, -0.6], [0x2980b9, -0.45], [0x27ae60, -0.3], [0xf39c12, -0.15], [0x8e44ad, 0.0]].forEach(([col, bz]) => {
-            const book = new THREE.Mesh(
-                new THREE.BoxGeometry(0.13, 0.28, 0.09),
-                new THREE.MeshLambertMaterial({ color: col })
-            );
-            book.position.set(-W/2 + 0.15, 1.4, bz + -1.5);
+        // ── Bookshelf (right wall, tall) ──────────────────────────────────────
+        const shelfBody = new THREE.Mesh(new THREE.BoxGeometry(0.28,2.2,1.1), matDarkWood);
+        shelfBody.position.set(W/2-0.14, 1.1, -2.0);
+        vrmScene.add(shelfBody);
+        [0.3,0.75,1.2,1.65].forEach(sy => {
+            const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.03,1.06), matMidWood);
+            shelf.position.set(W/2-0.14, sy, -2.0);
+            vrmScene.add(shelf);
+        });
+        [[0xc0392b,-0.8],[0x2980b9,-0.65],[0x27ae60,-0.5],[0xf39c12,-0.35],[0x8e44ad,-0.2],[0xe74c3c,-0.05],[0x16a085,0.1],[0xe67e22,0.25]].forEach(([col,bz]) => {
+            const book = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.26,0.08), new THREE.MeshLambertMaterial({color:col}));
+            book.position.set(W/2-0.02, 0.88, bz + -2.0 + 0.5);
             vrmScene.add(book);
         });
+        // Plant on top of shelf
+        const shelfPot = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.06,0.1,8), matPot);
+        shelfPot.position.set(W/2-0.14, 2.25, -1.6);
+        vrmScene.add(shelfPot);
+        const shelfLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6), matLeaf);
+        shelfLeaf.position.set(W/2-0.14, 2.43, -1.6);
+        vrmScene.add(shelfLeaf);
 
-        // Small desk lamp
-        const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.4, 6), matWood);
-        lampPost.position.set(deskX - 0.55, 0.99, deskZ - 0.3);
-        vrmScene.add(lampPost);
-        const lampHead = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), matLamp);
-        lampHead.position.set(deskX - 0.55, 1.2, deskZ - 0.3);
-        vrmScene.add(lampHead);
-
-        // Floor rug
-        const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 32), new THREE.MeshLambertMaterial({ color: 0x4a2040 }));
-        rug.rotation.x = -Math.PI / 2;
-        rug.position.set(0, 0.001, 0.5);
-        vrmScene.add(rug);
-
-        // Window frame on back wall
-        const winW = 1.4, winH = 1.2, winY = 1.8;
-        const winX = -W/2 + 0.01;
-        const winMat = new THREE.MeshLambertMaterial({ color: 0x4a3820 });
-        // Frame bars
-        [[-winW/2, 0], [winW/2, 0]].forEach(([ox]) => {
-            const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, winH, 0.06), winMat);
-            bar.position.set(ox, winY, -D/2 + 0.03);
-            bar.rotation.y = 0;
-            vrmScene.add(bar);
+        // ── Bed (left wall) ───────────────────────────────────────────────────
+        const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.28,2.2), matBedFrame);
+        bedFrame.position.set(-W/2+0.95, 0.14, 1.5);
+        vrmScene.add(bedFrame);
+        // Mattress
+        const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.5,0.2,2.0), new THREE.MeshLambertMaterial({color:0xe8ddd0}));
+        mattress.position.set(-W/2+0.95, 0.38, 1.5);
+        vrmScene.add(mattress);
+        // Sheet
+        const sheet = new THREE.Mesh(new THREE.BoxGeometry(1.48,0.04,1.4), matBedSheet);
+        sheet.position.set(-W/2+0.95, 0.5, 1.7);
+        vrmScene.add(sheet);
+        // Blanket (bunched up)
+        const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.46,0.1,0.6), matBlanket);
+        blanket.position.set(-W/2+0.95, 0.53, 2.2);
+        vrmScene.add(blanket);
+        // Pillows
+        [-0.3,0.3].forEach(px => {
+            const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.1,0.35), matPillow);
+            pillow.position.set(-W/2+0.95+px, 0.52, 0.65);
+            vrmScene.add(pillow);
         });
+        // Headboard
+        const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,0.1), matBedFrame);
+        headboard.position.set(-W/2+0.95, 0.63, 0.52);
+        vrmScene.add(headboard);
+        // Headboard panel detail
+        const hbPanel = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.5,0.05), matWardDoor);
+        hbPanel.position.set(-W/2+0.95, 0.65, 0.48);
+        vrmScene.add(hbPanel);
+        // Bedside table
+        const bst = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.4), matDarkWood);
+        bst.position.set(-W/2+0.28, 0.275, 0.65);
+        vrmScene.add(bst);
+        const bstTop = new THREE.Mesh(new THREE.BoxGeometry(0.44,0.04,0.44), matMidWood);
+        bstTop.position.set(-W/2+0.28, 0.57, 0.65);
+        vrmScene.add(bstTop);
+        // Bedside lamp
+        const bslPost = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.28,6), matMetal);
+        bslPost.position.set(-W/2+0.28, 0.73, 0.65);
+        vrmScene.add(bslPost);
+        const bslShade = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.07,0.12,8), new THREE.MeshLambertMaterial({color:0xd4b896}));
+        bslShade.position.set(-W/2+0.28, 0.87, 0.65);
+        vrmScene.add(bslShade);
+        const bslLight = new THREE.PointLight(0xffcc88, 0.8, 2.5);
+        bslLight.position.set(-W/2+0.28, 0.87, 0.65);
+        vrmScene.add(bslLight);
+
+        // ── Wardrobe (back-left corner) ────────────────────────────────────────
+        // ── Wardrobe (back-left corner, flush to left wall) ────────────────────
+        const wdX = -W/2 + 0.78;   // center: 0.78 from left wall (body is 1.5 wide → edge at -4.5+0.03 ✓)
+        const wdZ = -D/2 + 0.38;   // flush to back wall
+        // Main body
+        const wdBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.6), matWardrobe);
+        wdBody.position.set(wdX, 1.25, wdZ);
+        vrmScene.add(wdBody);
+        // Top cap (slightly wider for crown detail)
+        const wdCap = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.08, 0.66), matDarkWood);
+        wdCap.position.set(wdX, 2.54, wdZ);
+        vrmScene.add(wdCap);
+        // Base plinth
+        const wdPlinth = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.08, 0.62), matDarkWood);
+        wdPlinth.position.set(wdX, 0.04, wdZ);
+        vrmScene.add(wdPlinth);
+        // Two doors — flush to front face of body
+        [-0.36, 0.36].forEach(dx => {
+            const door = new THREE.Mesh(new THREE.BoxGeometry(0.70, 2.32, 0.05), matWardDoor);
+            door.position.set(wdX + dx, 1.26, wdZ + 0.325);
+            vrmScene.add(door);
+            // Door panel inset
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(0.56, 1.0, 0.03), matWardrobe);
+            panel.position.set(wdX + dx, 1.55, wdZ + 0.345);
+            vrmScene.add(panel);
+            const panel2 = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.7, 0.03), matWardrobe);
+            panel2.position.set(wdX + dx, 0.75, wdZ + 0.345);
+            vrmScene.add(panel2);
+            // Handle — small round knob
+            const knob = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), matMetal);
+            knob.position.set(wdX + dx * 0.42, 1.25, wdZ + 0.36);
+            vrmScene.add(knob);
+        });
+        // Center divider line
+        const wdDiv = new THREE.Mesh(new THREE.BoxGeometry(0.03, 2.34, 0.05), matDarkWood);
+        wdDiv.position.set(wdX, 1.26, wdZ + 0.325);
+        vrmScene.add(wdDiv);
+
+        // ── Couch (right-front, facing TV) ────────────────────────────────────
+        const sofaX = 1.0, sofaZ = 2.3;
+        // Seat base — thicker and deeper
+        const couchBase = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 1.0), matCouch);
+        couchBase.position.set(sofaX, 0.35, sofaZ);
+        vrmScene.add(couchBase);
+        // Seat cushion platform under
+        const couchSeat = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.12, 0.96), new THREE.MeshLambertMaterial({color:0x253545}));
+        couchSeat.position.set(sofaX, 0.22, sofaZ);
+        vrmScene.add(couchSeat);
+        // Backrest — tall and angled back slightly
+        const couchBack = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.62, 0.22), matCouch);
+        couchBack.position.set(sofaX, 0.67, sofaZ + 0.42);
+        couchBack.rotation.x = 0.12;   // slight recline
+        vrmScene.add(couchBack);
+        // Left armrest
+        const armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 1.0), matCouch);
+        armL.position.set(sofaX - 1.31, 0.52, sofaZ);
+        vrmScene.add(armL);
+        // Right armrest
+        const armR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 1.0), matCouch);
+        armR.position.set(sofaX + 1.31, 0.52, sofaZ);
+        vrmScene.add(armR);
+        // Legs (4 stubby dark wood)
+        [[-1.0,-0.38],[1.0,-0.38],[-1.0,0.38],[1.0,0.38]].forEach(([lx,lz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.08), matDarkWood);
+            leg.position.set(sofaX+lx, 0.09, sofaZ+lz);
+            vrmScene.add(leg);
+        });
+        // Seat cushions (3 separate panels)
+        [-0.72, 0, 0.72].forEach(cx => {
+            const cush = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.16, 0.82), matCushion);
+            cush.position.set(sofaX+cx, 0.49, sofaZ - 0.04);
+            vrmScene.add(cush);
+        });
+        // Decorative throw pillow on right armrest — tucked in, not floating
+        const throwP = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 0.26), matPillow);
+        throwP.position.set(sofaX + 1.1, 0.58, sofaZ - 0.1);
+        vrmScene.add(throwP);
+        // Small coffee table in front of couch
+        const ctTop = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.04, 0.55), matMidWood);
+        ctTop.position.set(sofaX, 0.42, sofaZ - 0.75);
+        vrmScene.add(ctTop);
+        [[-0.42,-0.2],[0.42,-0.2],[-0.42,0.2],[0.42,0.2]].forEach(([lx,lz]) => {
+            const ctl = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.38,0.05), matDarkWood);
+            ctl.position.set(sofaX+lx, 0.22, sofaZ-0.75+lz);
+            vrmScene.add(ctl);
+        });
+        // Book + mug on coffee table
+        const ctBook = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.025,0.16), new THREE.MeshLambertMaterial({color:0x8833aa}));
+        ctBook.position.set(sofaX-0.2, 0.455, sofaZ-0.75);
+        vrmScene.add(ctBook);
+        const ctMug = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.03,0.07,8), new THREE.MeshLambertMaterial({color:0xc8a090}));
+        ctMug.position.set(sofaX+0.3, 0.455, sofaZ-0.75);
+        vrmScene.add(ctMug);
+
+        // ── Floor rug (large, under couch+avatar area) ─────────────────────────
+        const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.5,2.5), matRug);
+        rug.rotation.x = -Math.PI/2;
+        rug.position.set(0.8, 0.002, 1.5);
+        vrmScene.add(rug);
+        // Rug border
+        const rugBorder = new THREE.Mesh(new THREE.PlaneGeometry(3.7,2.7), new THREE.MeshLambertMaterial({color:0x9966aa}));
+        rugBorder.rotation.x = -Math.PI/2;
+        rugBorder.position.set(0.8, 0.001, 1.5);
+        vrmScene.add(rugBorder);
+
+        // ── Window on left wall ────────────────────────────────────────────────
+        const winY = 1.8, winW = 1.5, winH = 1.4;
+        // Night-sky glass pane
+        const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), new THREE.MeshBasicMaterial({color:0x0a0e2a, transparent:true, opacity:0.85, side:THREE.DoubleSide}));
+        winGlass.rotation.y = Math.PI/2;
+        winGlass.position.set(-W/2+0.02, winY, 1.5);
+        vrmScene.add(winGlass);
+        // Stars in window
+        for(let s=0; s<18; s++){
+            const star = new THREE.Mesh(new THREE.PlaneGeometry(0.03,0.03), new THREE.MeshBasicMaterial({color:0xffffff}));
+            star.rotation.y = Math.PI/2;
+            star.position.set(-W/2+0.03, winY-0.5+Math.random()*1.0, 1.5-0.6+Math.random()*1.2);
+            vrmScene.add(star);
+        }
+        // Window frame
+        [[winW,0.05,winY+winH/2,1.5],[winW,0.05,winY-winH/2,1.5],[0.05,winH,winY,1.5-winW/2],[0.05,winH,winY,1.5+winW/2]].forEach(([fw,fh,fy,fz]) => {
+            const fr = new THREE.Mesh(new THREE.BoxGeometry(0.07,fh,fw), matWindowFr);
+            fr.position.set(-W/2+0.04, fy, fz);
+            fr.rotation.y = Math.PI/2;
+            vrmScene.add(fr);
+        });
+        // Curtains on both sides
+        [-0.9,0.9].forEach(cz => {
+            const curtain = new THREE.Mesh(new THREE.PlaneGeometry(0.5,winH+0.3), matCurtain);
+            curtain.rotation.y = Math.PI/2;
+            curtain.position.set(-W/2+0.05, winY, 1.5+cz);
+            vrmScene.add(curtain);
+        });
+        // Moon glow through window
+        const moonLight = new THREE.PointLight(0x6688cc, 0.7, 5);
+        moonLight.position.set(-W/2+0.6, winY, 1.5);
+        vrmScene.add(moonLight);
+
+        // ── Plants ─────────────────────────────────────────────────────────────
+        // Tall floor plant (back-right corner)
+        const fpPot = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.11,0.28,8), matPot);
+        fpPot.position.set(W/2-0.4, 0.14, -D/2+0.5);
+        vrmScene.add(fpPot);
+        const fpStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.9,6), matLeafDark);
+        fpStem.position.set(W/2-0.4, 0.73, -D/2+0.5);
+        vrmScene.add(fpStem);
+        [[-0.15,0.5],[0.12,0.65],[-0.08,0.8],[0.18,0.82],[-0.2,0.95]].forEach(([lx,ly]) => {
+            const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.28,0.12), matLeaf);
+            leaf.position.set(W/2-0.4+lx, ly, -D/2+0.5);
+            leaf.rotation.z = lx>0 ? -0.5 : 0.5;
+            leaf.rotation.y = Math.random()*0.8;
+            vrmScene.add(leaf);
+        });
+        // Small pot on desk corner
+        const dPot = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.035,0.07,8), matPot);
+        dPot.position.set(deskX-1.0, 0.825, deskZ-0.35);
+        vrmScene.add(dPot);
+        const dLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,5), matLeaf);
+        dLeaf.position.set(deskX-1.0, 0.92, deskZ-0.35);
+        vrmScene.add(dLeaf);
+
+        // ── Desk Chair ────────────────────────────────────────────────────────
+        const chairX = deskX - 0.1, chairZ = deskZ + 0.7;
+        const matChair = new THREE.MeshLambertMaterial({ color: 0x1a1a2a });
+        const matChairBase = new THREE.MeshLambertMaterial({ color: 0x222222 });
+        // Seat
+        const chSeat = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.07, 0.50), matChair);
+        chSeat.position.set(chairX, 0.50, chairZ);
+        vrmScene.add(chSeat);
+        // Backrest
+        const chBack = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.58, 0.07), matChair);
+        chBack.position.set(chairX, 0.84, chairZ + 0.22);
+        chBack.rotation.x = -0.08;
+        vrmScene.add(chBack);
+        // Lumbar support strip
+        const chLumbar = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.05), matChairBase);
+        chLumbar.position.set(chairX, 0.65, chairZ + 0.245);
+        vrmScene.add(chLumbar);
+        // Armrests
+        [-0.22, 0.22].forEach(ax => {
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.30), matChairBase);
+            arm.position.set(chairX + ax, 0.62, chairZ + 0.05);
+            vrmScene.add(arm);
+            const armPost = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.15, 0.04), matChairBase);
+            armPost.position.set(chairX + ax, 0.54, chairZ + 0.05);
+            vrmScene.add(armPost);
+        });
+        // Gas cylinder + base
+        const chPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 8), matMetal);
+        chPole.position.set(chairX, 0.27, chairZ);
+        vrmScene.add(chPole);
+        // 5-star base spokes
+        for (let i = 0; i < 5; i++) {
+            const ang = (i / 5) * Math.PI * 2;
+            const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.03, 0.06), matChairBase);
+            spoke.position.set(chairX + Math.cos(ang)*0.16, 0.06, chairZ + Math.sin(ang)*0.16);
+            spoke.rotation.y = ang;
+            vrmScene.add(spoke);
+            // Wheel
+            const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), matChairBase);
+            wheel.position.set(chairX + Math.cos(ang)*0.32, 0.04, chairZ + Math.sin(ang)*0.32);
+            vrmScene.add(wheel);
+        }
+
+        // ── Photo Frames ───────────────────────────────────────────────────────
+        // Helper: make a framed picture on a wall
+        function makeFrame(fw, fh, pos, rotY, imgColor, frameColor=0x2a1a0e) {
+            const frameOuter = new THREE.Mesh(
+                new THREE.BoxGeometry(fw+0.06, fh+0.06, 0.04),
+                new THREE.MeshLambertMaterial({ color: frameColor })
+            );
+            frameOuter.position.set(...pos);
+            frameOuter.rotation.y = rotY;
+            vrmScene.add(frameOuter);
+            const photo = new THREE.Mesh(
+                new THREE.PlaneGeometry(fw, fh),
+                new THREE.MeshLambertMaterial({ color: imgColor, emissive: imgColor, emissiveIntensity: 0.08 })
+            );
+            photo.position.set(pos[0], pos[1], pos[2]);
+            // Offset slightly in front of frame
+            if (rotY === 0)      photo.position.z += 0.025;
+            if (rotY === Math.PI/2)  photo.position.x += 0.025;
+            if (rotY === -Math.PI/2) photo.position.x -= 0.025;
+            photo.rotation.y = rotY;
+            vrmScene.add(photo);
+        }
+
+        // Back wall — no frames (TV dominates that wall)
+
+        // Right wall — two landscape frames
+        makeFrame(0.58, 0.38, [ W/2-0.03, 1.9, -0.5 ], -Math.PI/2, 0x5a3a1a, 0x3a2510); // warm sunset
+        makeFrame(0.50, 0.35, [ W/2-0.03, 1.9,  1.2 ], -Math.PI/2, 0x1a2a5a, 0x2a1a0e); // night sky
+
+        // Left wall — one frame near window
+        makeFrame(0.45, 0.38, [ -W/2+0.03, 2.1, -0.5 ], Math.PI/2, 0x4a2a5a, 0x4a3322); // purple haze
 
         // ── LIGHTING ─────────────────────────────────────────────────────────
-        vrmScene.add(new THREE.AmbientLight(0xfff0e0, 0.45));
+        // ── LIGHTING ─────────────────────────────────────────────────────────
+        // Cool night ambient
+        vrmScene.add(new THREE.AmbientLight(0x1a1530, 0.6));
+        // Ceiling pendant warm fill
+        const ceilLight = new THREE.PointLight(0xffd580, 1.1, 9);
+        ceilLight.position.set(0, H - 0.25, 0);
+        vrmScene.add(ceilLight);
+        // Soft rim light from left (simulates moonlight through window)
+        const rimLight = new THREE.DirectionalLight(0x8899cc, 0.55);
+        rimLight.position.set(-5, 3, 2);
+        vrmScene.add(rimLight);
+        // Warm key light from top-right (main character light)
+        const keyLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+        keyLight.position.set(3, 4, 3);
+        vrmScene.add(keyLight);
+        // Bedside lamp glow (already added above with bslLight)
+        // TV screen glow (colour matches CSS3D TV)
+        const tvGlow = new THREE.PointLight(0x2244aa, 0.4, 3.5);
+        tvGlow.position.set(0, 1.5, -D/2+0.5);
+        vrmScene.add(tvGlow);
+        // Couch area warm bounce
+        const couchFill = new THREE.PointLight(0xffaa66, 0.25, 3);
+        couchFill.position.set(1.0, 0.8, 2.2);
+        vrmScene.add(couchFill);
 
-        const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.0);
-        sunLight.position.set(-3, 4, 2);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(1024, 1024);
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 15;
-        sunLight.shadow.camera.left = -5;
-        sunLight.shadow.camera.right = 5;
-        sunLight.shadow.camera.top = 5;
-        sunLight.shadow.camera.bottom = -5;
-        vrmScene.add(sunLight);
 
-        // Window cool light
-        const windowLight = new THREE.PointLight(0x8ecae6, 0.7, 6);
-        windowLight.position.set(-W/2 + 0.5, 2.0, winZ);
-        vrmScene.add(windowLight);
+        // ── TV MOUNT on back wall ──────────────────────────────────────────────
+        // Outer bezel only — no meshes in front of screen area
+        const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(2.14, 1.28, 0.055), matTVMount);
+        tvFrame.position.set(0, 1.7, -D/2 + 0.025);
+        vrmScene.add(tvFrame);
+        // NO bracket — it shows through the CSS3D layer
 
-        // Desk lamp warm glow
-        const deskLampLight = new THREE.PointLight(0xffeaa7, 0.9, 3);
-        deskLampLight.position.set(deskX - 0.55, 1.2, deskZ - 0.3);
-        vrmScene.add(deskLampLight);
-
-        // Ceiling fill
-        const ceilPtLight = new THREE.PointLight(0xfff8e7, 0.5, 5);
-        ceilPtLight.position.set(0, H - 0.2, 0);
-        vrmScene.add(ceilPtLight);
-
-        // Screen glow (teal)
-        const screenLight = new THREE.PointLight(0x4db8a4, 0.35, 2);
-        screenLight.position.set(deskX - 0.2, 1.25, deskZ);
-        vrmScene.add(screenLight);
-
-        // Warm fill from right
-        const fillLight = new THREE.PointLight(0xffd4a0, 0.3, 4);
-        fillLight.position.set(3, 1.5, 1);
-        vrmScene.add(fillLight);
-
-        // ── PROJECTOR SCREEN — CSS3DObject with iframe on back wall ──────────
-        // The iframe lives inside a CSS3D div that's placed on the back wall.
-        // youtube-nocookie.com/embed works fine inside CSS3DRenderer.
+        // ── PROJECTOR SCREEN — CSS3DObject (lives inside TV bezel) ───────────
         const projDiv = document.createElement('div');
         projDiv.id = 'vrm-projector';
         projDiv.style.cssText = [
             'width:1280px', 'height:720px',
-            'background:#0a0e14',
-            'border:2px solid rgba(77,184,164,0.35)',
-            'border-radius:10px',
+            'background:#050810',
+            'border-radius:3px',
             'overflow:hidden',
             'position:relative',
             'display:flex',
@@ -2139,17 +2481,24 @@
         `;
 
         projectorObject = new THREE.CSS3DObject(projDiv);
-        projectorObject.scale.set(0.0016, 0.0016, 0.0016);
-        projectorObject.position.set(0, 1.5, -D/2 + 0.05);
+        projectorObject.scale.set(0.00148, 0.00148, 0.00148);
+        // Push CSS3D slightly forward of bezel so nothing clips in front of it
+        projectorObject.position.set(0, 1.7, -D/2 + 0.06);
         projectorObject.rotation.y = 0;
         vrmScene.add(projectorObject);
 
-        // Punch a transparent hole so CSS3D shows through WebGL
-        const holeGeo = new THREE.PlaneGeometry(1280 * 0.0016, 720 * 0.0016);
-        const holeMat = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, transparent: true, blending: THREE.NoBlending });
+        // Hole mesh: transparent + NoBlending punches a see-through window
+        // in the WebGL canvas so the CSS3D iframe shows through underneath.
+        const holeGeo = new THREE.PlaneGeometry(1280 * 0.00148, 720 * 0.00148);
+        const holeMat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            opacity: 0,
+            transparent: true,
+            blending: THREE.NoBlending,
+        });
         const holeMesh = new THREE.Mesh(holeGeo, holeMat);
-        holeMesh.position.copy(projectorObject.position);
-        holeMesh.renderOrder = -1;
+        holeMesh.position.set(0, 1.7, -D/2 + 0.065);
+        holeMesh.renderOrder = 999;
         vrmScene.add(holeMesh);
 
         // ── VRM MODEL ─────────────────────────────────────────────────────────
@@ -2418,11 +2767,73 @@
         }
     };
 
+    // ── DANCE MODE ─────────────────────────────────────────────────────────────
+    // When music plays on the TV, Marin loops through dance animations.
+    const DANCE_PLAYLIST = [
+        'dance_1','dance_2','dance_rumba','dance_marachinostep',
+        'dance_northern_soul_spin','dance_headdrop','dance_gangnam_style'
+    ];
+    let _danceMode = false;
+    let _danceTimer = null;
+    let _danceIdx   = 0;
+
+    window.startDanceMode = function startDanceMode() {
+        if (_danceMode) return;
+        _danceMode = true;
+        _danceIdx  = Math.floor(Math.random() * DANCE_PLAYLIST.length);
+        _nextDance();
+    };
+
+    function _nextDance() {
+        if (!_danceMode) return;
+        const anim = DANCE_PLAYLIST[_danceIdx % DANCE_PLAYLIST.length];
+        _danceIdx++;
+        if (typeof playAnimation === 'function') playAnimation(anim);
+        // Each dance BVH is roughly 4-12s; poll every 8s and switch
+        _danceTimer = setTimeout(_nextDance, 8000);
+    }
+
+    window.stopDanceMode = function stopDanceMode() {
+        _danceMode = false;
+        if (_danceTimer) { clearTimeout(_danceTimer); _danceTimer = null; }
+        if (typeof playAnimation === 'function') playAnimation('neutral_idle');
+    };
+
     // ── Director-aware talking state ──────────────────────────────────────────
     // The lipsync uses avatar-talking class OR _directorTalkActive to drive mouth
     function _isTalking() {
         const logoWrap = document.getElementById('logo-wrap');
         return (logoWrap && logoWrap.classList.contains('avatar-talking')) || _directorTalkActive;
+    }
+
+    // ── Live Director: scan each incoming chunk for emotion keywords ──────────
+    // Fires animations in real-time as Marin's response streams in.
+    const _LIVE_EMOTION_RULES = [
+        { words: ['excited','amazing','awesome','incredible','yes!','yay','!'], anim: 'excitement',   minGap: 4000 },
+        { words: ['haha','lol','funny','hehe','laugh'],                          anim: 'amusement',    minGap: 5000 },
+        { words: ['hmm','think','consider','actually','well,'],                  anim: 'curiosity',    minGap: 5000 },
+        { words: ['sorry','sad','unfortunate','miss'],                           anim: 'sadness',      minGap: 8000 },
+        { words: ['wow','whoa','wait','really?','seriously?'],                   anim: 'surprise',     minGap: 4000 },
+        { words: ['love','adore','sweetheart','❤','💕'],                        anim: 'love',         minGap: 6000 },
+        { words: ['sure','absolutely','definitely','of course'],                 anim: 'approval',     minGap: 5000 },
+        { words: ['hello','hi','hey','welcome'],                                 anim: 'action_greeting', minGap: 10000 },
+        { words: ['let me explain','basically','the idea','so,'],               anim: 'neutral2',     minGap: 6000 },
+    ];
+    let _lastLiveAnimTime = 0;
+
+    function liveDirectorScan(chunk) {
+        // Don't interrupt dance mode or a freshly triggered director script
+        if (_danceMode) return;
+        const now = Date.now();
+        const lower = chunk.toLowerCase();
+        for (const rule of _LIVE_EMOTION_RULES) {
+            if (now - _lastLiveAnimTime < rule.minGap) continue;
+            if (rule.words.some(w => lower.includes(w))) {
+                if (typeof playAnimation === 'function') playAnimation(rule.anim);
+                _lastLiveAnimTime = now;
+                return;
+            }
+        }
     }
 
     window.handleSidebarTV = function(val) {
@@ -2494,30 +2905,23 @@
         const tvIframe = document.getElementById('vrm-tv-iframe');
 
         if (type === 'youtube') {
-            // Extract video ID from embed URL or raw ID
             let videoId = '';
             const embedMatch = url.match(/\/embed\/([\w-]+)/);
             const rawMatch   = url.match(/^([\w-]{11})$/);
             if (embedMatch) videoId = embedMatch[1];
             else if (rawMatch) videoId = rawMatch[1];
-            else videoId = url; // pass-through
-
+            else videoId = url;
             if (!videoId) return;
-
-            // Load iframe in the room — no overlay needed
             if (tvIframe) {
                 tvIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
                 tvIframe.style.display = 'block';
             }
             if (standby) standby.style.display = 'none';
+            // Dance mode is only triggered by explicit __DANCE__ tag from the AI
             return;
         }
 
-        // Stream / other URL — use video element inside the iframe div
-        if (tvIframe) {
-            tvIframe.src = url;
-            tvIframe.style.display = 'block';
-        }
+        if (tvIframe) { tvIframe.src = url; tvIframe.style.display = 'block'; }
         if (standby) standby.style.display = 'none';
     }
 
@@ -2526,6 +2930,8 @@
         const tvIframe = document.getElementById('vrm-tv-iframe');
         if (tvIframe) { tvIframe.src = ''; tvIframe.style.display = 'none'; }
         if (standby)  standby.style.display = 'flex';
+        // Stop dancing when TV turns off
+        if (typeof stopDanceMode === 'function') stopDanceMode();
     }
 
     
@@ -2963,6 +3369,12 @@
                         chunk = chunk.replace(match[0], '');
                     }
                 }
+
+                // __DANCE__ tag — marks that music is playing; start looping dance
+                if (chunk.includes('__DANCE__')) {
+                    startDanceMode();
+                    chunk = chunk.replace('__DANCE__', '');
+                }
                 
                 const isPySide = navigator.userAgent.includes('QtWebEngine');
                 
@@ -3046,11 +3458,13 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                       .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
                                       .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
-                
-                // During streaming: plain text only (avoids broken mid-stream markdown)
+
+                // During streaming: plain text only
                 typingBubble.textContent = cleanText;
-                
+
                 detectMoodFromChunk(cleanText);
+                // Live Director: pick animation from each new chunk as it arrives
+                liveDirectorScan(chunk);
                 scrollToBottom();
             }
             if (!full) typingBubble.innerHTML = '<em style="color:var(--text-muted)">No response.</em>';

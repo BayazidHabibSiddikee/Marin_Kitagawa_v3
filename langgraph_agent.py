@@ -223,11 +223,16 @@ def binance_tool(action: str = "portfolio") -> str:
 @tool
 def youtube_search_tool(query: str) -> str:
     """Search youtube for a video or music and return the video ID."""
+    import random
+    DANCE_ANIMS = ["dance_1", "dance_2", "dance_rumba", "dance_gangnam_style",
+                   "dance_marachinostep", "dance_northern_soul_spin", "dance_headdrop"]
+    dance_anim = random.choice(DANCE_ANIMS)
+    is_music = any(w in query.lower() for w in ["music","song","dance","beat","remix","playlist","vibe","party"])
     try:
         import yt_dlp
         ydl_opts = {
-            'quiet': True, 
-            'default_search': 'ytsearch1', 
+            'quiet': True,
+            'default_search': 'ytsearch1',
             'noplaylist': True,
             'format': 'best[ext=webm]/best[ext=mp4]/best'
         }
@@ -237,20 +242,23 @@ def youtube_search_tool(query: str) -> str:
                 video = info['entries'][0]
             else:
                 video = info
-            
+
             url = video.get('url')
             video_id = video.get('id')
+            title = video.get('title', query)
             import urllib.parse
             browser_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
-            
+
+            anim_tag = f"__ANIM__{dance_anim}__DANCE__" if is_music else "__ANIM__excitement"
             if url and video_id:
-                return f"Found video: {video.get('title')}. You MUST include __STREAM__{url} and __YOUTUBE__{video_id} and __BROWSER__{browser_url} in your response to play it on the projector, and __ANIM__Dancing to dance."
+                return (f"Found: {title}. Cast it to the TV now! "
+                        f"You MUST include __YOUTUBE__{video_id} {anim_tag} in your response.")
             elif video_id:
-                return f"Found video: {video.get('title')}. You MUST include __YOUTUBE__{video_id} and __BROWSER__{browser_url} in your response to play it."
+                return (f"Found: {title}. You MUST include __YOUTUBE__{video_id} {anim_tag} in your response.")
             else:
-                return f"Video direct extraction failed, but you can show the search results on the projector! You MUST include __BROWSER__{browser_url} in your response, and __ANIM__Happy."
+                return (f"Showing search results. You MUST include __BROWSER__{browser_url} {anim_tag} in your response.")
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error searching YouTube: {e}"
 
 @tool
 def youtube_transcript_tool(url: str) -> str:

@@ -33,7 +33,9 @@ _BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|fin
 _STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
 _BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
-_YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|play|music|song|watch)\b')
+_YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play)\b')
+# Dance ONLY triggers on explicit dance words — NOT on generic play/music
+_DANCE_PAT   = re.compile(r'\b(dance|dancing|twerk|boogie|groove)\b|let\'?s dance|start dancing')
 
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
@@ -53,7 +55,15 @@ def _regex_stage(text: str) -> dict | None:
             return {"intent": "business_analysis_tool", "params": {"query": lower}, "confidence": 1.0}
         return {"intent": "binance_tool", "params": {"action": action}, "confidence": 0.9}
 
-    # YouTube / Video
+    # Dance — explicit dance request → search YouTube for music + trigger dance anim
+    if _DANCE_PAT.search(lower):
+        # Extract music genre/artist from message, ignore dance-command words
+        query = re.sub(r'\b(dance|dancing|twerk|boogie|groove|let\'?s|start|marin|please|can you|with me)\b', '', lower).strip()
+        query = re.sub(r'\s+', ' ', query).strip()
+        query = (query + " music") if query else "upbeat dance music"
+        return {"intent": "youtube_search_tool", "params": {"query": query}, "confidence": 1.0, "is_dance": True}
+
+    # YouTube / Video — only when NOT a dance request
     if _YOUTUBE_PAT.search(lower):
         # Remove action words to get a cleaner query
         query = re.sub(r'\b(search|find|play|watch|youtube|video|videos|song|music|for)\b', '', lower).strip()
