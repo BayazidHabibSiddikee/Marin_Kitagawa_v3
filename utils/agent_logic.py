@@ -304,6 +304,15 @@ async def stream_marin_chat(
         vibe = analyze_marin_vibe(full_response)
         yield f"__VIBE__{vibe}"
 
+        # ── Director Script: timed action sequence for VRM playback ──────────
+        try:
+            from director_engine import make_director_tag, vibe_to_emotion
+            base_emotion = vibe_to_emotion(vibe)
+            director_tag = make_director_tag(full_response, base_emotion)
+            yield director_tag
+        except Exception as _de:
+            pass  # Director is non-critical — never break the stream
+
     # 3. Path B: BACKGROUND TOOL EXECUTION
     # Trigger if: keywords matched OR Marin's response shows she refused/deferred a tool task
     REFUSAL_PATTERNS = ["i cannot", "i can't", "i don't have the ability", "i'm unable", "cannot download", "cannot access"]

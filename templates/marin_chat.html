@@ -1073,9 +1073,9 @@
 
         <!-- YouTube overlay — sits above WebGL canvas; no CSS3D needed -->
         <div id="yt-overlay" class="hidden" style="
-            position:absolute; inset:0; z-index:100;
-            background:rgba(10,15,20,0.96);
-            display:flex; flex-direction:column;
+            position:absolute; inset:0; z-index:200;
+            background:rgba(10,15,20,0.97);
+            flex-direction:column;
             align-items:center; justify-content:flex-start;
             padding:20px; gap:14px; box-sizing:border-box;">
             <div style="display:flex;gap:10px;align-items:center;width:100%;">
@@ -2191,8 +2191,29 @@
 
     // ── YOUTUBE OVERLAY (outside Three.js — avoids iframe/CSP issues) ─────────
     window.openYTOverlay = function openYTOverlay() {
+        // Auto-open VRM panel if it's not visible
+        if (!vrmVisible) {
+            vrmVisible = true;
+            const container = document.getElementById('vrm-container');
+            const resizer   = document.getElementById('vrm-resizer');
+            const label     = document.getElementById('vrm-label');
+            const btn       = document.getElementById('vrm-toggle-btn');
+            container.style.display = 'block';
+            resizer.style.display   = 'block';
+            if (label) label.textContent = 'avatar: on';
+            if (btn) { btn.style.color = 'var(--teal)'; btn.style.borderColor = 'var(--teal-dim)'; }
+            if (!vrmRenderer) {
+                requestAnimationFrame(() => { initVRM(); if (typeof initResizer === 'function') initResizer(); });
+            } else {
+                requestAnimationFrame(() => onWindowResize());
+            }
+        }
         const overlay = document.getElementById('yt-overlay');
-        if (overlay) overlay.classList.remove('hidden');
+        if (overlay) {
+            overlay.classList.remove('hidden');
+            // Force flex display since .hidden !important overrides inline style
+            overlay.style.display = 'flex';
+        }
     };
 
     window.loadYTVideo = function loadYTVideo() {
@@ -2217,7 +2238,10 @@
 
     window.closeYTOverlay = function closeYTOverlay() {
         const overlay = document.getElementById('yt-overlay');
-        if (overlay) overlay.classList.add('hidden');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.style.display = 'none';
+        }
         const frame = document.getElementById('yt-iframe');
         if (frame) frame.src = '';
     };
@@ -2821,6 +2845,19 @@
                     if (vibeMatch) {
                         setMoodAvatar(vibeMatch[1]);
                         chunk = chunk.replace(/__VIBE__\w+/, '');
+                    }
+                }
+
+                // ── Director Script ─────────────────────────────────────────
+                if (chunk.includes('__DIRECTOR__')) {
+                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+/=]+)/);
+                    if (dirMatch) {
+                        try {
+                            const decoded = atob(dirMatch[1]);
+                            const script = JSON.parse(decoded);
+                            playDirectorScript(script);
+                        } catch(e) { console.warn('[Director] Parse error:', e); }
+                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+/=]+/, '');
                     }
                 }
 
