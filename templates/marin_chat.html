@@ -2285,9 +2285,9 @@
 
     window.handleSidebarTV = function(val) {
         if (!val) return;
-        let youtubeMatch = val.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+        let youtubeMatch = val.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([\w-]+)/);
         if (youtubeMatch) {
-            showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+            showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
         } else {
             let embedMatch = val.match(/src="([^"]+)"/);
             if (embedMatch) {
@@ -2775,14 +2775,14 @@
 
                 if (isPySide && youtubeMatch) {
                     // PySide6 IS Chromium — YouTube embed works natively in iframe
-                    showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                    showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
                 } else if (isPySide && streamMatch) {
                     // Route through backend proxy so <video> loads from same-origin
                     showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
                 } else if (!isPySide && streamMatch) {
                     showProjector(streamMatch[1], 'stream');
                 } else if (youtubeMatch) {
-                    showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                    showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
                 } else if (streamMatch) {
                     showProjector(streamMatch[1], 'stream');
                 } else if (browserMatch) {
@@ -3171,13 +3171,13 @@
                     const browserMatch = msg.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
                     
                     if (isPySide && youtubeMatch) {
-                        showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                        showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
                     } else if (isPySide && streamMatch) {
                         showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
                     } else if (!isPySide && streamMatch) {
                         showProjector(streamMatch[1], 'stream');
                     } else if (youtubeMatch) {
-                        showProjector(`https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1`, 'youtube');
+                        showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
                     } else if (streamMatch) {
                         showProjector(streamMatch[1], 'stream');
                     } else if (browserMatch) {
