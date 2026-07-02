@@ -2617,13 +2617,31 @@
             if (typeof stopAnimation === 'function') stopAnimation();
             if (typeof vrmModel !== 'undefined' && vrmModel) {
                 if (typeof vrmScene !== 'undefined') vrmScene.remove(vrmModel.scene);
+                // Dispose geometries, materials AND textures to prevent WebGL leaks
                 vrmModel.scene.traverse((obj) => {
                     if (obj.geometry) obj.geometry.dispose();
                     if (obj.material) {
-                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
-                        else obj.material.dispose();
+                        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach(m => {
+                            // Dispose all texture slots
+                            ['map','normalMap','roughnessMap','metalnessMap','emissiveMap',
+                             'aoMap','alphaMap','envMap','lightMap'].forEach(slot => {
+                                if (m[slot]) { m[slot].dispose(); }
+                            });
+                            m.dispose();
+                        });
                     }
                 });
+                // Clear the BVH clip cache — clips reference the old model's bone nodes
+                _bvhCache.clear();
+                _bvhLoading.clear();
+            }
+
+            // Guard: don't attempt to load if the renderer isn't initialised yet
+            if (!vrmRenderer) {
+                console.warn('[VRM] loadVRMModel called before renderer is ready. Will retry after initVRM.');
+                setTimeout(() => { if (vrmRenderer) window.loadVRMModel(filename); }, 1500);
+                return;
             }
 
             const loader = new THREE.GLTFLoader();
@@ -2815,15 +2833,55 @@
     let _directorTalkActive = false;
     let _directorScriptActive = false;
 
+    // ── BVH animation cache ───────────────────────────────────────────────────
+    // Stores parsed THREE.AnimationClip objects keyed by animation name.
+    // Eliminates redundant HTTP+parse overhead for repeated animations.
+    const _bvhCache = new Map();   // name → THREE.AnimationClip
+    const _bvhLoading = new Map(); // name → Promise<THREE.AnimationClip> (in-flight)
+
     // Expression name → VRM expression key mappings
     const _exprMap = {
+        // ── Standard VRM 1.0 presets ──────────────────────────────────────
         'happy':     'happy',
         'sad':       'sad',
         'angry':     'angry',
         'surprised': 'surprised',
         'relaxed':   'relaxed',
         'neutral':   'neutral',
-        'thinking':  'relaxed',   // VRM has no "thinking" — relaxed is closest
+        // ── Thinking / curious — no dedicated VRM key, use relaxed ────────
+        'thinking':  'relaxed',
+        'curious':   'relaxed',
+        // ── VRM BlendShape phoneme presets (mouth shapes) ─────────────────
+        'aa':        'aa',       // open mouth vowel A
+        'ih':        'ih',       // vowel I
+        'ou':        'ou',       // vowel O/U
+        'ee':        'ee',       // vowel E
+        'oh':        'oh',       // vowel OH
+        // ── Gaze / look-at presets ────────────────────────────────────────
+        'lookUp':    'lookUp',
+        'lookDown':  'lookDown',
+        'lookLeft':  'lookLeft',
+        'lookRight': 'lookRight',
+        // ── Blink presets ─────────────────────────────────────────────────
+        'blink':          'blink',
+        'blinkLeft':      'blinkLeft',
+        'blinkRight':     'blinkRight',
+        // ── Aliases used by director_engine.py ────────────────────────────
+        'love':      'happy',
+        'excited':   'happy',
+        'joy':       'happy',
+        'grief':     'sad',
+        'remorse':   'sad',
+        'caring':    'relaxed',
+        'embarrassed': 'neutral',
+        'fear':      'surprised',
+        'shock':     'surprised',
+        'realization': 'surprised',
+        'annoyed':   'angry',
+        'disgust':   'angry',
+        'confident': 'relaxed',
+        'explaining':'neutral',
+        'greeting':  'happy',
     };
 
     function setVRMExpression(name, strength = 1.0) {
@@ -2902,8 +2960,9 @@
     // ── DANCE MODE ─────────────────────────────────────────────────────────────
     // When music plays on the TV, Marin loops through dance animations.
     const DANCE_PLAYLIST = [
-        'dance_1','dance_2','dance_rumba','dance_marachinostep',
-        'dance_northern_soul_spin','dance_headdrop','dance_gangnam_style'
+        'dance_1', 'dance_2', 'dance_rumba', 'dance_marachinostep',
+        'dance_northern_soul_spin', 'dance_headdrop', 'dance_gangnam_style',
+        'dance_dab', 'dance_pushback', 'dance_backup', 'dance_ontop',
     ];
     let _danceMode = false;
     let _danceTimer = null;
@@ -3101,158 +3160,178 @@
         }
     }
 
+    // ── BVH clip loader (returns a Promise, deduplicates in-flight loads) ────
+    function _loadBVHClip(name) {
+        // Return from cache if already parsed
+        if (_bvhCache.has(name)) {
+            return Promise.resolve(_bvhCache.get(name));
+        }
+        // Deduplicate simultaneous loads of the same animation
+        if (_bvhLoading.has(name)) {
+            return _bvhLoading.get(name);
+        }
+
+        const promise = new Promise((resolve, reject) => {
+            const loader = new THREE.BVHLoader();
+            loader.load(
+                `/static/vrm/animation/${name}.bvh`,
+                (result) => {
+                    const clip = result.clip;
+                    if (!clip) { reject(new Error(`No clip in BVH: ${name}`)); return; }
+
+                    const tracks = [];
+                    const boneMap = {
+                        'Hips': 'hips', 'Spine': 'spine', 'Spine1': 'chest', 'Spine2': 'upperChest',
+                        'Neck': 'neck', 'Head': 'head',
+                        'LeftArm': 'leftUpperArm', 'LeftForeArm': 'leftLowerArm', 'LeftHand': 'leftHand',
+                        'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
+                        'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot',
+                        'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot'
+                    };
+
+                    const restRotationInverse = new THREE.Quaternion();
+                    const parentRestWorldRotation = new THREE.Quaternion();
+                    const _quatA = new THREE.Quaternion();
+
+                    if (result.skeleton.bones[0]) {
+                        result.skeleton.bones[0].updateMatrixWorld(true);
+                    }
+
+                    const hipsBone = result.skeleton.bones.find(b => b.name.toLowerCase() === 'hips');
+                    const motionHipsHeight = hipsBone ? hipsBone.position.y : 1.0;
+                    const vrmHipsHeight = 1.0;
+                    const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
+
+                    clip.tracks.forEach((track) => {
+                        const match = track.name.match(/\.bones\[(.*?)\]\.(.*)/) || track.name.match(/(.*?)\.(.*)/);
+                        if (!match) return;
+                        const boneName = match[1];
+                        const type = match[2];
+                        const vrmName = boneMap[boneName] || boneName;
+                        const vrmNode = vrmModel.humanoid.getNormalizedBoneNode(vrmName);
+                        const bvhRigNode = result.skeleton.bones.find(b => b.name === boneName);
+
+                        if (vrmNode && bvhRigNode) {
+                            const vrmNodeName = vrmNode.name;
+                            bvhRigNode.getWorldQuaternion(restRotationInverse).invert();
+                            if (bvhRigNode.parent) {
+                                bvhRigNode.parent.getWorldQuaternion(parentRestWorldRotation);
+                            } else {
+                                parentRestWorldRotation.identity();
+                            }
+
+                            if (track instanceof THREE.QuaternionKeyframeTrack) {
+                                for (let i = 0; i < track.values.length; i += 4) {
+                                    const flatQuaternion = track.values.slice(i, i + 4);
+                                    _quatA.fromArray(flatQuaternion);
+                                    _quatA.premultiply(parentRestWorldRotation).multiply(restRotationInverse);
+                                    _quatA.toArray(flatQuaternion);
+                                    flatQuaternion.forEach((v, index) => { track.values[index + i] = v; });
+                                }
+                                tracks.push(
+                                    new THREE.QuaternionKeyframeTrack(
+                                        `${vrmNodeName}.${type}`,
+                                        track.times,
+                                        track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 2 === 0 ? -v : v))
+                                    )
+                                );
+                            } else if (track instanceof THREE.VectorKeyframeTrack) {
+                                const value = track.values.map((v, i) =>
+                                    (vrmModel.meta?.metaVersion === '0' && i % 3 !== 1 ? -v : v) * hipsPositionScale
+                                );
+                                tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.${type}`, track.times, value));
+                            }
+                        }
+                    });
+
+                    const finalClip = new THREE.AnimationClip(name, clip.duration, tracks);
+                    _bvhCache.set(name, finalClip);
+                    _bvhLoading.delete(name);
+                    resolve(finalClip);
+                },
+                undefined, // progress
+                (err) => {
+                    _bvhLoading.delete(name);
+                    reject(err);
+                }
+            );
+        });
+
+        _bvhLoading.set(name, promise);
+        return promise;
+    }
+
+    // Fallback chain — try primary name, then a safe neutral on failure
+    const _ANIM_FALLBACKS = {
+        'default': 'neutral_idle',
+    };
+
     async function playAnimation(name) {
-        if (!vrmModel) { console.error("[VRM] Model not loaded yet."); return; }
+        if (!vrmModel) { console.warn("[VRM] playAnimation: model not ready, queuing."); return; }
         stopAnimation();
 
-        console.log(`[VRM] Loading BVH animation: ${name}...`);
-        const loader = new THREE.BVHLoader();
-        loader.load(`/static/vrm/animation/${name}.bvh`, (result) => {
-            const clip = result.clip;
-            if (!clip) { console.error("[VRM] No animation found in BVH"); return; }
-
-            const tracks = [];
-            const boneMap = {
-                'Hips': 'hips', 'Spine': 'spine', 'Spine1': 'chest', 'Spine2': 'upperChest',
-                'Neck': 'neck', 'Head': 'head',
-                'LeftArm': 'leftUpperArm', 'LeftForeArm': 'leftLowerArm', 'LeftHand': 'leftHand',
-                'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
-                'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot',
-                'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot'
-            };
-
-            const restRotationInverse = new THREE.Quaternion();
-            const parentRestWorldRotation = new THREE.Quaternion();
-            const _quatA = new THREE.Quaternion();
-
-            // Ensure BVH matrices are updated before querying getWorldQuaternion
-            if (result.skeleton.bones[0]) {
-                result.skeleton.bones[0].updateMatrixWorld(true);
-            }
-
-            // Find Hips to calculate scale
-            const hipsBone = result.skeleton.bones.find(b => b.name.toLowerCase() === 'hips');
-            const motionHipsHeight = hipsBone ? hipsBone.position.y : 1.0;
-            // Provide a sensible fallback if we can't accurately get the VRM hip height, usually ~1.0 for standard humanoids
-            const vrmHipsHeight = 1.0; 
-            const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
-
-            clip.tracks.forEach((track) => {
-                const match = track.name.match(/\.bones\[(.*?)\]\.(.*)/) || track.name.match(/(.*?)\.(.*)/);
-                if (!match) return;
-                const boneName = match[1];
-                const type = match[2];
-                const vrmName = boneMap[boneName] || boneName;
-                const vrmNode = vrmModel.humanoid.getNormalizedBoneNode(vrmName);
-                const bvhRigNode = result.skeleton.bones.find(b => b.name === boneName);
-
-                if (vrmNode && bvhRigNode) {
-                    const vrmNodeName = vrmNode.name;
-                    const propertyName = type;
-
-                    // Store rotations of rest-pose.
-                    bvhRigNode.getWorldQuaternion(restRotationInverse).invert();
-                    if (bvhRigNode.parent) {
-                        bvhRigNode.parent.getWorldQuaternion(parentRestWorldRotation);
-                    } else {
-                        parentRestWorldRotation.identity();
-                    }
-
-                    if (track instanceof THREE.QuaternionKeyframeTrack) {
-                        // Retarget rotation of bvhRig to NormalizedBone.
-                        for (let i = 0; i < track.values.length; i += 4) {
-                            const flatQuaternion = track.values.slice(i, i + 4);
-                            _quatA.fromArray(flatQuaternion);
-                            _quatA.premultiply(parentRestWorldRotation).multiply(restRotationInverse);
-                            _quatA.toArray(flatQuaternion);
-                            flatQuaternion.forEach((v, index) => {
-                                track.values[index + i] = v;
-                            });
-                        }
-                        
-                        // VRM 0.0 requires X/Y axis inversion
-                        tracks.push(
-                            new THREE.QuaternionKeyframeTrack(
-                                `${vrmNodeName}.${propertyName}`,
-                                track.times,
-                                track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 2 === 0 ? -v : v))
-                            )
-                        );
-                    } else if (track instanceof THREE.VectorKeyframeTrack) {
-                        const value = track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 3 !== 1 ? -v : v) * hipsPositionScale);
-                        tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.${propertyName}`, track.times, value));
-                    }
-                }
-            });
-
-            const finalClip = new THREE.AnimationClip(name, clip.duration, tracks);
+        let clipName = name;
+        try {
+            const clip = await _loadBVHClip(clipName);
             vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
-            currentAction = vrmMixer.clipAction(finalClip);
+            currentAction = vrmMixer.clipAction(clip);
             currentAction.play();
-            console.log(`[VRM] Now playing: ${name}`);
-        }, (p) => {}, (err) => console.error("[VRM] BVH Load Error:", err));
-    }
-    function stopAnimation() {
-        if (currentAction) { currentAction.stop(); currentAction = null; }
-        if (vrmMixer) { vrmMixer.stopAllAction(); vrmMixer = null; }
-        
-        if (vrmModel) {
-            const humanoid = vrmModel.humanoid;
-            const resetBone = (name, x, y, z) => {
-                const node = humanoid.getNormalizedBoneNode([name]);
-                if (node) {
-                    node.rotation.set(x || 0, y || 0, z || 0);
-                    if (name === 'Hips') node.position.set(0, 0, 0);
+            console.log(`[VRM] Playing: ${clipName} (cached: ${_bvhCache.has(clipName)})`);
+        } catch (err) {
+            // 404 or parse error — fall back to neutral_idle if this wasn't already it
+            const fallback = _ANIM_FALLBACKS['default'];
+            if (clipName !== fallback) {
+                console.warn(`[VRM] Animation '${clipName}' failed (${err.message}). Falling back to '${fallback}'.`);
+                try {
+                    const fbClip = await _loadBVHClip(fallback);
+                    vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
+                    currentAction = vrmMixer.clipAction(fbClip);
+                    currentAction.play();
+                } catch (fbErr) {
+                    console.error(`[VRM] Fallback animation '${fallback}' also failed:`, fbErr);
                 }
-            };
-            
-            // Reset ALL humanoid bones to T-pose / rest position
-            resetBone('Hips');
-            resetBone('Spine');
-            resetBone('Chest');
-            resetBone('UpperChest');
-            resetBone('Neck');
-            resetBone('Head');
-            
-            // Arms
-            resetBone('LeftUpperArm', 0, 0, 1.35);
-            resetBone('RightUpperArm', 0, 0, -1.35);
-            resetBone('LeftLowerArm', 0, 0, 0.1);
-            resetBone('RightLowerArm', 0, 0, -0.1);
-            resetBone('LeftHand');
-            resetBone('RightHand');
-            
-            // Legs - these were MISSING and caused the sinking
-            resetBone('LeftUpperLeg');
-            resetBone('RightUpperLeg');
-            resetBone('LeftLowerLeg');
-            resetBone('RightLowerLeg');
-            resetBone('LeftFoot');
-            resetBone('RightFoot');
-            resetBone('LeftToes');
-            resetBone('RightToes');
-            
-            // Shoulders
-            resetBone('LeftShoulder');
-            resetBone('RightShoulder');
-
-            // Reset spring bone physics state to prevent residual velocity pulling model down
-            if (vrmModel.springBoneManager) {
-                const springBones = vrmModel.springBoneManager.springBoneGroups || [];
-                springBones.forEach(group => {
-                    if (group && group.springBones) {
-                        group.springBones.forEach(bone => {
-                            if (bone) {
-                                bone.gravity = new THREE.Vector3(0, 0, 0);
-                                bone.velocity = new THREE.Vector3(0, 0, 0);
-                            }
-                        });
-                    }
-                });
+            } else {
+                console.error(`[VRM] Animation '${clipName}' failed:`, err);
             }
         }
     }
 
+    function stopAnimation() {
+        if (currentAction) { currentAction.stop(); currentAction = null; }
+        if (vrmMixer) { vrmMixer.stopAllAction(); vrmMixer = null; }
+
+        if (vrmModel && vrmModel.humanoid) {
+            const humanoid = vrmModel.humanoid;
+
+            // Reset to rest pose stored by three-vrm (rawRestPose / normalizedRestPose).
+            // Iterating over all normalized bones and zeroing rotation returns the model
+            // to its bind pose without needing hardcoded T-pose values.
+            const boneNames = [
+                'hips', 'spine', 'chest', 'upperChest', 'neck', 'head',
+                'leftUpperArm', 'leftLowerArm', 'leftHand',
+                'rightUpperArm', 'rightLowerArm', 'rightHand',
+                'leftUpperLeg', 'leftLowerLeg', 'leftFoot',
+                'rightUpperLeg', 'rightLowerLeg', 'rightFoot',
+            ];
+            for (const boneName of boneNames) {
+                const node = humanoid.getNormalizedBoneNode(boneName);
+                if (!node) continue;
+                // Restore normalized rest quaternion (zero = identity = bind pose)
+                node.quaternion.set(0, 0, 0, 1);
+                if (boneName === 'hips') node.position.set(0, 0, 0);
+            }
+
+            // Apply the model's own A-pose arm angles (avoids ugly T-pose with arms straight)
+            const lArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+            const rArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+            const lLow = humanoid.getNormalizedBoneNode('leftLowerArm');
+            const rLow = humanoid.getNormalizedBoneNode('rightLowerArm');
+            if (lArm) lArm.rotation.z =  1.35;
+            if (rArm) rArm.rotation.z = -1.35;
+            if (lLow) lLow.rotation.z =  0.1;
+            if (rLow) rLow.rotation.z = -0.1;
+        }
+    }
     // ── TALKING ANIMATION ──────────────────────────────────────────────────
     function toggleTalking(on) {
         document.getElementById('logo-wrap').classList.toggle('avatar-talking', on);
@@ -4035,6 +4114,30 @@
             setInterval(fetchIntelligence, 300000);
             initAgent();
             startPolling();
+
+            // ── BVH preload: warm the cache for the most-used animations ──
+            // Runs after a short delay so the VRM model finishes loading first.
+            // Using requestIdleCallback keeps this from blocking the initial render.
+            const _PRELOAD_ANIMS = [
+                'neutral_idle', 'sit_idle', 'curiosity', 'joy',
+                'neutral_idle2', 'sit_idle2', 'approval', 'excitement',
+            ];
+            const _schedulePreload = () => {
+                let i = 0;
+                function _preloadNext() {
+                    if (i >= _PRELOAD_ANIMS.length || !vrmModel) return;
+                    const name = _PRELOAD_ANIMS[i++];
+                    if (!_bvhCache.has(name)) {
+                        _loadBVHClip(name)
+                            .then(() => console.log(`[VRM] Preloaded: ${name}`))
+                            .catch(() => {});  // silent — preload is best-effort
+                    }
+                    setTimeout(_preloadNext, 400);  // stagger to avoid I/O burst
+                }
+                _preloadNext();
+            };
+            // Wait for VRM to initialise (it loads asynchronously)
+            setTimeout(_schedulePreload, 3000);
         } catch(e) { console.error('Init error:', e); }
     };
 </script>

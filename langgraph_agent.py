@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 langgraph_agent.py — Marin Cognitive Architecture (LangGraph)
@@ -30,6 +29,9 @@ from config import (
 )
 import config
 from utils.shared_logic import USER_CONTEXT
+import database
+from utils.persona import analyze_marin_vibe, get_character_prompt
+from director_engine import make_director_tag, vibe_to_emotion
 
 # ── Logging Utility ──────────────────────────────────────────────────────────
 AGENT_LOG = Path(os.path.dirname(os.path.abspath(__file__))) / "logs" / "agent_debug.log"
@@ -40,7 +42,7 @@ def log_agent(msg: str):
     try:
         # Use utf-8 to prevent encoding crashes
         with open(AGENT_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
+            f.write(f"[{ts}] {msg}\\n")
         print(f"[AgentLog] {msg}")
     except: pass
 
@@ -50,7 +52,7 @@ def fix_spacing(text: str) -> str:
     # 1. camelCase: wordWord -> word Word
     text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
     # 2. Punctuation: word,word -> word, word
-    text = re.sub(r'([,\.!?;:])([a-zA-Z])', r'\1 \2', text)
+    text = re.sub(r'([,.!?;:])([a-zA-Z])', r'\1 \2', text)
     # 3. Common glued words (aggressive for 0.5B models)
     glued = [
         (r'([iI])(don\'?t)', r'\1 \2'),
@@ -76,7 +78,6 @@ def fix_spacing(text: str) -> str:
     ]
     for pattern, repl in glued:
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-
     # 4. Final cleanup
     text = re.sub(r'  +', ' ', text)
     return text
@@ -97,7 +98,7 @@ def strip_tool_schemas(text: str) -> str:
     text = re.sub(r'```(?:json|python)?\s*\[\s*\{[^}]*"(?:name|function)"[^}]*\}[^`]*```', '', text, flags=re.DOTALL)
     
     # 3. Remove standalone function definitions
-    text = re.sub(r'(?:async\s+)?def\s+\w+\([^)]*\).*?(?=\n\n|\Z)', '', text, flags=re.DOTALL)
+    text = re.sub(r'(?:async\s+)?def\s+\w+\([^)]*\)\s*.*?(?=\n\n|\Z)', '', text, flags=re.DOTALL)
     
     # 4. Remove OpenAI-style function calling artifacts
     text = re.sub(r'<\|tool_use\|>.*?</\|tool_use\|>', '', text, flags=re.DOTALL)
@@ -135,7 +136,7 @@ def timer_tool(duration: str) -> str:
             seconds = int(duration)
     except ValueError:
         return f"Invalid duration: {duration}"
-
+    
     timer_script = Path(__file__).parent / "tools" / "timer.py"
     subprocess.Popen(
         [sys.executable, str(timer_script), "--duration", str(seconds)],
@@ -166,10 +167,10 @@ def map_tool(city: str, destination: str = "") -> str:
 
 @tool
 def terminal_tool(command: str) -> str:
-    """Run a shell command in the Docker sandbox."""
+    """Run a shell command on the system."""
     from utils.command_runner import run_command
     code, output = run_command(command)
-    return f"Exit Code: {code}\nOutput: {output}"
+    return f"Exit Code: {code}\\nOutput: {output}"
 
 @tool
 async def rag_search(query: str) -> str:
@@ -197,7 +198,7 @@ def file_tool(action: str, path: str, content: str = "") -> str:
     p = Path(path).expanduser().resolve()
     try:
         if action == "list":
-            return "\n".join([f.name for f in p.iterdir()]) if p.is_dir() else "Not a directory."
+            return "\\n".join([f.name for f in p.iterdir()]) if p.is_dir() else "Not a directory."
         if action == "read":
             return p.read_text()[:2000]
         if action == "write":
@@ -265,7 +266,7 @@ def book_download_tool(query: str) -> str:
             results = search_open_library(query)
         if results:
             titles = [f"• {r.get('title', 'Unknown')} by {r.get('author', 'Unknown')}" for r in results[:5]]
-            return "Found books:\n" + "\n".join(titles)
+            return "Found books:\\n" + "\\n".join(titles)
         return "No books found for that query."
     except Exception as e:
         return f"Error: {e}"
@@ -284,9 +285,14 @@ def math_plot_tool(expression: str = "heart") -> str:
             # Check if it's a known preset key
             key = expression.strip().lower().replace(" ", "_")
             if key in PRESETS:
-                data = {"x_expr": PRESETS[key][0], "y_expr": PRESETS[key][1],
-                        "t_start": PRESETS[key][2], "t_end": PRESETS[key][3],
-                        "n_points": 300, "r": 10}
+                data = {
+                    "x_expr": PRESETS[key][0], 
+                    "y_expr": PRESETS[key][1],
+                    "t_start": PRESETS[key][2], 
+                    "t_end": PRESETS[key][3],
+                    "n_points": 300, 
+                    "r": 10
+                }
             else:
                 return f"Couldn't understand expression '{expression}'. Try 'heart', 'circle', 'spiral', or an equation like 'y = x^2'."
         
@@ -380,15 +386,15 @@ def youtube_search_tool(query: str) -> str:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
             video = info['entries'][0] if 'entries' in info else info
-
+        
         video_id = video.get('id', '')
         title    = video.get('title', query)
-
+        
         if not video_id:
             import urllib.parse
             burl = f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
             return f"Search failed. Show results: __BROWSER__{burl} __ANIM__curiosity"
-
+        
         # ── Fetch transcript for mood classification ──────────────────────────
         transcript = ""
         try:
@@ -397,26 +403,23 @@ def youtube_search_tool(query: str) -> str:
             transcript = raw[:2000] if raw else ""
         except Exception:
             pass  # transcript is optional — we'll classify on title alone
-
+        
         # ── Classify mood and build timed director script ──────────────────────
         from director_engine import make_video_director_script
-        allow_dance = bool(re.search(r'\b(dance|dancing|twerk|boogie|groove)\b', query, re.I))
-        director_tag, mood = make_video_director_script(
-            video_id, transcript, title, allow_dance=allow_dance
-        )
-
+        director_tag, mood = make_video_director_script(video_id, transcript, title)
+        
         mood_line = {
-            "sad":        "Okay… putting this on. I'll watch with you.",
-            "emotional":  "This one's got feeling. I'm here with you.",
-            "hype":       "Ooh this goes hard — putting it on!",
-            "chill":      "Nice vibe. Let's just watch this together~",
-            "dance":      "Hehe okay, let's move to this one~",
-            "hype_metal": "Alright, cranking this up!",
-            "normal":     "Found it — putting it on the TV now.",
-        }.get(mood, "Found it — putting it on the TV now.")
-
+            "sad":        "I found it... I'll feel every note with you 🥺",
+            "emotional":  "This one hits deep. I'll be right here with you 💕",
+            "hype":       "LET'S GOOO!! Hehehe~~ 🔥",
+            "chill":      "Perfect vibe~ I'll chill with you 🌙",
+            "dance":      "Time to dance!! Ummaaah~~ 💃",
+            "hype_metal": "YESSS!! This is FIRE!! 🤘",
+            "normal":     "Casting it to the TV now~",
+        }.get(mood, "Casting it to the TV now~")
+        
+        # Return clean output: human-like line + control tags only (no forced template instructions)
         return f"{mood_line} __YOUTUBE__{video_id} {director_tag}"
-
     except Exception as e:
         return f"YouTube search error: {e}"
 
@@ -458,7 +461,7 @@ def habit_tool(action: str = "list", task_args: str = "") -> str:
     except Exception as e:
         return f"Error: {e}"
 
-# ── Core Tools (General Use) ─────────────────────────────────────────
+# ── Core Tools (General Use) ─────────────────────────────────────────────────
 CORE_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
     rag_search, learn_topic_tool, file_tool,
@@ -479,7 +482,6 @@ ALL_TOOLS = CORE_TOOLS
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
 # ── Agent State ──────────────────────────────────────────────────────────────
-
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], lambda x, y: x + y]
     plan: List[dict]
@@ -490,18 +492,22 @@ class AgentState(TypedDict):
     user_vibe: str
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
+STRATEGIST_SYSTEM = """You are Marin's intelligent assistant. Your job is to decide which tool (if any) to call for the user's request.
 
-STRATEGIST_SYSTEM = """You are Marin's Strategist. Your goal is to select the right tool to fulfill the user's request.
-AVAILABLE TOOLS: {tools}
-Call the appropriate tool natively using the provided functions.
-If no tool is needed, just respond with plain text describing your intent.
-To show a website or YouTube search on the projector directly, you can skip tools and just respond with the tag in plain text: Opening browser to __BROWSER__https://www.youtube.com/results?search_query=query"""
+Available tools: {tools}
+
+Instructions:
+- If the user wants information or an action a tool can handle, call that tool with correct arguments.
+- If no tool is needed (casual chat, opinions, simple questions), just respond naturally with plain text.
+- Never output JSON arrays or function schemas — use the tool calling interface directly.
+- For browser/projector requests (show a website), respond with plain text containing __BROWSER__<url>.
+- Keep responses concise."""
 
 async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
     last = state["messages"][-1]
     user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
-
+    
     # 1. Regex Priority
     from marin_fier import classify
     cls = classify(user_msg)
@@ -509,7 +515,7 @@ async def node_strategist(state: AgentState) -> dict:
         plan = [{"action": cls["intent"], "args": cls["params"], "rationale": "Regex high-confidence"}]
         log_agent(f"Strategist (Regex): {plan}")
         return {"plan": plan}
-
+    
     # 2. Level-1 Semantic Router (Tool Classification)
     from utils.tool_registry import get_relevant_tools
     relevant_tool_names = get_relevant_tools(user_msg)
@@ -521,16 +527,16 @@ async def node_strategist(state: AgentState) -> dict:
     else:
         filtered_tools = [t.name for t in ALL_TOOLS if t.name in relevant_tool_names]
         log_agent(f"Strategist (Semantic Router): Filtered {len(ALL_TOOLS)} down to {len(filtered_tools)} tools.")
-
+    
     # 3. LLM Fallback with tool binding
     plan = []
     try:
         # Get tools to bind
         tools_to_bind = [tools_by_name[name] for name in filtered_tools if name in tools_by_name]
-
+        
         llm = get_llm(STRATEGY_MODEL, bind_tools=tools_to_bind)
         sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=filtered_tools))
-
+        
         # LangGraph may serialize messages to dicts — convert back to BaseMessage
         raw_msgs = list(state["messages"])
         clean_msgs = []
@@ -544,10 +550,10 @@ async def node_strategist(state: AgentState) -> dict:
                     clean_msgs.append(AIMessage(content=content))
                 else:
                     clean_msgs.append(HumanMessage(content=content))
-
+        
         # Invoke with tool binding
         resp = await llm.ainvoke([sys_msg] + clean_msgs)
-
+        
         # Parse tool calls from response
         if hasattr(resp, 'tool_calls') and resp.tool_calls:
             plan = [
@@ -555,19 +561,13 @@ async def node_strategist(state: AgentState) -> dict:
                 for call in resp.tool_calls
             ]
         else:
-            # Fallback to JSON parsing if no tool calls, but also handle plain text
+            # Fallback to JSON parsing if no tool calls
             match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
-            if match:
-                try:
-                    plan = json.loads(match.group(0))
-                except Exception:
-                    plan = [{"action": "respond", "args": {}, "rationale": resp.content}]
-            else:
-                plan = [{"action": "respond", "args": {}, "rationale": resp.content}]
+            plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
     except Exception as e:
         log_agent(f"Strategist LLM Error: {e}")
         plan = [{"action": "respond", "args": {}, "rationale": f"LLM execution failed: {e}"}]
-
+    
     log_agent(f"Strategist (LLM): {plan}")
     return {"plan": plan}
 
@@ -579,7 +579,7 @@ async def node_executor(state: AgentState) -> dict:
     if completed >= len(plan):
         log_agent("Executor: All steps done.")
         return {"tool_outputs": tool_outputs}
-
+    
     step = plan[completed]
     action = step.get("action", "respond")
     args = step.get("args", {})
@@ -587,117 +587,156 @@ async def node_executor(state: AgentState) -> dict:
     if action == "respond":
         tool_outputs["__final_response__"] = step.get("rationale", "I'm ready.")
         return {"tool_outputs": tool_outputs}
-
+    
     log_agent(f"Executor: Calling {action}...")
     if action in tools_by_name:
-        try:
-            # Inject context
-            if action in ("learn_topic_tool", "rag_search", "file_tool"):
-                args["user_id"] = state.get("user_id", "USR-MASTER")
-                args["session_id"] = state.get("session_id", "default")
-            
-            res = await tools_by_name[action].ainvoke(args)
-            tool_outputs[f"step_{completed}_{action}"] = str(res)
-        except Exception as e:
-            tool_outputs[f"step_{completed}_{action}"] = f"Error: {e}"
+        # Retry up to 2 times with 30s timeout per attempt
+        _TOOL_TIMEOUT = 30.0
+        _MAX_RETRIES = 2
+        last_error = None
+        
+        for attempt in range(_MAX_RETRIES):
+            try:
+                # Inject context for tools that need user/session scope
+                if action in ("learn_topic_tool", "rag_search", "file_tool"):
+                    args["user_id"] = state.get("user_id", "USR-MASTER")
+                    args["session_id"] = state.get("session_id", "default")
+                
+                res = await asyncio.wait_for(
+                    tools_by_name[action].ainvoke(args),
+                    timeout=_TOOL_TIMEOUT
+                )
+                result_str = str(res).strip()
+                
+                # Validate result — don't pass empty or pure error strings to persona
+                if not result_str:
+                    log_agent(f"Executor: {action} returned empty result on attempt {attempt+1}")
+                    last_error = "Empty result"
+                    continue
+                
+                # If the result is just an error message, retry
+                if result_str.lower().startswith("error:") and attempt < _MAX_RETRIES - 1:
+                    log_agent(f"Executor: {action} returned error on attempt {attempt+1}: {result_str[:80]}")
+                    last_error = result_str
+                    await asyncio.sleep(0.5 * (attempt + 1))  # exponential backoff
+                    continue
+                
+                tool_outputs[f"step_{completed}_{action}"] = result_str
+                log_agent(f"Executor: {action} succeeded (attempt {attempt+1})")
+                break
+                
+            except asyncio.TimeoutError:
+                last_error = f"Tool {action} timed out after {_TOOL_TIMEOUT}s"
+                log_agent(f"Executor: {last_error} (attempt {attempt+1})")
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(1.0)
+            except Exception as e:
+                last_error = str(e)
+                log_agent(f"Executor: {action} raised exception on attempt {attempt+1}: {e}")
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+        else:
+            # All retries exhausted
+            tool_outputs[f"step_{completed}_{action}"] = f"[Tool {action} unavailable: {last_error}]"
+            log_agent(f"Executor: {action} failed all {_MAX_RETRIES} attempts. Last error: {last_error}")
+    else:
+        log_agent(f"Executor: Unknown action '{action}' — skipping.")
+        tool_outputs[f"step_{completed}_{action}"] = f"[Unknown tool: {action}]"
     
     return {"tool_outputs": tool_outputs}
 
 async def persona_node(state: AgentState) -> dict:
     log_agent("Persona started.")
     tool_outputs = state.get("tool_outputs", {})
-    
-    # Collect data
+
+    # Collect tool results
     raw_results = [v for k, v in sorted(tool_outputs.items()) if k.startswith("step_")]
     final_raw = tool_outputs.get("__final_response__", "")
-    
-    content = "\n\n".join(raw_results) if raw_results else final_raw
-    if not content: content = "Task completed."
 
-    # Extract UI control tags to prevent the LLM from dropping or mangling them
+    content = "\n\n".join(raw_results) if raw_results else final_raw
+    if not content:
+        content = "Task completed."
+
+    # ── Extract UI control tags so the LLM can't drop or mangle them ──────
     tags_to_preserve = []
     for pattern in [
-        r'__YOUTUBE__[\w-]+', r'__DIRECTOR__[A-Za-z0-9+/=]+', r'__DANCE__',
-        r'__STREAM__\S+', r'__BROWSER__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__',
+        r'__YOUTUBE__[\w-]+',
+        r'__DIRECTOR__[A-Za-z0-9+/=]+',
+        r'__DANCE__',
+        r'__STREAM__\S+',
+        r'__BROWSER__\S+',
+        r'__ANIM__\w+',
+        r'__SEARCH__\S+',
+        r'__PROJECTOR_OFF__',
     ]:
-        matches = re.findall(pattern, content)
-        for m in matches:
-            tags_to_preserve.append(m)
-            content = content.replace(m, '')
+        for m in re.findall(pattern, content):
+            if m not in tags_to_preserve:
+                tags_to_preserve.append(m)
+            content = content.replace(m, "")
 
+    # ── Clean LLM meta-instructions that leak from tool output ──────────
+    content = re.sub(r'\[video:[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[mood:[^\]]*\]', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'You MUST include\b[^.]*\.?', '', content, flags=re.IGNORECASE)
+    content = re.sub(r'\[Tool \w+ unavailable[^\]]*\]', '', content)
+    content = re.sub(r'\s{2,}', ' ', content).strip()
+
+    if not content:
+        content = "Done~"
+
+    # ── Build prompt ─────────────────────────────────────────────────────
     role = state.get("role", "guest")
     user_vibe = state.get("user_vibe", "neutral")
     theme = "evil" if role == "owner" else "standard"
 
     llm = get_llm(PERSONA_MODEL)
     from utils.persona import get_character_prompt
-    sys_prompt = get_character_prompt(user_vibe, theme=theme)
+    import database as _db
+    user_name = _db.get_state("USER_NAME") or "Limon"
+    sys_prompt = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
 
     instruction = (
         f"[DATA]: {content.strip()}\n"
         "[TASK]: Say this naturally in your voice — 1-3 short sentences, like a real person. "
         "No JSON, no tool names, no system instructions."
     )
-    
-    try:
-        resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=instruction)])
-        final_text = resp.content
-        if "i cannot" in final_text.lower() or "i'm sorry" in final_text.lower() or "don't have access" in final_text.lower():
-            if len(content) > 10 and not ("i cannot" in content.lower() and "don't have access" in content.lower()):
-                final_text = f"Limon~~! I've checked that for you. Ummaaah~~!\n\n{content}"
-    except:
-        final_text = content
 
-    # ── CRITICAL: Apply text cleanup (Fix #1 & #3) ────────────────────
-    # 1. Remove tool schemas and function definitions
+    try:
+        resp = await llm.ainvoke([
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=instruction),
+        ])
+        final_text = resp.content if hasattr(resp, "content") else str(resp)
+    except Exception as e:
+        log_agent(f"Persona LLM error: {e}")
+        final_text = content  # Fall back to raw tool output
+
+    # ── Post-process ─────────────────────────────────────────────────────
     final_text = strip_tool_schemas(final_text)
-    
-    # 2. Fix spacing issues from small models
     final_text = fix_spacing(final_text)
 
-    # VRM tags for background tool results (if not already from tool output)
+    # If the LLM refused, use the raw content instead
+    if any(p in final_text.lower() for p in ["i cannot", "i can't", "i'm sorry", "i don't have"]):
+        if len(content) > 10:
+            final_text = content
+
+    # ── Add VRM/director tags for background tool results ───────────────
     from utils.persona import analyze_marin_vibe
-    from director_engine import build_director_script, encode_director_script, decode_director_script, vibe_to_emotion
+    from director_engine import make_director_tag, vibe_to_emotion
     vibe = analyze_marin_vibe(final_text)
     if not any("__VIBE__" in t for t in tags_to_preserve):
         tags_to_preserve.append(f"__VIBE__{vibe}")
-        
-    # Always build the speaking script for lip-sync and expressions
-    speaking_script = build_director_script(final_text, vibe_to_emotion(vibe))
-    
-    # Check if there's an existing director tag (e.g., background anim from youtube)
-    existing_director_idx = -1
-    for i, t in enumerate(tags_to_preserve):
-        if t.startswith("__DIRECTOR__"):
-            existing_director_idx = i
-            break
-            
-    if existing_director_idx != -1:
-        # Merge speaking script with the background script
-        # Push background animations further in time so they happen after speaking
-        max_speaking_t = max([a['t'] + a.get('dur', 0) for a in speaking_script], default=0.0)
-        
-        existing_encoded = tags_to_preserve[existing_director_idx][len("__DIRECTOR__"):]
-        existing_script = decode_director_script(existing_encoded)
-        
-        for action in existing_script:
-            action['t'] += max_speaking_t
-            
-        merged_script = speaking_script + existing_script
-        merged_script.sort(key=lambda x: x['t'])
-        
-        tags_to_preserve[existing_director_idx] = f"__DIRECTOR__{encode_director_script(merged_script)}"
-    else:
-        tags_to_preserve.append(f"__DIRECTOR__{encode_director_script(speaking_script)}")
+    if not any("__DIRECTOR__" in t for t in tags_to_preserve):
+        emotion = vibe_to_emotion(vibe)
+        tags_to_preserve.append(make_director_tag(final_text, emotion))
 
-    # Re-append extracted tags
+    # ── Re-append preserved tags ─────────────────────────────────────────
     if tags_to_preserve:
-        final_text += "\n\n" + " ".join(tags_to_preserve)
-    
+        final_text = final_text.strip() + "\n\n" + " ".join(tags_to_preserve)
+
     return {"messages": [AIMessage(content=final_text.strip())]}
 
 # ── Graph Logic ──────────────────────────────────────────────────────────────
-
 def route_after_executor(state: AgentState):
     if "__final_response__" in state.get("tool_outputs", {}) or len([k for k in state.get("tool_outputs", {}) if k.startswith("step_")]) >= len(state.get("plan", [])):
         return "persona"
@@ -728,7 +767,6 @@ workflow.add_edge("persona", END)
 agent = workflow.compile()
 
 # ── API ──────────────────────────────────────────────────────────────────────
-
 _pending_messages: dict[str, list] = {}
 _PENDING_MSG_TTL = 300  # 5 minutes TTL for pending messages
 
@@ -738,7 +776,7 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
     for m in history:
         msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]))
     msgs.append(HumanMessage(content=message))
-
+    
     try:
         log_agent(f"Starting pipeline for {user_id}")
         result = await agent.ainvoke({
@@ -780,7 +818,7 @@ async def get_pending_message(user_id: str) -> str:
 async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
     await run_background_tools(message, history or [], user_id, role, user_vibe)
     yield "Thinking..."
-
+    
 if __name__ == "__main__":
     async def test():
         async for chunk in stream_chat_with_marin("download assembly books"):
