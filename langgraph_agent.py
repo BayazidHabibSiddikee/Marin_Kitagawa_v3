@@ -274,11 +274,62 @@ def book_download_tool(query: str) -> str:
 def math_plot_tool(expression: str = "heart") -> str:
     """Plot mathematical equations and parametric curves."""
     try:
-        from tools.mathplot import plot, list_presets
-        result = plot(expression)
-        return result if result else "Plot generated successfully."
+        from tools.mathplot import _try_nlp, plot, PRESETS
+        import os
+        import time
+        
+        # Parse the expression to get x_expr, y_expr, t_start, t_end
+        data = _try_nlp(expression.strip())
+        if data is None:
+            # Check if it's a known preset key
+            key = expression.strip().lower().replace(" ", "_")
+            if key in PRESETS:
+                data = {"x_expr": PRESETS[key][0], "y_expr": PRESETS[key][1],
+                        "t_start": PRESETS[key][2], "t_end": PRESETS[key][3],
+                        "n_points": 300, "r": 10}
+            else:
+                return f"Couldn't understand expression '{expression}'. Try 'heart', 'circle', 'spiral', or an equation like 'y = x^2'."
+        
+        x_expr = data.get("x_expr", "r*cos(t)")
+        y_expr = data.get("y_expr", "r*sin(t)")
+        t_start = data.get("t_start", 0.0)
+        t_end = data.get("t_end", 6.2832)
+        n_points = data.get("n_points", 300)
+        r = data.get("r", 10.0)
+        
+        # Save to static/generated as a PNG instead of opening a GUI window
+        import numpy as np
+        import matplotlib
+        matplotlib.use("Agg")  # Non-interactive backend — no GUI window
+        import matplotlib.pyplot as plt
+        
+        t_vals = np.linspace(t_start, t_end, n_points)
+        _SAFE = {
+            "sin": np.sin, "cos": np.cos, "tan": np.tan,
+            "sqrt": np.sqrt, "exp": np.exp, "log": np.log,
+            "abs": np.abs, "pi": np.pi, "e": np.e, "np": np,
+            "__builtins__": {}
+        }
+        safe_ctx = {"t": t_vals, "r": r, **_SAFE}
+        xs = eval(x_expr.replace("^", "**"), {"__builtins__": {}}, safe_ctx)
+        ys = eval(y_expr.replace("^", "**"), {"__builtins__": {}}, safe_ctx)
+        
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.plot(xs, ys, color="royalblue", linewidth=1.5)
+        ax.set_title(expression.title())
+        ax.set_aspect("equal")
+        ax.axis("off")
+        
+        ts = int(time.time())
+        out_path = f"static/generated/mathplot_{ts}.png"
+        os.makedirs("static/generated", exist_ok=True)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=100, bbox_inches="tight")
+        plt.close()
+        
+        return f"Plot saved! __BROWSER__/{out_path}"
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error plotting '{expression}': {e}"
 
 @tool
 def alarm_tool(time: str = "08:00") -> str:
@@ -361,11 +412,8 @@ def youtube_search_tool(query: str) -> str:
             "normal":     "Casting it to the TV now~",
         }.get(mood, "Casting it to the TV now~")
 
-        return (
-            f"{mood_line} "
-            f"You MUST include __YOUTUBE__{video_id} {director_tag} in your response. "
-            f"[video: {title}] [mood: {mood}]"
-        )
+        # Return clean output: human-like line + control tags only (no forced template instructions)
+        return f"{mood_line} __YOUTUBE__{video_id} {director_tag}"
 
     except Exception as e:
         return f"YouTube search error: {e}"
@@ -627,7 +675,7 @@ agent = workflow.compile()
 
 # ── API ──────────────────────────────────────────────────────────────────────
 
-_pending_messages = {}
+_pending_messages: dict[str, list] = {}
 _PENDING_MSG_TTL = 300  # 5 minutes TTL for pending messages
 
 async def run_background_tools(message: str, history: list, user_id: str, role: str, user_vibe: str, session_id: str = "default"):
@@ -651,18 +699,27 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
                 break
         
         if final_msg:
-            _pending_messages[user_id] = (final_msg, time.time())
-            log_agent(f"Result stored for {user_id}")
+            if user_id not in _pending_messages:
+                _pending_messages[user_id] = []
+            _pending_messages[user_id].append((final_msg, time.time()))
+            log_agent(f"Result stored for {user_id} (queue size: {len(_pending_messages[user_id])})")
     except Exception as e:
         log_agent(f"Pipeline Crash: {e}")
 
 async def get_pending_message(user_id: str) -> str:
-    entry = _pending_messages.pop(user_id, None)
-    if entry is None:
+    queue = _pending_messages.get(user_id)
+    if not queue:
         return ""
-    msg, timestamp = entry
-    if time.time() - timestamp > _PENDING_MSG_TTL:
-        return ""  # Expired
+    # Drain expired entries silently
+    now = time.time()
+    _pending_messages[user_id] = [(msg, ts) for msg, ts in queue if now - ts <= _PENDING_MSG_TTL]
+    if not _pending_messages[user_id]:
+        del _pending_messages[user_id]
+        return ""
+    # Dequeue oldest valid message
+    msg, _ = _pending_messages[user_id].pop(0)
+    if not _pending_messages[user_id]:
+        del _pending_messages[user_id]
     return msg
 
 async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):

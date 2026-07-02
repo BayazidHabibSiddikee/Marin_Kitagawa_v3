@@ -344,8 +344,9 @@ async def stream_marin_chat(
         # ── Director Script: timed action sequence for VRM playback ──────────
         try:
             from director_engine import make_director_tag, vibe_to_emotion
-            # Use director_emotion from classifier if available (richer context)
-            director_emotion = cls.get("director_emotion") or vibe_to_emotion(vibe)
+            # Always derive emotion from Marin's OWN response (not the user's input)
+            # This ensures VRM reflects what Marin is saying/feeling, not what user said
+            director_emotion = vibe_to_emotion(vibe)
             director_tag = make_director_tag(full_response, director_emotion)
             yield director_tag
         except Exception as _de:

@@ -37,46 +37,45 @@ def format_table(data, ticker_symbol: str) -> str:
     return "\n".join(lines)
 
 
-def show_stock(ticker_symbol: str):
+def show_stock(ticker_symbol: str) -> str:
+    """Return formatted stock data as a string (no GUI)."""
     try:
-        obj = yf.Ticker(ticker_symbol)
-        price = obj.info.get("regularMarketPrice")
-        name  = obj.info.get("longName", ticker_symbol)
+        obj = yf.Ticker(ticker_symbol.upper())
+        info = obj.info
+        price = info.get("regularMarketPrice") or info.get("currentPrice")
+        name  = info.get("longName", ticker_symbol)
 
-        if price is None and not obj.info.get("symbol"):
-            print(f"[stock] --ticker {ticker_symbol!r} gave empty info - retrying as company name")
+        if price is None and not info.get("symbol"):
             resolved = get_ticker(ticker_symbol)
             if resolved and resolved.upper() != ticker_symbol.upper():
-                show_stock(resolved)
-                return
-            print(f"Could not retrieve price for {ticker_symbol}")
-            return
+                return show_stock(resolved)
+            return f"Could not retrieve price for {ticker_symbol}."
 
-        print(f"\u2192 Fetching data for [{ticker_symbol}]")
         if price is None:
-            print(f"Could not retrieve price for {ticker_symbol}")
-            return
-        print(f"\u2192 {name} - ${price}")
-        e_date = arrow.now().format("YYYY-MM-DD")
-        s_date = arrow.now().shift(days=-30).format("YYYY-MM-DD")
-        data = obj.history(start=s_date, end=e_date)
-        if data.empty:
-            print("No historical data found.")
-            return
-        data = data.reset_index()
-        data['Date_num'] = mdates.date2num(data['Date'])
-        fig, ax = plt.subplots(figsize=(10, 6), dpi=128)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y'))
-        ax.plot(data['Date_num'], data['Close'], c='blue', linewidth=2, label='Close Price')
-        ax.set_title(f"{name} ({ticker_symbol})", fontsize=16, fontweight='bold')
-        ax.set_xlabel('Date'); ax.set_ylabel("Price ($)")
-        fig.autofmt_xdate(rotation=45)
-        ax.grid(True, alpha=0.3); ax.legend()
-        plt.tight_layout()
-        print(format_table(data, ticker_symbol))
-        plt.show()
+            return f"Could not retrieve price for {ticker_symbol}."
+
+        change = info.get("regularMarketChangePercent", 0)
+        market_cap = info.get("marketCap")
+        volume = info.get("regularMarketVolume")
+        high52 = info.get("fiftyTwoWeekHigh")
+        low52  = info.get("fiftyTwoWeekLow")
+
+        arrow_sym = "▲" if change >= 0 else "▼"
+        lines = [
+            f"📈 {name} ({ticker_symbol.upper()})",
+            f"   Price: ${price:,.2f}  {arrow_sym} {abs(change):.2f}%",
+        ]
+        if market_cap:
+            mc_b = market_cap / 1e9
+            lines.append(f"   Market Cap: ${mc_b:.1f}B")
+        if volume:
+            lines.append(f"   Volume: {volume:,}")
+        if high52 and low52:
+            lines.append(f"   52-week: ${low52:,.2f} – ${high52:,.2f}")
+
+        return "\n".join(lines)
     except Exception as e:
-        print(f"Error: {e}")
+        return f"Stock lookup error for {ticker_symbol}: {e}"
 
 
 if __name__ == '__main__':

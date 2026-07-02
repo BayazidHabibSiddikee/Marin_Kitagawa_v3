@@ -2735,8 +2735,23 @@
                 vrmModel.update(delta);
                 
                 if (vrmModel.expressionManager) {
-                    // Simple blinking
-                    const blinkStrength = Math.sin(vrmClock.elapsedTime * 2) > 0.98 ? 1.0 : 0.0;
+                    // ── Smooth blinking ──────────────────────────────────────
+                    // Blink cycle: ~4s open, quick close (0.1s), slower open (0.2s)
+                    const blinkCycle = 4.5; // seconds per blink cycle
+                    const blinkT = (vrmClock.elapsedTime % blinkCycle) / blinkCycle; // 0..1
+                    let blinkStrength = 0;
+                    if (blinkT > 0.95) {
+                        // Closing phase: 0.95→0.975 of cycle (≈0.11s)
+                        const closeT = (blinkT - 0.95) / 0.025;
+                        blinkStrength = Math.min(1.0, closeT * 2);
+                    } else if (blinkT > 0.975) {
+                        // Fully closed at peak
+                        blinkStrength = 1.0;
+                    } else if (blinkT > 0.975 - 0.04) {
+                        // Already handled above; opening phase: 0.975→end (≈0.11s)
+                        const openT = (blinkT - 0.975) / 0.025;
+                        blinkStrength = Math.max(0, 1.0 - openT * 2);
+                    }
                     vrmModel.expressionManager.setValue('blink', blinkStrength);
 
                     // Lip sync simulation if talking
@@ -3028,11 +3043,15 @@
             }
             if (standby) standby.style.display = 'none';
             // Dance mode is only triggered by explicit __DANCE__ tag from the AI
+            // Trigger a relaxed "watching together" VRM sequence if no director script is already playing
+            _triggerWatchingAnimation();
             return;
         }
 
         if (tvIframe) { tvIframe.src = url; tvIframe.style.display = 'block'; }
         if (standby) standby.style.display = 'none';
+        // Also trigger watching animation for generic stream content
+        _triggerWatchingAnimation();
     }
 
     function hideProjector() {
@@ -3044,8 +3063,36 @@
         if (typeof stopDanceMode === 'function') stopDanceMode();
     }
 
-    
-    
+    // ── Watching Together Animation ───────────────────────────────────────────
+    // Plays a relaxed "co-watching" sequence when a video/stream starts.
+    // Only fires if no director script is currently running.
+    let _watchingTimeout = null;
+    function _triggerWatchingAnimation() {
+        // Don't interrupt an active director script
+        if (typeof _directorActive !== 'undefined' && _directorActive) return;
+
+        if (_watchingTimeout) { clearTimeout(_watchingTimeout); _watchingTimeout = null; }
+
+        // Build a gentle watching sequence: sit → subtle reactions → idle loop
+        const watchingScript = [
+            { t: 0.0,  type: "anim", value: "sit_idle",      dur: 20.0 },
+            { t: 0.0,  type: "expr", value: "neutral",        dur: 20.0 },
+            { t: 20.0, type: "anim", value: "neutral_idle",   dur: 20.0 },
+            { t: 40.0, type: "anim", value: "curiosity",      dur: 10.0 },
+            { t: 40.0, type: "expr", value: "thinking",       dur: 10.0 },
+            { t: 50.0, type: "anim", value: "sit_idle2",      dur: 20.0 },
+            { t: 50.0, type: "expr", value: "neutral",        dur: 20.0 },
+            { t: 70.0, type: "anim", value: "neutral_idle2",  dur: 20.0 },
+            { t: 90.0, type: "anim", value: "approval",       dur: 8.0  },
+            { t: 90.0, type: "expr", value: "happy",          dur: 5.0  },
+            { t: 98.0, type: "anim", value: "sit_idle",       dur: 999.0 },
+            { t: 98.0, type: "expr", value: "neutral",        dur: 999.0 },
+        ];
+
+        if (typeof playDirectorScript === 'function') {
+            playDirectorScript(watchingScript);
+        }
+    }
 
     async function playAnimation(name) {
         if (!vrmModel) { console.error("[VRM] Model not loaded yet."); return; }
@@ -3923,6 +3970,31 @@
                     if (streamMatch) msg = msg.replace(streamMatch[0], '');
                     if (youtubeMatch) msg = msg.replace(youtubeMatch[0], '');
                     if (browserMatch) msg = msg.replace(browserMatch[0], '');
+
+                    // ── __DANCE__ — start dance loop for music/hype moods ──
+                    if (msg.includes('__DANCE__')) {
+                        startDanceMode();
+                        msg = msg.replace(/__DANCE__/g, '');
+                    }
+
+                    // ── __DIRECTOR__ — play timed animation script ──────────
+                    const dirMatch = msg.match(/__DIRECTOR__([A-Za-z0-9+/=]+)/);
+                    if (dirMatch) {
+                        try {
+                            const decoded = atob(dirMatch[1]);
+                            const script = JSON.parse(decoded);
+                            playDirectorScript(script);
+                        } catch(e) { console.warn('[Director] Pending parse error:', e); }
+                        msg = msg.replace(/__DIRECTOR__[A-Za-z0-9+/=]+/, '');
+                    }
+
+                    // ── __VIBE__ — set mood avatar ──────────────────────────
+                    const vibeMatch = msg.match(/__VIBE__(\w+)/);
+                    if (vibeMatch) {
+                        setMoodAvatar(vibeMatch[1]);
+                        msg = msg.replace(/__VIBE__\w+/, '');
+                    }
+
                     const animMatch = msg.match(/__ANIM__(\w+)/);
                     if (animMatch) {
                         playAnimation(animMatch[1]);

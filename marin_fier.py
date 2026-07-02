@@ -84,12 +84,20 @@ def _regex_stage(text: str) -> dict | None:
     # Habits / Tasks
     if re.search(r'\b(habit|habits|todo|task)\b', lower):
         if "status" in lower or "list" in lower:
-            return {"intent": "habit_tool", "params": {"action": "list", "args": []}, "confidence": 0.9}
+            return {"intent": "habit_tool", "params": {"action": "list", "task_args": ""}, "confidence": 0.9}
         if "stats" in lower:
-            return {"intent": "habit_tool", "params": {"action": "stats", "args": []}, "confidence": 0.9}
+            return {"intent": "habit_tool", "params": {"action": "stats", "task_args": ""}, "confidence": 0.9}
         if "today" in lower:
-            return {"intent": "habit_tool", "params": {"action": "today", "args": []}, "confidence": 0.9}
-        return {"intent": "habit_tool", "params": {"action": "list", "args": []}, "confidence": 0.8}
+            return {"intent": "habit_tool", "params": {"action": "today", "task_args": ""}, "confidence": 0.9}
+        if "add" in lower or "create" in lower or "new" in lower:
+            # Try to extract the task title from the message
+            task_title = re.sub(r'\b(add|create|new|habit|habits|todo|task|a|an)\b', '', lower).strip()
+            task_title = re.sub(r'\s+', ' ', task_title).strip()
+            return {"intent": "habit_tool", "params": {"action": "add", "task_args": task_title or "new task"}, "confidence": 0.9}
+        if "done" in lower or "complete" in lower or "finish" in lower:
+            task_id = re.search(r'\b(\d+)\b', lower)
+            return {"intent": "habit_tool", "params": {"action": "done", "task_args": task_id.group(1) if task_id else ""}, "confidence": 0.9}
+        return {"intent": "habit_tool", "params": {"action": "list", "task_args": ""}, "confidence": 0.8}
 
     # Standard Tools
     if _LIST_PAT.search(lower):
@@ -106,21 +114,105 @@ def _regex_stage(text: str) -> dict | None:
              return {"intent": "file_tool", "params": {"action": "read", "path": fname}, "confidence": 0.9}
 
     if _TIMER_PAT.search(lower):
-        return {"intent": "timer_tool", "params": {"duration": "10m"}, "confidence": 0.9}
+        # Extract duration: "10 minutes", "5m", "30 seconds", "1 hour", etc.
+        dur_match = re.search(r'(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b', lower)
+        if dur_match:
+            val, unit = dur_match.group(1), dur_match.group(2).lower()
+            if unit.startswith('h'):
+                duration = f"{val}h"
+            elif unit.startswith('m'):
+                duration = f"{val}m"
+            else:
+                duration = f"{val}s"
+        else:
+            duration = "10m"
+        return {"intent": "timer_tool", "params": {"duration": duration}, "confidence": 0.9}
     if _ALARM_PAT.search(lower):
-        return {"intent": "alarm_tool", "params": {"time": "08:00"}, "confidence": 0.9}
+        # Extract time: "8am", "8:30", "20:00", "at 7", etc.
+        time_match = re.search(r'\b(\d{1,2}):(\d{2})\s*(am|pm)?\b|\b(\d{1,2})\s*(am|pm)\b', lower)
+        if time_match:
+            if time_match.group(1):
+                hr, mn = int(time_match.group(1)), int(time_match.group(2))
+                ampm = (time_match.group(3) or "").lower()
+                if ampm == "pm" and hr != 12: hr += 12
+                if ampm == "am" and hr == 12: hr = 0
+                alarm_time = f"{hr:02d}:{mn:02d}"
+            else:
+                hr = int(time_match.group(4))
+                ampm = (time_match.group(5) or "").lower()
+                if ampm == "pm" and hr != 12: hr += 12
+                if ampm == "am" and hr == 12: hr = 0
+                alarm_time = f"{hr:02d}:00"
+        else:
+            alarm_time = "08:00"
+        return {"intent": "alarm_tool", "params": {"time": alarm_time}, "confidence": 0.9}
     if _CRYPTO_PAT.search(lower):
-        return {"intent": "crypto_tool", "params": {"coin": "bitcoin"}, "confidence": 0.9}
+        # Extract coin name
+        coin_map = {
+            "btc": "bitcoin", "bitcoin": "bitcoin",
+            "eth": "ethereum", "ethereum": "ethereum",
+            "sol": "solana", "solana": "solana",
+            "bnb": "binancecoin", "binance coin": "binancecoin",
+            "ada": "cardano", "cardano": "cardano",
+            "doge": "dogecoin", "dogecoin": "dogecoin",
+            "xrp": "ripple", "ripple": "ripple",
+        }
+        coin = "bitcoin"
+        for alias, name in coin_map.items():
+            if alias in lower:
+                coin = name
+                break
+        return {"intent": "crypto_tool", "params": {"coin": coin}, "confidence": 0.9}
     if _STOCK_PAT.search(lower):
-        return {"intent": "stock_tool", "params": {"symbol": "AAPL"}, "confidence": 0.9}
+        # Extract ticker symbol (all-caps word) or well-known company names
+        ticker_match = re.search(r'\b([A-Z]{1,5})\b', text)  # use original text for case
+        company_tickers = {
+            "apple": "AAPL", "tesla": "TSLA", "google": "GOOGL", "alphabet": "GOOGL",
+            "microsoft": "MSFT", "amazon": "AMZN", "meta": "META", "facebook": "META",
+            "nvidia": "NVDA", "netflix": "NFLX", "twitter": "TWTR",
+        }
+        symbol = "AAPL"
+        for company, ticker in company_tickers.items():
+            if company in lower:
+                symbol = ticker
+                break
+        else:
+            if ticker_match:
+                symbol = ticker_match.group(1)
+        return {"intent": "stock_tool", "params": {"symbol": symbol}, "confidence": 0.9}
     if _NEWS_PAT.search(lower):
-        return {"intent": "news_tool", "params": {}, "confidence": 0.9}
+        # Extract source name if mentioned
+        news_sources = ["BBC", "Reuters", "AlJazeera", "AP", "DW", "France24", "TheGuardian",
+                        "NDTV", "Bloomberg", "CNBC", "TechCrunch", "TheVerge", "DhakaTribune", "DailyStarBD"]
+        source = "BBC"
+        for s in news_sources:
+            if s.lower() in lower:
+                source = s
+                break
+        return {"intent": "news_tool", "params": {"source": source}, "confidence": 0.9}
     if _WEATHER_PAT.search(lower):
-        return {"intent": "weather_tool", "params": {"city": "Dhaka"}, "confidence": 0.9}
+        # Extract city name: "weather in Dhaka", "temperature in London", etc.
+        city_match = re.search(r'(?:weather|temp(?:erature)?|humidity|rain|sun)\s+(?:in|at|for)\s+([A-Za-z ]+?)(?:\?|$|\s+(?:today|now|right))', lower)
+        if city_match:
+            city = city_match.group(1).strip().title()
+        else:
+            # Try to find a capitalized word that looks like a city
+            city_cap = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
+            city = city_cap.group(1) if city_cap else "Dhaka"
+        return {"intent": "weather_tool", "params": {"city": city}, "confidence": 0.9}
     if _MAP_PAT.search(lower):
-        return {"intent": "map_tool", "params": {"city": "Dhaka"}, "confidence": 0.9}
+        city_match = re.search(r'(?:map|location|places|find|pin)\s+(?:of|in|at|for)?\s+([A-Za-z ]+?)(?:\?|$)', lower)
+        if city_match:
+            city = city_match.group(1).strip().title()
+        else:
+            city_cap = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
+            city = city_cap.group(1) if city_cap else "Dhaka"
+        return {"intent": "map_tool", "params": {"city": city}, "confidence": 0.9}
     if _MATH_PAT.search(lower):
-        return {"intent": "math_plot_tool", "params": {"expression": "heart"}, "confidence": 0.9}
+        # Extract expression: "plot y=x^2", "draw a heart", "graph sin(x)", etc.
+        expr_match = re.search(r'(?:plot|draw|graph|equation|calculate)\s+(?:a\s+|the\s+|me\s+)?(.+)', lower)
+        expression = expr_match.group(1).strip() if expr_match else "heart"
+        return {"intent": "math_plot_tool", "params": {"expression": expression}, "confidence": 0.9}
 
     return None
 
