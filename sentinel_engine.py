@@ -378,8 +378,18 @@ async def _stream_native(url: str, body: dict, headers: dict):
                         pass
 
 # ── Admin API ────────────────────────────────────────────────────────────────────
+# Admin authentication - requires X-Admin-Key header
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "marin-admin-key-change-me")
+
+def verify_admin_auth(request: Request) -> bool:
+    """Verify admin API key from request header."""
+    auth_header = request.headers.get("X-Admin-Key", "")
+    return auth_header == ADMIN_API_KEY
+
 @sentinel_app.get("/admin/stats")
-async def admin_stats():
+async def admin_stats(request: Request):
+    if not verify_admin_auth(request):
+        raise HTTPException(401, "Invalid admin key")
     uptime = int(time.time() - stats["start_time"])
     return {
         **stats,
@@ -390,11 +400,15 @@ async def admin_stats():
     }
 
 @sentinel_app.get("/admin/keys")
-async def admin_keys():
+async def admin_keys(request: Request):
+    if not verify_admin_auth(request):
+        raise HTTPException(401, "Invalid admin key")
     return {"keys": pool.keys, "count": len(pool.keys)}
 
 @sentinel_app.post("/admin/keys/add")
 async def admin_add_key(request: Request):
+    if not verify_admin_auth(request):
+        raise HTTPException(401, "Invalid admin key")
     data = await request.json()
     new_key = data.get("key", "").strip()
     if not new_key:
@@ -406,6 +420,8 @@ async def admin_add_key(request: Request):
 
 @sentinel_app.post("/admin/keys/remove")
 async def admin_remove_key(request: Request):
+    if not verify_admin_auth(request):
+        raise HTTPException(401, "Invalid admin key")
     data = await request.json()
     key = data.get("key", "").strip()
     remaining = [k for k in pool.keys if k != key]
@@ -413,7 +429,9 @@ async def admin_remove_key(request: Request):
     return {"ok": True, "total": len(pool.keys)}
 
 @sentinel_app.post("/admin/keys/reload")
-async def admin_reload():
+async def admin_reload(request: Request):
+    if not verify_admin_auth(request):
+        raise HTTPException(401, "Invalid admin key")
     pool.reload()
     return {"ok": True, "total": len(pool.keys)}
 

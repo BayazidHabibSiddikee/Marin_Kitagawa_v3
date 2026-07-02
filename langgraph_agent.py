@@ -488,13 +488,28 @@ workflow.add_node("executor", node_executor)
 workflow.add_node("persona", persona_node)
 
 workflow.set_entry_point("strategist")
-workflow.add_conditional_edges("strategist", lambda x: "persona" if x["plan"][0]["action"] == "respond" else "executor")
+
+def route_strategist(x):
+    """Safe routing function that handles empty plans."""
+    try:
+        plan = x.get("plan", [])
+        if plan and isinstance(plan, list) and len(plan) > 0:
+            if plan[0].get("action") == "respond":
+                return "persona"
+    except (IndexError, KeyError, TypeError):
+        pass
+    return "executor"
+
+workflow.add_conditional_edges("strategist", route_strategist)
 workflow.add_conditional_edges("executor", route_after_executor)
 workflow.add_edge("persona", END)
 
 agent = workflow.compile()
 
 # ── API ──────────────────────────────────────────────────────────────────────
+
+_pending_messages = {}
+_PENDING_MSG_TTL = 300  # 5 minutes TTL for pending messages
 
 async def run_background_tools(message: str, history: list, user_id: str, role: str, user_vibe: str, session_id: str = "default"):
     from utils.shared_logic import get_user_context
@@ -517,14 +532,19 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
                 break
         
         if final_msg:
-            _pending_messages[user_id] = final_msg
+            _pending_messages[user_id] = (final_msg, time.time())
             log_agent(f"Result stored for {user_id}")
     except Exception as e:
         log_agent(f"Pipeline Crash: {e}")
 
-_pending_messages = {}
 async def get_pending_message(user_id: str) -> str:
-    return _pending_messages.pop(user_id, "")
+    entry = _pending_messages.pop(user_id, None)
+    if entry is None:
+        return ""
+    msg, timestamp = entry
+    if time.time() - timestamp > _PENDING_MSG_TTL:
+        return ""  # Expired
+    return msg
 
 async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
     await run_background_tools(message, history or [], user_id, role, user_vibe)

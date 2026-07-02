@@ -96,9 +96,12 @@ def _process_message_sync(chat_id: int, user_text: str, user_name: str):
                 from marin import main as marin_main
                 from utils.shared_logic import MASTER_USER
 
+                # Build proper user dict for marin main
+                user_dict = {"user_id": "USR-MASTER", "username": MASTER_USER, "role": "owner"}
+
                 # Collect full response from streaming
                 full_response = []
-                async for chunk in marin_main(user_text, user=MASTER_USER):
+                async for chunk in marin_main(user_text, user=user_dict):
                     if chunk and not chunk.startswith("__"):
                         full_response.append(chunk)
 
@@ -235,7 +238,7 @@ async def _poll_loop():
                     _send_text(chat_id,
                         f"🤖 **STATUS**\n"
                         f"Quiet hours: {st['quiet_hours']}\n"
-                        f"Proactive msgs this session: {st['session_counts'].get('marin', 0)}"
+                        f"Streak counts: {st['streak_counts'].get('marin', 0)}"
                     )
                     continue
 

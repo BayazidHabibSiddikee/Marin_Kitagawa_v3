@@ -1,17 +1,19 @@
 import asyncio
 import os
+import sys
 import time
-import secrets
 import threading
-import tempfile
 import shlex
-import subprocess
-import hmac
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+
+# Ensure project root is on sys.path so local modules like llm_manager are found
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 import httpx
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
@@ -29,7 +31,11 @@ import database
 from utils.agent_logic import stream_marin_chat
 from langgraph_agent import ALL_TOOLS, tools_by_name
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Top-level import so lazy imports inside route functions always succeed
+try:
+    import llm_manager
+except ImportError:
+    llm_manager = None  # graceful degradation — will warn at runtime
 
 # ── LIFESPAN ──────────────────────────────────────────────────────────────
 
@@ -654,8 +660,9 @@ async def moduleflow_graph(request: Request):
 
 @app.get("/api/settings")
 async def get_settings():
-    import llm_manager
     from fastapi.responses import JSONResponse
+    providers = llm_manager.get_providers() if llm_manager else []
+    deep_models = llm_manager.get_deep_models() if llm_manager else []
     response = JSONResponse({
         "user_name": database.get_state("USER_NAME") or "Bayazid",
         "location": database.get_state("LOCATION") or "Rajshahi",
@@ -668,8 +675,8 @@ async def get_settings():
         "user_avatar": database.get_state("USER_AVATAR") or "",
         "hf_token": database.get_state("HF_TOKEN") or "",
         # ── Multi-provider fields ──
-        "providers": llm_manager.get_providers(),
-        "deep_models": llm_manager.get_deep_models(),
+        "providers": providers,
+        "deep_models": deep_models,
     })
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return response
@@ -692,7 +699,6 @@ async def upload_avatar(avatar: UploadFile = File(...)):
 
 @app.post("/api/settings")
 async def save_settings(request: Request):
-    import llm_manager
     data = await request.json()
     database.set_state("USER_NAME", data.get("user_name", "Bayazid"))
     database.set_state("LOCATION", data.get("location", "Rajshahi"))
@@ -801,7 +807,6 @@ async def save_chat_tool_context(request: Request):
 async def validate_api_key_endpoint(request: Request):
     """Validate an LLM provider API key."""
     try:
-        import llm_manager
         data = await request.json()
         key = data.get("key", "")
         base_url = data.get("base_url", "https://openrouter.ai/api/v1")

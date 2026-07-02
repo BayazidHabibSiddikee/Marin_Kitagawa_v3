@@ -262,7 +262,7 @@ def configure_telegram(cfg: TelegramConfig, _auth: None = Depends(require_token)
 
 
 @app.get("/telegram")
-def get_telegram():
+def get_telegram(_auth: None = Depends(require_token)):
     env = load_env()
     return {
         "bot_token": env.get("TELEGRAM_BOT_TOKEN", ""),
@@ -299,7 +299,7 @@ def configure_email(cfg: EmailConfig, _auth: None = Depends(require_token)):
 
 
 @app.get("/email")
-def get_email():
+def get_email(_auth: None = Depends(require_token)):
     env = load_env()
     return {
         "gmail_address": env.get("GMAIL_ADDRESS", ""),
@@ -342,7 +342,7 @@ def save_api_keys(keys: APIKeys, _auth: None = Depends(require_token)):
 
 
 @app.get("/api-keys")
-def get_api_keys():
+def get_api_keys(_auth: None = Depends(require_token)):
     settings = {}
     if SETTINGS_FILE.exists():
         settings = json.loads(SETTINGS_FILE.read_text())
@@ -357,7 +357,7 @@ def get_api_keys():
 
 # ── Settings.json editor ──────────────────────────────
 @app.get("/settings")
-def get_settings():
+def get_settings(_auth: None = Depends(require_token)):
     if SETTINGS_FILE.exists():
         return json.loads(SETTINGS_FILE.read_text())
     return {}
@@ -375,7 +375,7 @@ def save_settings(data: SettingsUpdate, _auth: None = Depends(require_token)):
 
 # ── Documents ──────────────────────────────────────────
 @app.get("/documents")
-def list_documents():
+def list_documents(_auth: None = Depends(require_token)):
     docs_dir = MARIN_HOME / "Documents"
     if not docs_dir.exists():
         return {"documents": []}
@@ -393,7 +393,7 @@ def list_documents():
 
 # ── Logs ───────────────────────────────────────────────
 @app.get("/logs")
-def get_logs(lines: int = 50):
+def get_logs(lines: int = 50, _auth: None = Depends(require_token)):
     log_file = LOG_DIR / "health_check.log"
     if not log_file.exists():
         return {"logs": []}
@@ -402,7 +402,7 @@ def get_logs(lines: int = 50):
 
 
 @app.get("/agent/log")
-def get_agent_log(limit: int = 20):
+def get_agent_log(limit: int = 20, _auth: None = Depends(require_token)):
     try:
         from tools.agents.dispatcher import get_agent_log
         return {"logs": get_agent_log(limit)}
@@ -411,7 +411,7 @@ def get_agent_log(limit: int = 20):
 
 
 @app.get("/agent/commands")
-def get_agent_help():
+def get_agent_help(_auth: None = Depends(require_token)):
     try:
         from tools.agents.dispatcher import list_agents
         return {"help": list_agents()}
@@ -422,7 +422,7 @@ def get_agent_help():
 # ── HITL Confirmation endpoints ───────────────────────────────────────────────
 
 @app.get("/confirm/list")
-def list_pending_confirmations_legacy():
+def list_pending_confirmations_legacy(_auth: None = Depends(require_token)):
     from marin import PENDING_CONFIRMATIONS
     pending = {k: v for k, v in PENDING_CONFIRMATIONS.items() if v["status"] == "pending"}
     return {"pending": pending, "count": len(pending)}
@@ -459,7 +459,7 @@ async def reject_confirmation(cid: str = Form(...)):
 # ── Kill Switch endpoints ──────────────────────────────────────────────────────
 
 @app.get("/safety/kill-switch")
-def get_kill_switch_status():
+def get_kill_switch_status(_auth: None = Depends(require_token)):
     from safety import kill_switch
     return {"active": kill_switch.is_active, "state": kill_switch._state}
 

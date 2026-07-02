@@ -193,13 +193,14 @@ class SystemGuard:
         if self.PASSWORD_FILE.exists():
             self._pass_hash = self.PASSWORD_FILE.read_text().strip()
         else:
-            # Default password on first run: 'marin'
+            # Default password on first run - require change
             self.set_password("marin")
-            print("[SECURITY] INITIAL PASSWORD SET TO 'marin'. Change it immediately.")
+            print("[SECURITY] INITIAL PASSWORD SET TO 'marin'. CHANGE IT IMMEDIATELY!")
+            print("[SECURITY] Use: /api/config/telegram or POST to /config/password to change")
 
     def set_password(self, password: str):
-        salt = secrets.token_hex(8)
-        h = hashlib.sha256((salt + password).encode()).hexdigest()
+        salt = secrets.token_hex(16)
+        h = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
         self.PASSWORD_FILE.write_text(f"{salt}:{h}")
         self._pass_hash = f"{salt}:{h}"
         self.PASSWORD_FILE.chmod(0o600)
@@ -208,7 +209,7 @@ class SystemGuard:
         if not self._pass_hash or ":" not in self._pass_hash:
             return False
         salt, h = self._pass_hash.split(":")
-        if hashlib.sha256((salt + password).encode()).hexdigest() == h:
+        if hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex() == h:
             self._authorized_sessions[user_id] = time.time() + self.SESSION_DURATION
             return True
         return False

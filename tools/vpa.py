@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 VOICE_PATH = os.path.expanduser("~/.piper-voices/en_US-amy-medium.onnx")
 
 def _piper(text: str):
-    cmd = f"echo '{text}' | piper-tts --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
+    import shlex
+    cmd = f"echo {shlex.quote(text)} | piper-tts --model {VOICE_PATH} --output_raw | aplay -r 22050 -f S16_LE -t raw"
     subprocess.run(cmd, shell=True, capture_output=True)
 
 def _clean(text: str) -> str:

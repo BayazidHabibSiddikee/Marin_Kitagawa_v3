@@ -132,6 +132,9 @@ def _get_session_key():
 
 SESSION_SECRET_KEY = _get_session_key()
 
+# ── FAISS INDEX ────────────────────────────────────────────────────────────────
+FAISS_DIR = os.path.join(BASE_DIR, "storage", "faiss_index")
+
 # ── EXPORTS ──────────────────────────────────────────────────────────────────
 HOST = _settings.get("server", {}).get("host", "0.0.0.0")
 PORT = _settings.get("server", {}).get("port", 5069)

@@ -262,11 +262,12 @@ async def stream_marin_chat(
 
     # 2. Path A: INSTANT PERSONA RESPONSE
     from langgraph_agent import get_llm
-    from utils.persona import get_character_prompt
     from config import FAST_MODEL
     
     fast_llm = get_llm(FAST_MODEL)
-    system = get_character_prompt(user_vibe, is_owner=is_owner)
+    theme = "evil" if is_owner else "standard"
+    user_name = database.get_state("USER_NAME") or "Limon"
+    system = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
     
     # Make Persona aware of what it is doing
     context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."

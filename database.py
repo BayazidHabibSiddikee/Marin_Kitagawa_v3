@@ -93,6 +93,15 @@ def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # 7. App State (KV store for settings, user prefs, etc.)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         
         conn.commit()
 
@@ -314,4 +323,37 @@ def delete_user_key(user_id: str, provider: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM user_api_keys WHERE user_id = ? AND provider = ?", (user_id, provider))
+        conn.commit()
+
+# ── App State (KV Store) ───────────────────────────────────────────────────────────────────
+
+def set_state(key: str, value) -> None:
+    """Persist a key-value pair to the app_state table (SQLite KV store)."""
+    import json as _json
+    val_str = _json.dumps(value) if not isinstance(value, str) else value
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (key, val_str)
+        )
+        conn.commit()
+
+def get_state(key: str, default=None):
+    """Retrieve a value from the app_state table, returning `default` if missing."""
+    import json as _json
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT value FROM app_state WHERE key = ?", (key,)).fetchone()
+    if not row:
+        return default
+    raw = row["value"]
+    try:
+        return _json.loads(raw)
+    except Exception:
+        return raw
+
+def clear_all_state() -> None:
+    """Wipe the entire app_state table."""
+    with get_db_connection() as conn:
+        conn.execute("DELETE FROM app_state")
         conn.commit()
