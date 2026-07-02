@@ -2813,6 +2813,7 @@
 
     let _directorTimers = [];   // active setTimeout handles
     let _directorTalkActive = false;
+    let _directorScriptActive = false;
 
     // Expression name → VRM expression key mappings
     const _exprMap = {
@@ -2842,8 +2843,14 @@
         // Cancel any pending director actions
         for (const tid of _directorTimers) clearTimeout(tid);
         _directorTimers = [];
+        _directorScriptActive = false;
 
         if (!Array.isArray(script) || script.length === 0) return;
+
+        _directorScriptActive = true;
+        const lastT = Math.max(...script.map(a => (a.t || 0) + (a.dur || 1)));
+        const endTid = setTimeout(() => { _directorScriptActive = false; }, (lastT + 2) * 1000);
+        _directorTimers.push(endTid);
 
         // Track mouth activity for text-driven lipsync
         let talkSegments = script.filter(a => a.type === 'talk');
@@ -2947,8 +2954,8 @@
     let _lastLiveAnimTime = 0;
 
     function liveDirectorScan(chunk) {
-        // Don't interrupt dance mode or a freshly triggered director script
-        if (_danceMode) return;
+        // Don't fight the director script, dance mode, or scripted playback
+        if (_danceMode || _directorScriptActive || _directorTimers.length > 2) return;
         const now = Date.now();
         const lower = chunk.toLowerCase();
         for (const rule of _LIVE_EMOTION_RULES) {

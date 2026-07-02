@@ -240,7 +240,37 @@ async def preprocess_input(user_input: str, image_path: str = None, rag_enabled:
         "rag_context": rag_context
     }
 
-# ── Main Chat Stream Wrapper ──────────────────────────────────────────────────
+# ── Control tags (YouTube, VRM director, projector) ─────────────────────────
+
+_CONTROL_TAG_PATTERNS = [
+    r'__YOUTUBE__[\w-]+',
+    r'__DIRECTOR__[A-Za-z0-9+/=]+',
+    r'__DANCE__',
+    r'__STREAM__\S+',
+    r'__BROWSER__\S+',
+    r'__ANIM__\w+',
+    r'__SEARCH__\S+',
+    r'__PROJECTOR_OFF__',
+]
+
+def extract_control_tags(text: str) -> Tuple[str, List[str]]:
+    """Split control tags from speakable text. Tags are yielded separately to the UI."""
+    if not text:
+        return "", []
+    tags: List[str] = []
+    clean = text
+    for pattern in _CONTROL_TAG_PATTERNS:
+        for match in re.findall(pattern, clean):
+            if match not in tags:
+                tags.append(match)
+            clean = clean.replace(match, "")
+    # Strip LLM meta-instructions that leak from tool output
+    clean = re.sub(r'\[video:[^\]]*\]', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\[mood:[^\]]*\]', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'You MUST include\b[^.]*\.?', '', clean, flags=re.IGNORECASE)
+    clean = re.sub(r'\s{2,}', ' ', clean).strip()
+    return clean, tags
+
 
 async def stream_marin_chat(
     prompt: str, 
@@ -259,6 +289,7 @@ async def stream_marin_chat(
 
     # 1. Fast Intent Detection
     from marin_fier import classify
+    from langgraph_agent import get_llm, log_agent
     log_agent(f"AgentLogic: Classifying prompt: {prompt[:50]}...")
     cls = classify(prompt)
     intent = cls["intent"]
@@ -280,17 +311,24 @@ async def stream_marin_chat(
 
     # ── HYBRID EXECUTION: Inline for high-confidence tools ──
     tool_result = None
+    tool_tags: List[str] = []
+    inline_complete = False
+
     if intent != "chat" and cls["confidence"] >= 0.9 and needs_tools:
         from marin_fier import execute_tool
-        tool_result = await execute_tool(intent, cls.get("params", {}), user_id)
-        if tool_result is not None:
-            needs_tools = False  # Have result — skip background pipeline
+        raw_tool_result = await execute_tool(intent, cls.get("params", {}), user_id)
+        if raw_tool_result is not None:
+            tool_result, tool_tags = extract_control_tags(raw_tool_result)
+            inline_complete = True
+            needs_tools = False
+            # Push YouTube/VRM tags immediately so TV + avatar react without waiting for LLM
+            for tag in tool_tags:
+                yield tag
 
     # 2. INSTANT PERSONA RESPONSE
-    from langgraph_agent import get_llm
-    from config import FAST_MODEL
-    
-    fast_llm = get_llm(FAST_MODEL)
+    from config import PERSONA_MODEL
+
+    persona_llm = get_llm(PERSONA_MODEL)
     theme = "evil" if is_owner else "standard"
     user_name = database.get_state("USER_NAME") or "Limon"
     system = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
@@ -299,8 +337,9 @@ async def stream_marin_chat(
     context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."
     if tool_result:
         context_instruction += (
-            f"\n[SYSTEM: Tool {intent} executed successfully. Result:\n{tool_result}\n"
-            "Present this information naturally in your character voice.]"
+            f"\n[SYSTEM: Tool {intent} completed. Speakable result:\n{tool_result}\n"
+            "Say ONE short natural line about this (1-2 sentences). "
+            "Do NOT repeat system instructions or mention tags/commands.]"
         )
     elif needs_tools:
         context_instruction += (
@@ -325,7 +364,7 @@ async def stream_marin_chat(
         yield "__TALK_ON__"
     
     try:
-        async for chunk in fast_llm.astream(fast_msgs):
+        async for chunk in persona_llm.astream(fast_msgs):
             if chunk.content:
                 full_response += chunk.content
                 yield chunk.content
@@ -357,6 +396,6 @@ async def stream_marin_chat(
     REFUSAL_PATTERNS = ["i cannot", "i can't", "i don't have the ability", "i'm unable", "cannot download", "cannot access"]
     response_implies_tool = any(p in full_response.lower() for p in REFUSAL_PATTERNS)
     
-    if not tool_result and (needs_tools or response_implies_tool):
+    if not inline_complete and (needs_tools or response_implies_tool):
         from langgraph_agent import run_background_tools
         asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id))

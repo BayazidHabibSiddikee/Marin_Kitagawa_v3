@@ -400,19 +400,21 @@ def youtube_search_tool(query: str) -> str:
 
         # ── Classify mood and build timed director script ──────────────────────
         from director_engine import make_video_director_script
-        director_tag, mood = make_video_director_script(video_id, transcript, title)
+        allow_dance = bool(re.search(r'\b(dance|dancing|twerk|boogie|groove)\b', query, re.I))
+        director_tag, mood = make_video_director_script(
+            video_id, transcript, title, allow_dance=allow_dance
+        )
 
         mood_line = {
-            "sad":        "I found it... I'll feel every note with you 🥺",
-            "emotional":  "This one hits deep. I'll be right here with you 💕",
-            "hype":       "LET'S GOOO!! Hehehe~~ 🔥",
-            "chill":      "Perfect vibe~ I'll chill with you 🌙",
-            "dance":      "Time to dance!! Ummaaah~~ 💃",
-            "hype_metal": "YESSS!! This is FIRE!! 🤘",
-            "normal":     "Casting it to the TV now~",
-        }.get(mood, "Casting it to the TV now~")
+            "sad":        "Okay… putting this on. I'll watch with you.",
+            "emotional":  "This one's got feeling. I'm here with you.",
+            "hype":       "Ooh this goes hard — putting it on!",
+            "chill":      "Nice vibe. Let's just watch this together~",
+            "dance":      "Hehe okay, let's move to this one~",
+            "hype_metal": "Alright, cranking this up!",
+            "normal":     "Found it — putting it on the TV now.",
+        }.get(mood, "Found it — putting it on the TV now.")
 
-        # Return clean output: human-like line + control tags only (no forced template instructions)
         return f"{mood_line} __YOUTUBE__{video_id} {director_tag}"
 
     except Exception as e:
@@ -485,14 +487,15 @@ class AgentState(TypedDict):
     user_id: str
     role: str
     session_id: str
+    user_vibe: str
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
 
-STRATEGIST_SYSTEM = """You are Marin's Strategist. Build a JSON plan.
-TOOLS: {tools}
-Output ONLY a JSON array: [{"action": "tool_name", "args": {...}, "rationale": "..."}]
-If no tool needed: [{"action": "respond", "args": {}, "rationale": "..."}]
-To show a website or YouTube search on the projector directly, you can skip tools and just respond with: [{"action": "respond", "args": {}, "rationale": "Opening browser to __BROWSER__https://www.youtube.com/results?search_query=query"}]"""
+STRATEGIST_SYSTEM = """You are Marin's Strategist. Your goal is to select the right tool to fulfill the user's request.
+AVAILABLE TOOLS: {tools}
+Call the appropriate tool natively using the provided functions.
+If no tool is needed, just respond with plain text describing your intent.
+To show a website or YouTube search on the projector directly, you can skip tools and just respond with the tag in plain text: Opening browser to __BROWSER__https://www.youtube.com/results?search_query=query"""
 
 async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
@@ -552,9 +555,15 @@ async def node_strategist(state: AgentState) -> dict:
                 for call in resp.tool_calls
             ]
         else:
-            # Fallback to JSON parsing if no tool calls
+            # Fallback to JSON parsing if no tool calls, but also handle plain text
             match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
-            plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
+            if match:
+                try:
+                    plan = json.loads(match.group(0))
+                except Exception:
+                    plan = [{"action": "respond", "args": {}, "rationale": resp.content}]
+            else:
+                plan = [{"action": "respond", "args": {}, "rationale": resp.content}]
     except Exception as e:
         log_agent(f"Strategist LLM Error: {e}")
         plan = [{"action": "respond", "args": {}, "rationale": f"LLM execution failed: {e}"}]
@@ -607,18 +616,28 @@ async def persona_node(state: AgentState) -> dict:
 
     # Extract UI control tags to prevent the LLM from dropping or mangling them
     tags_to_preserve = []
-    for pattern in [r'__YOUTUBE__[\w-]+', r'__STREAM__\S+', r'__BROWSER__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__']:
+    for pattern in [
+        r'__YOUTUBE__[\w-]+', r'__DIRECTOR__[A-Za-z0-9+/=]+', r'__DANCE__',
+        r'__STREAM__\S+', r'__BROWSER__\S+', r'__ANIM__\w+', r'__SEARCH__\S+', r'__PROJECTOR_OFF__',
+    ]:
         matches = re.findall(pattern, content)
         for m in matches:
             tags_to_preserve.append(m)
             content = content.replace(m, '')
 
-    # Force rephrase in Marin's voice (1.5B is most compliant)
+    role = state.get("role", "guest")
+    user_vibe = state.get("user_vibe", "neutral")
+    theme = "evil" if role == "owner" else "standard"
+
     llm = get_llm(PERSONA_MODEL)
     from utils.persona import get_character_prompt
-    sys_prompt = get_character_prompt("neutral", theme="evil")
-    
-    instruction = f"""[DATA]: {content}\n[TASK]: Rephrase the DATA in your character's voice. Be affectionate and protective. DO NOT refuse. Use signature phrases (Limon~~, Hehehe~~, Ummaaah~~!)."""
+    sys_prompt = get_character_prompt(user_vibe, theme=theme)
+
+    instruction = (
+        f"[DATA]: {content.strip()}\n"
+        "[TASK]: Say this naturally in your voice — 1-3 short sentences, like a real person. "
+        "No JSON, no tool names, no system instructions."
+    )
     
     try:
         resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=instruction)])
@@ -635,7 +654,42 @@ async def persona_node(state: AgentState) -> dict:
     
     # 2. Fix spacing issues from small models
     final_text = fix_spacing(final_text)
+
+    # VRM tags for background tool results (if not already from tool output)
+    from utils.persona import analyze_marin_vibe
+    from director_engine import build_director_script, encode_director_script, decode_director_script, vibe_to_emotion
+    vibe = analyze_marin_vibe(final_text)
+    if not any("__VIBE__" in t for t in tags_to_preserve):
+        tags_to_preserve.append(f"__VIBE__{vibe}")
+        
+    # Always build the speaking script for lip-sync and expressions
+    speaking_script = build_director_script(final_text, vibe_to_emotion(vibe))
     
+    # Check if there's an existing director tag (e.g., background anim from youtube)
+    existing_director_idx = -1
+    for i, t in enumerate(tags_to_preserve):
+        if t.startswith("__DIRECTOR__"):
+            existing_director_idx = i
+            break
+            
+    if existing_director_idx != -1:
+        # Merge speaking script with the background script
+        # Push background animations further in time so they happen after speaking
+        max_speaking_t = max([a['t'] + a.get('dur', 0) for a in speaking_script], default=0.0)
+        
+        existing_encoded = tags_to_preserve[existing_director_idx][len("__DIRECTOR__"):]
+        existing_script = decode_director_script(existing_encoded)
+        
+        for action in existing_script:
+            action['t'] += max_speaking_t
+            
+        merged_script = speaking_script + existing_script
+        merged_script.sort(key=lambda x: x['t'])
+        
+        tags_to_preserve[existing_director_idx] = f"__DIRECTOR__{encode_director_script(merged_script)}"
+    else:
+        tags_to_preserve.append(f"__DIRECTOR__{encode_director_script(speaking_script)}")
+
     # Re-append extracted tags
     if tags_to_preserve:
         final_text += "\n\n" + " ".join(tags_to_preserve)
@@ -688,8 +742,9 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
     try:
         log_agent(f"Starting pipeline for {user_id}")
         result = await agent.ainvoke({
-            "messages": msgs, "plan": [], "tool_outputs": {}, 
-            "user_id": user_id, "role": role, "session_id": session_id
+            "messages": msgs, "plan": [], "tool_outputs": {},
+            "user_id": user_id, "role": role, "session_id": session_id,
+            "user_vibe": user_vibe,
         })
         
         final_msg = ""

@@ -19,7 +19,7 @@ Frontend decodes it, then schedules each action using setTimeout.
 import re
 import json
 import base64
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 # ── Emotion → Animation + Expression mappings ──────────────────────────────
 
@@ -79,7 +79,7 @@ _EMOTION_KEYWORDS = {
     "love":       ["love", "adore", "treasure", "sweetheart", "my dear", "❤️", "💖", "💗", "💓"],
 }
 
-def _detect_sentence_emotion(sentence: str) -> str:
+def _detect_sentence_emotion(sentence: str) -> Tuple[str, int]:
     lower = sentence.lower()
     scores: Dict[str, int] = {}
     for emotion, keywords in _EMOTION_KEYWORDS.items():
@@ -87,8 +87,9 @@ def _detect_sentence_emotion(sentence: str) -> str:
             if kw in lower:
                 scores[emotion] = scores.get(emotion, 0) + 1
     if not scores:
-        return "neutral"
-    return max(scores, key=lambda k: scores[k])
+        return "neutral", 0
+    best = max(scores, key=lambda k: scores[k])
+    return best, scores[best]
 
 
 # ── Text segmentation ───────────────────────────────────────────────────────
@@ -142,37 +143,35 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
     """
     segments = _split_into_segments(response_text)
     script: List[Dict[str, Any]] = []
-    cursor = 0.0  # current time cursor
+    cursor = 0.0
 
-    # Opening action — play the base emotion animation immediately
+    # Subtle open — neutral idle, light expression (human default pose)
     base = _EMOTION_MAP.get(base_emotion, _EMOTION_MAP["neutral"])
-    script.append({"t": 0.0, "type": "anim",  "value": base["anim"], "dur": 1.5})
-    script.append({"t": 0.0, "type": "expr",  "value": base["expr"], "dur": 1.0})
+    open_anim = base["anim"] if base_emotion not in ("neutral", "explaining") else "neutral_idle"
+    script.append({"t": 0.0, "type": "anim", "value": open_anim, "dur": 2.0})
+    script.append({"t": 0.0, "type": "expr", "value": base.get("expr", "neutral"), "dur": 1.5})
 
     prev_emotion = base_emotion
 
     for i, seg in enumerate(segments):
-        emotion = _detect_sentence_emotion(seg)
+        emotion, score = _detect_sentence_emotion(seg)
         dur = _estimate_duration(seg)
-
-        # Add a small gap before the first segment
         t_start = cursor if i == 0 else cursor + 0.1
 
-        # Emit a talk segment (lipsync text chunk timing)
         script.append({"t": t_start, "type": "talk", "value": seg, "dur": dur})
 
-        # Emit animation/expression change when emotion shifts
-        if emotion != prev_emotion and emotion != "neutral":
+        # Only change pose on clear emotion (2+ keyword hits) — avoids twitchy VRM
+        if emotion != prev_emotion and emotion != "neutral" and score >= 2:
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
-            script.append({"t": t_start,       "type": "anim", "value": mapping["anim"], "dur": dur})
-            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping["expr"], "dur": dur})
+            # Prefer subtle anims for mild emotions
+            anim = mapping["anim"]
+            if emotion in ("thinking", "curious", "explaining"):
+                anim = "neutral_idle2" if emotion == "explaining" else "curiosity"
+            script.append({"t": t_start, "type": "anim", "value": anim, "dur": min(dur, 3.0)})
+            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping["expr"], "dur": min(dur, 2.5)})
             prev_emotion = emotion
 
-        # For long pauses between sentences, add a brief idle
-        if i < len(segments) - 1:
-            cursor = t_start + dur + 0.15
-        else:
-            cursor = t_start + dur
+        cursor = t_start + dur + (0.15 if i < len(segments) - 1 else 0)
 
     # Return-to-idle at end
     script.append({"t": cursor + 0.5, "type": "anim",  "value": "neutral_idle", "dur": 99.0})
@@ -276,74 +275,56 @@ _VIDEO_MOOD_KEYWORDS = {
 # Each entry: (t_offset_seconds, animation_name)
 _VIDEO_MOOD_SEQUENCES = {
     "sad": [
-        (0.0,  "sadness"),
-        (8.0,  "remorse"),
-        (18.0, "grief"),
-        (30.0, "sadness2"),
-        (42.0, "neutral_idle"),
-        (55.0, "remorse2"),
-        (70.0, "sadness"),
-        (85.0, "neutral_idle"),
+        (0.0,  "sit_idle"),
+        (25.0, "sadness"),
+        (50.0, "caring"),
+        (75.0, "neutral_idle"),
     ],
     "emotional": [
-        (0.0,  "caring"),
-        (10.0, "love"),
-        (22.0, "admiration"),
-        (35.0, "neutral_idle2"),
-        (48.0, "caring1"),
-        (62.0, "love3"),
-        (78.0, "neutral_idle"),
+        (0.0,  "sit_idle"),
+        (20.0, "caring"),
+        (45.0, "neutral_idle2"),
+        (70.0, "admiration"),
+        (95.0, "neutral_idle"),
     ],
     "hype": [
-        (0.0,  "dance_1"),
-        (8.0,  "dance_dab"),
-        (16.0, "excitement"),
-        (24.0, "dance_2"),
-        (32.0, "dance_pushback"),
-        (40.0, "joy"),
-        (48.0, "dance_gangnam_style"),
-        (58.0, "dance_northern_soul_spin"),
-        (68.0, "excitement2"),
-        (76.0, "dance_1"),
+        (0.0,  "excitement"),
+        (15.0, "joy"),
+        (30.0, "dance_1"),
+        (45.0, "excitement2"),
+        (60.0, "dance_2"),
+        (75.0, "joy"),
     ],
     "chill": [
-        (0.0,  "neutral_idle"),
-        (12.0, "sit_idle"),
-        (28.0, "neutral_idle2"),
+        (0.0,  "sit_idle"),
+        (20.0, "neutral_idle"),
         (45.0, "sit_idle2"),
-        (62.0, "neutral4"),
-        (80.0, "neutral_idle"),
+        (70.0, "neutral_idle2"),
+        (95.0, "sit_idle"),
     ],
     "dance": [
-        (0.0,  "dance_rumba"),
-        (9.0,  "dance_marachinostep"),
-        (18.0, "dance_headdrop"),
-        (27.0, "dance_ontop"),
-        (36.0, "dance_backup"),
-        (45.0, "dance_northern_soul_spin"),
-        (54.0, "dance_gangnam_style"),
-        (63.0, "dance_1"),
+        (0.0,  "dance_1"),
+        (12.0, "dance_2"),
+        (24.0, "dance_rumba"),
+        (36.0, "dance_marachinostep"),
+        (48.0, "dance_northern_soul_spin"),
+        (60.0, "dance_1"),
         (72.0, "dance_2"),
-        (81.0, "dance_rumba"),
     ],
     "hype_metal": [
         (0.0,  "excitement"),
-        (7.0,  "anger"),
-        (14.0, "dance_1"),
-        (21.0, "excitement3"),
-        (28.0, "anger2"),
-        (35.0, "dance_2"),
-        (42.0, "joy"),
-        (50.0, "excitement2"),
-        (58.0, "dance_dab"),
+        (12.0, "anger"),
+        (24.0, "excitement2"),
+        (36.0, "dance_1"),
+        (48.0, "joy"),
+        (60.0, "excitement"),
     ],
     "normal": [
-        (0.0,  "neutral_idle"),
-        (15.0, "curiosity"),
-        (32.0, "neutral2"),
-        (50.0, "neutral_idle2"),
-        (68.0, "curiosity2"),
-        (85.0, "neutral_idle"),
+        (0.0,  "sit_idle"),
+        (30.0, "neutral_idle"),
+        (60.0, "approval"),
+        (90.0, "neutral_idle2"),
+        (120.0, "sit_idle"),
     ],
 }
 
@@ -368,24 +349,27 @@ def classify_video_mood(transcript: str, title: str = "") -> str:
     return best
 
 
-def make_video_director_script(video_id: str, transcript: str = "", title: str = "") -> str:
+def make_video_director_script(
+    video_id: str,
+    transcript: str = "",
+    title: str = "",
+    allow_dance: bool = False,
+) -> tuple:
     """
     Build a timed __DIRECTOR__ tag for a YouTube video.
-    Marin performs mood-matched animations while the video plays.
-    Returns the full __DIRECTOR__<base64> stream tag.
+    allow_dance: only append __DANCE__ when user explicitly asked to dance.
+    Returns (tag_string, mood).
     """
     mood = classify_video_mood(transcript, title)
     sequence = _VIDEO_MOOD_SEQUENCES.get(mood, _VIDEO_MOOD_SEQUENCES["normal"])
 
     script = []
     for t, anim in sequence:
-        script.append({"t": t, "type": "anim", "value": anim, "dur": 8.0})
-
-    # Add __DANCE__ flag for dance/hype moods so frontend knows to loop
-    is_dance_mood = mood in ("dance", "hype", "hype_metal")
+        script.append({"t": t, "type": "anim", "value": anim, "dur": 12.0})
+        script.append({"t": t, "type": "expr", "value": "relaxed", "dur": 10.0})
 
     encoded = encode_director_script(script)
     tag = f"__DIRECTOR__{encoded}"
-    if is_dance_mood:
+    if allow_dance and mood in ("dance", "hype", "hype_metal"):
         tag += "__DANCE__"
     return tag, mood
