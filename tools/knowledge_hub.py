@@ -541,6 +541,20 @@ def create_integrated_hub_map(
     }
 
 
+def get_map_url(city: str, destination: str = "") -> str:
+    """Get a map URL for the given city and optional destination."""
+    try:
+        if destination:
+            result = create_integrated_hub_map(city, destination, query="tourist")
+            return result.get("map_url", "/static/generated/knowledge_hub_map.html")
+        loc = _geocode(city)
+        if loc:
+            return f"https://www.google.com/maps?q={loc.latitude},{loc.longitude}"
+        return f"https://www.google.com/maps?q={city}"
+    except Exception:
+        return f"https://www.google.com/maps?q={city}"
+
+
 # ── BUG5 FIX: scrape_content is now sync (was async with no runner) ───────────
 
 def scrape_content(url: str) -> str:

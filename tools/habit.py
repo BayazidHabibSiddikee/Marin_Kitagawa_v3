@@ -4,7 +4,7 @@ habit.py — CLI wrapper for the unified habit/task tracker.
 Uses habit_store.py for all DB operations.
 """
 import sys
-from habit_store import add_task, complete_task, list_tasks, get_stats, get_reminders_for_today, delete_task
+from tools.habit_store import add_task, complete_task, list_tasks, get_stats, get_reminders_for_today, delete_task
 
 def run(action, args):
     if action == "add":

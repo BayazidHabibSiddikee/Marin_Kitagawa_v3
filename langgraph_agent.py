@@ -10,6 +10,7 @@ import sys
 import json
 import asyncio
 import re
+import time
 from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, Optional, List
 from pathlib import Path
@@ -24,7 +25,7 @@ from langchain_ollama import ChatOllama
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import (
-    DEFAULT_MODEL, LOCAL_MODELS, PORT, 
+    DEFAULT_MODEL, LOCAL_MODELS, PORT, STRATEGY_MODEL, PERSONA_MODEL,
     classify_task, get_model_for_task, get_api_key
 )
 import config
@@ -62,14 +63,41 @@ def get_llm(model_name: str, bind_tools: list = None):
 @tool
 def timer_tool(duration: str) -> str:
     """Start a countdown timer (e.g., '10m', '5s')."""
-    from tools.timer import start_timer
-    return start_timer(duration)
+    import subprocess
+    duration = duration.strip().lower()
+    try:
+        if duration.endswith("m"):
+            seconds = int(duration[:-1]) * 60
+        elif duration.endswith("h"):
+            seconds = int(duration[:-1]) * 3600
+        elif duration.endswith("s"):
+            seconds = int(duration[:-1])
+        else:
+            seconds = int(duration)
+    except ValueError:
+        return f"Invalid duration: {duration}"
+
+    timer_script = Path(__file__).parent / "tools" / "timer.py"
+    subprocess.Popen(
+        [sys.executable, str(timer_script), "--duration", str(seconds)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return f"Timer started for {seconds} seconds."
 
 @tool
 def weather_tool(city: str) -> str:
     """Get the current weather for a city."""
-    from tools.knowledge_hub import get_weather
-    return json.dumps(get_weather(city))
+    from tools.knowledge_hub import get_weather_data
+    data = get_weather_data(city)
+    if "error" in data:
+        return f"Weather error: {data['error']}"
+    return (
+        f"Weather in {data.get('city', city)}: "
+        f"{data.get('temperature')}°C, humidity {data.get('humidity')}%, "
+        f"wind {data.get('windspeed')} km/h"
+    )
 
 @tool
 def map_tool(city: str, destination: str = "") -> str:
@@ -206,8 +234,9 @@ def alarm_tool(time: str = "08:00") -> str:
 def business_analysis_tool(query: str) -> str:
     """Analyze business/trading decisions — should I buy, sell, or hold?"""
     try:
-        from tools.business_judge import analyze
-        return analyze(query)
+        from tools.business_judge import BusinessJudge
+        judge = BusinessJudge()
+        return judge.run_debate("GENERAL", query, "USR-MASTER")
     except Exception as e:
         return f"Error: {e}"
 
@@ -215,8 +244,13 @@ def business_analysis_tool(query: str) -> str:
 def binance_tool(action: str = "portfolio") -> str:
     """Interact with Binance — check portfolio, place trades."""
     try:
-        from tools.binance_client import run
-        return run(action)
+        from tools.binance_client import BinanceManager
+        client = BinanceManager("USR-MASTER")
+        if action == "portfolio":
+            return str(client.get_portfolio())
+        if action == "balance":
+            return str(client.get_balance())
+        return "Use 'portfolio' or 'balance'"
     except Exception as e:
         return f"Error: {e}"
 
@@ -306,10 +340,11 @@ def resource_tool(url: str) -> str:
         return f"Error: {e}"
 
 @tool
-def habit_tool(action: str = "list", args: list = []) -> str:
-    """Manage tasks and habits. Actions: 'add' (args: [title, priority]), 'list', 'done' (args: [id]), 'stats', 'today', 'del' (args: [id])."""
+def habit_tool(action: str = "list", task_args: str = "") -> str:
+    """Manage tasks and habits. Actions: 'add' (task_args: 'title,priority'), 'list', 'done' (task_args: id), 'stats', 'today', 'del' (task_args: id)."""
     try:
         from tools.habit import run
+        args = [a.strip() for a in task_args.split(",") if a.strip()] if task_args else []
         return run(action, args)
     except Exception as e:
         return f"Error: {e}"
@@ -362,19 +397,23 @@ async def node_strategist(state: AgentState) -> dict:
     from utils.tool_registry import get_relevant_tools
     relevant_tool_names = get_relevant_tools(user_msg)
     
-    # If no domain matched, zero tools!
+    # If no domain matched, offer all tools so the strategist can still plan
     if not relevant_tool_names:
-        log_agent("Strategist (Semantic Router): Dropped to zero tools. Responding directly.")
-        return {"plan": [{"action": "respond", "args": {}, "rationale": "No tools needed."}]}
-        
-    filtered_tools = [t.name for t in ALL_TOOLS if t.name in relevant_tool_names]
-    log_agent(f"Strategist (Semantic Router): Filtered {len(ALL_TOOLS)} down to {len(filtered_tools)} tools.")
+        log_agent("Strategist (Semantic Router): No domain match — using all tools.")
+        filtered_tools = [t.name for t in ALL_TOOLS]
+    else:
+        filtered_tools = [t.name for t in ALL_TOOLS if t.name in relevant_tool_names]
+        log_agent(f"Strategist (Semantic Router): Filtered {len(ALL_TOOLS)} down to {len(filtered_tools)} tools.")
 
-    # 3. LLM Fallback (Force 1.5B for tool support)
+    # 3. LLM Fallback with tool binding
     plan = []
     try:
-        llm = get_llm("qwen2.5:1.5b")
+        # Get tools to bind
+        tools_to_bind = [tools_by_name[name] for name in filtered_tools if name in tools_by_name]
+
+        llm = get_llm(STRATEGY_MODEL, bind_tools=tools_to_bind)
         sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=filtered_tools))
+
         # LangGraph may serialize messages to dicts — convert back to BaseMessage
         raw_msgs = list(state["messages"])
         clean_msgs = []
@@ -388,14 +427,24 @@ async def node_strategist(state: AgentState) -> dict:
                     clean_msgs.append(AIMessage(content=content))
                 else:
                     clean_msgs.append(HumanMessage(content=content))
+
+        # Invoke with tool binding
         resp = await llm.ainvoke([sys_msg] + clean_msgs)
-        
-        match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
-        plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
+
+        # Parse tool calls from response
+        if hasattr(resp, 'tool_calls') and resp.tool_calls:
+            plan = [
+                {"action": call["name"], "args": call["args"], "rationale": "LLM tool call"}
+                for call in resp.tool_calls
+            ]
+        else:
+            # Fallback to JSON parsing if no tool calls
+            match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
+            plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
     except Exception as e:
         log_agent(f"Strategist LLM Error: {e}")
         plan = [{"action": "respond", "args": {}, "rationale": f"LLM execution failed: {e}"}]
-    
+
     log_agent(f"Strategist (LLM): {plan}")
     return {"plan": plan}
 
@@ -451,7 +500,7 @@ async def persona_node(state: AgentState) -> dict:
             content = content.replace(m, '')
 
     # Force rephrase in Marin's voice (1.5B is most compliant)
-    llm = get_llm("qwen2.5:1.5b")
+    llm = get_llm(PERSONA_MODEL)
     from utils.persona import get_character_prompt
     sys_prompt = get_character_prompt("neutral", theme="evil")
     

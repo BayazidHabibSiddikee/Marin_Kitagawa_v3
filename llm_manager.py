@@ -4,6 +4,7 @@ import os
 import database
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from config import OLLAMA_BASE_URL
 # ── Legacy fallback model list ──────────────────────────────────────────────────
 FALLBACK_MODELS = [
     "google/gemini-2.5-flash",
@@ -15,7 +16,7 @@ FALLBACK_MODELS = [
 ]
 
 COOLDOWN_SECONDS = 5 * 3600  # 5 hours
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+TRANSIENT_COOLDOWN_SECONDS = 60  # 1 minute for network blips
 
 # ── Auth & Rate limit helpers ───────────────────────────────────────────────────
 
@@ -24,6 +25,23 @@ def is_auth_error(e: Exception) -> bool:
     return any(x in err_str for x in [
         "401", "unauthorized", "invalid api key",
         "authentication", "user not found",
+    ])
+
+
+def is_rate_limit_error(e: Exception) -> bool:
+    err_str = str(e).lower()
+    return any(x in err_str for x in ["429", "rate limit", "too many requests", "quota"])
+
+
+def is_model_not_found_error(e: Exception) -> bool:
+    err_str = str(e).lower()
+    return any(x in err_str for x in ["404", "model not found", "does not exist", "not found"])
+
+
+def is_transient_error(e: Exception) -> bool:
+    err_str = str(e).lower()
+    return any(x in err_str for x in [
+        "timeout", "timed out", "connection", "network", "503", "502", "504",
     ])
 
 
@@ -72,9 +90,9 @@ def report_rate_limit(key: str, model: str):
     _save_rate_limits(limits)
 
 
-def _is_rate_limited(key: str, model: str, limits: dict, now: float) -> bool:
+def _is_rate_limited(key: str, model: str, limits: dict, now: float, cooldown: int = COOLDOWN_SECONDS) -> bool:
     entry = limits.get(f"{key}|{model}")
-    return entry is not None and (now - entry) < COOLDOWN_SECONDS
+    return entry is not None and (now - entry) < cooldown
 
 
 # ── Key rotation index — persisted per provider so load spreads across keys ────
@@ -208,7 +226,7 @@ def _try_build_llm(model: str, key: str, base_url: str):
     llm = ChatOpenAI(
         model=model,
         openai_api_key=key,
-        openai_api_base=base_url,
+        base_url=base_url,
         max_retries=1,
     )
     return llm
@@ -270,11 +288,19 @@ def get_best_llm(deep: bool = False):
                         print(f"[LLM] Auth error for key ...{key[-6:]} on {name} — blacklisting")
                         invalid.add(key)
                         _save_invalid_keys(invalid)
+                    elif is_rate_limit_error(e):
+                        print(f"[LLM] Rate limit on {name}/{model}: {e}")
+                        report_rate_limit(key, model)
+                        limits[f"{key}|{model}"] = now
+                    elif is_model_not_found_error(e):
+                        print(f"[LLM] Model not found on {name}/{model}: {e}")
+                    elif is_transient_error(e):
+                        print(f"[LLM] Transient error on {name}/{model}: {e}")
+                        limits[f"{key}|{model}"] = now - COOLDOWN_SECONDS + TRANSIENT_COOLDOWN_SECONDS
                     else:
-                        # Treat connection/timeout errors as a short rate-limit
                         print(f"[LLM] Error on {name}/{model}: {e}")
                         report_rate_limit(key, model)
-                        limits[f"{key}|{model}"] = now  # keep local copy in sync
+                        limits[f"{key}|{model}"] = now
         return None
 
     # ── Deep mode: try deep_models list across all providers first ─────────────
@@ -301,7 +327,7 @@ def get_best_llm(deep: bool = False):
             llm = ChatOpenAI(
                 model=ollama_model,
                 openai_api_key="ollama",
-                openai_api_base=OLLAMA_URL,
+                base_url=OLLAMA_BASE_URL,
                 max_retries=2,
             )
             # Ollama doesn't need the probe (local, no auth)
@@ -347,7 +373,7 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
         llm = ChatOpenAI(
             model=test_model,
             openai_api_key=key,
-            openai_api_base=base_url,
+            base_url=base_url,
             max_retries=0,
             timeout=10.0,
         )

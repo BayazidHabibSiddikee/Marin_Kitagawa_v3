@@ -74,3 +74,6 @@ storage/api_keys.txt
 
 # CodeLens Graph local index
 .codelens/
+*.db-shm
+*.db-wal
+storage/*.json

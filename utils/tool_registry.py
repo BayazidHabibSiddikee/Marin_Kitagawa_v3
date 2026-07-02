@@ -1,6 +1,14 @@
 import re
 from typing import List
 
+# Import all tools from langgraph_agent to ensure we have the complete list
+try:
+    from langgraph_agent import ALL_TOOLS
+    ALL_TOOL_NAMES = [t.name for t in ALL_TOOLS]
+except ImportError:
+    # Fallback if langgraph_agent not available yet
+    ALL_TOOL_NAMES = []
+
 TOOL_DOMAINS = {
     "Finance": {
         "keywords": ["crypto", "bitcoin", "ethereum", "solana", "price", "market", "stock", "share", "equity", "company", "aapl", "tsla", "nvda", "trade", "buy", "sell", "portfolio", "binance", "arena", "judge", "finance"],
@@ -39,24 +47,31 @@ TOOL_DOMAINS = {
 def get_relevant_tools(query: str, threshold: float = 0.3) -> List[str]:
     """
     Level 1 Router: Classifies the query into a specific tool domain using zero-latency keyword mapping.
-    This replaces the FAISS embeddings (which fail when Ollama/HuggingFace are unreachable) and is 
+    This replaces the FAISS embeddings (which fail when Ollama/HuggingFace are unreachable) and is
     incredibly robust for small model classification pipelines.
-    Returns [] if no domain matches, allowing the primary model to focus solely on conversation.
+    Returns ALL tools if no domain matches, allowing the strategist to still plan effectively.
     """
     lower_query = query.lower()
-    
+
     best_domain = None
     best_score = 0
-    
+
     for domain, data in TOOL_DOMAINS.items():
         score = sum(1 for kw in data["keywords"] if re.search(r'\b' + kw + r'\b', lower_query))
         if score > best_score:
             best_score = score
             best_domain = domain
-            
+
     if best_score > 0 and best_domain:
         print(f"[SemanticRouter] Matched Domain: {best_domain} (Score: {best_score})")
         return TOOL_DOMAINS[best_domain]["tools"]
-        
-    print("[SemanticRouter] No domain matched. Falling back to ZERO tools.")
-    return []
+
+    print("[SemanticRouter] No domain matched. Returning ALL tools.")
+    # Return all registered tools from langgraph_agent for maximum coverage
+    if ALL_TOOL_NAMES:
+        return ALL_TOOL_NAMES
+    # Fallback to domain-based tools if import failed
+    all_tools = []
+    for data in TOOL_DOMAINS.values():
+        all_tools.extend(data["tools"])
+    return list(dict.fromkeys(all_tools))

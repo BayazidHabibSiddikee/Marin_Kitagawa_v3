@@ -89,8 +89,11 @@ try:
     API_KEYS = {}
     for p in ["openai", "gemini", "anthropic", "deepseek"]:
         k = vault_get(f"{p}_api_key")
-        if k: API_KEYS[p] = {"api_key": k}
-except:
+        if k:
+            API_KEYS[p] = {"api_key": k}
+except (ImportError, OSError, json.JSONDecodeError) as e:
+    import logging
+    logging.getLogger(__name__).warning("Vault unavailable, using settings.json keys: %s", e)
     API_KEYS = _settings.get("api_keys", {})
 
 # ── DYNAMIC DEFAULTS ─────────────────────────────────────────────────────────
@@ -126,8 +129,11 @@ def _get_session_key():
     k = secrets.token_hex(32)
     os.makedirs(os.path.dirname(_s_key_path), exist_ok=True)
     try:
-        with open(_s_key_path, "w") as f: f.write(k)
-    except: pass
+        with open(_s_key_path, "w") as f:
+            f.write(k)
+        os.chmod(_s_key_path, 0o600)
+    except OSError:
+        pass
     return k
 
 SESSION_SECRET_KEY = _get_session_key()
@@ -136,7 +142,7 @@ SESSION_SECRET_KEY = _get_session_key()
 FAISS_DIR = os.path.join(BASE_DIR, "storage", "faiss_index")
 
 # ── EXPORTS ──────────────────────────────────────────────────────────────────
-HOST = _settings.get("server", {}).get("host", "0.0.0.0")
+HOST = _settings.get("server", {}).get("host", os.getenv("MARIN_HOST", "127.0.0.1"))
 PORT = _settings.get("server", {}).get("port", 5069)
 RAG_PORT = _settings.get("server", {}).get("rag_port", 5080)
 # Use localhost:11434 as default for Ollama

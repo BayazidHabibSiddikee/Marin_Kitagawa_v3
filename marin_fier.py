@@ -10,6 +10,7 @@ from datetime import datetime
 
 # Single Source of Truth for Tools
 from langgraph_agent import ALL_TOOLS, tools_by_name
+from config import FAST_MODEL
 
 # ── Command execution logic (shared) ─────────────────────────────────────────
 _cmd_log = []
@@ -21,13 +22,13 @@ _ALARM_PAT   = re.compile(r'\b(alarm|wake|remind)\b')
 _LIST_PAT    = re.compile(r'\b(ls|list|show|check|scan|files|directory|cwd)\b')
 _READ_PAT    = re.compile(r'\b(read|open|cat|analyze|view)\b')
 _CRYPTO_PAT  = re.compile(r'\b(crypto|bitcoin|ethereum|solana|price|market)\b')
-_STOCK_PAT   = re.compile(r'\b(stock|share|equity|company|aapl|tsla|nvda)\b')
+_STOCK_PAT   = re.compile(r'\b(stock|share|equity|company|aapl|tsla|nvda|quote)\b')
 _NEWS_PAT    = re.compile(r'\b(news|headlines|world|latest)\b')
 _WEATHER_PAT = re.compile(r'\b(weather|temp|humidity|rain|sun)\b')
 _MAP_PAT     = re.compile(r'\b(map|location|places|find|pin)\b')
 _MATH_PAT    = re.compile(r'\b(plot|draw|graph|math|equation|calculate)\b')
-_BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|finance|market)\b')
-_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
+_BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|finance|market|stock market|market trends)\b')
+_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course|stock market|market analysis|financial trends)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
 _BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
 _YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play)\b')
@@ -174,7 +175,7 @@ Available vibes: [neutral, lovely, flirty, angry, sad, excited]
 Message: "{text}"
 Respond ONLY with JSON format: {{"intent": "...", "user_vibe": "..."}}'''
         req = {
-            "model": "qwen2.5:1.5b",
+            "model": FAST_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "format": "json"

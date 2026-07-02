@@ -138,3 +138,33 @@ def vault_set(key: str, value: str):
 
 def vault_delete(key: str):
     get_vault().delete(key)
+
+
+_ENC_PREFIX = "enc:"
+
+
+def encrypt_secret(value: str) -> str:
+    """Encrypt a value for DB storage. Returns prefixed ciphertext."""
+    if not value or value.startswith(_ENC_PREFIX):
+        return value
+    vault = get_vault()
+    if vault._fernet:
+        token = vault._fernet.encrypt(value.encode()).decode()
+        return f"{_ENC_PREFIX}{token}"
+    return f"{_ENC_PREFIX}{base64.b64encode(value.encode()).decode()}"
+
+
+def decrypt_secret(value: str) -> str:
+    """Decrypt a DB-stored value. Plaintext values pass through unchanged."""
+    if not value:
+        return value
+    if not value.startswith(_ENC_PREFIX):
+        return value
+    payload = value[len(_ENC_PREFIX):]
+    vault = get_vault()
+    try:
+        if vault._fernet:
+            return vault._fernet.decrypt(payload.encode()).decode()
+        return base64.b64decode(payload).decode()
+    except Exception:
+        return value

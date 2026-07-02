@@ -127,11 +127,14 @@ _TEXT_CMD_PAT = re.compile(
     r'pip3?\s+\S+.*|'
     r'curl\s+.*|wget\s+.*|'
     r'bash\s+\S+|sh\s+\S+|'
-    r'make\s*.*|gcc\s+.*|'
-    r'rm\s+[^/]+'
+    r'make\s*.*|gcc\s+.*'
     r')`?\s*$',
     re.MULTILINE | re.IGNORECASE
 )
+
+MAX_CONCURRENT_COMMANDS = 3
+_active_command_count = 0
+_active_command_lock = threading.Lock()
 
 def _strip_md_trail(cmd: str) -> str:
     """Remove trailing markdown decoration: backticks, parenthetical text, non-ASCII."""
@@ -175,29 +178,42 @@ def execute_text_commands(text: str, user: dict):
         if cmd:
             raw_cmds.append(cmd)
 
-    if not raw_cmds: return
+    if not raw_cmds:
+        return
 
     user_id = user["user_id"]
-    
-    from utils.command_runner import run_command
-    def _run_task(cmd):
-        # We wrap in shlex.split for safety
-        import shlex
-        try:
-            args = shlex.split(cmd)
-            # Check if user is authorized for terminal commands
-            from safety import system_guard
-            if not system_guard.is_authorized(user_id):
-                log_command(cmd, "blocked", "Password authorization required for terminal commands.", user_id=user_id)
-                return
-                
-            code, output = run_command(cmd, timeout=30)
-            log_command(cmd, "done" if code == 0 else f"exit {code}", output, user_id=user_id)
-        except Exception as e:
-            log_command(cmd, "error", str(e), user_id=user_id)
 
+    from utils.command_runner import run_command
+
+    def _run_task(cmd):
+        global _active_command_count
+        with _active_command_lock:
+            _active_command_count += 1
+        try:
+            import shlex
+            try:
+                shlex.split(cmd)
+                from safety import system_guard
+                if not system_guard.is_authorized(user_id):
+                    log_command(cmd, "blocked", "Password authorization required for terminal commands.", user_id=user_id)
+                    return
+
+                code, output = run_command(cmd, timeout=30)
+                log_command(cmd, "done" if code == 0 else f"exit {code}", output, user_id=user_id)
+            except Exception as e:
+                log_command(cmd, "error", str(e), user_id=user_id)
+        finally:
+            with _active_command_lock:
+                _active_command_count -= 1
+
+    started = 0
     for cmd in raw_cmds:
+        with _active_command_lock:
+            if _active_command_count >= MAX_CONCURRENT_COMMANDS:
+                log_command(cmd, "blocked", f"Too many concurrent commands (max {MAX_CONCURRENT_COMMANDS}).", user_id=user_id)
+                continue
         threading.Thread(target=_run_task, args=(cmd,), daemon=True).start()
+        started += 1
 
 # ── Unified Preprocessor ─────────────────────────────────────────────────────
 
@@ -293,12 +309,17 @@ async def stream_marin_chat(
     if getattr(marin, "VOICE_ENABLED", False):
         yield "__TALK_ON__"
     
-    async for chunk in fast_llm.astream(fast_msgs):
-        if chunk.content:
-            full_response += chunk.content
-            yield chunk.content
-    
-    # Save first response to history
+    try:
+        async for chunk in fast_llm.astream(fast_msgs):
+            if chunk.content:
+                full_response += chunk.content
+                yield chunk.content
+    except Exception as e:
+        print(f"[AgentLogic] Streaming error: {e}")
+        if not full_response:
+            yield "Sorry, I hit a snag. Please try again~"
+        return
+
     if full_response:
         database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
         database.save_message("marin", "assistant", full_response, user_id=user_id, session_id=session_id)
