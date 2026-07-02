@@ -7,8 +7,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
     <script src="https://unpkg.com/fflate"></script>
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -711,6 +713,7 @@
             align-items: center;
             justify-content: center;
         }
+        .modal-overlay.open { display: flex; }
         .modal-box {
             background: var(--ink2);
             border: 1px solid var(--border-hi);
@@ -2105,26 +2108,43 @@
         vrmScene.add(notebook);
 
         // ── Bookshelf (right wall, tall) ──────────────────────────────────────
-        const shelfBody = new THREE.Mesh(new THREE.BoxGeometry(0.28,2.2,1.1), matDarkWood);
-        shelfBody.position.set(W/2-0.14, 1.1, -2.0);
+        const shelfX = W/2 - 0.14;
+        const shelfZ = -2.2;
+        const shelfBody = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.2, 1.2), matDarkWood);
+        shelfBody.position.set(shelfX, 1.1, shelfZ);
         vrmScene.add(shelfBody);
-        [0.3,0.75,1.2,1.65].forEach(sy => {
-            const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.03,1.06), matMidWood);
-            shelf.position.set(W/2-0.14, sy, -2.0);
+        // Shelf planks
+        [0.28, 0.73, 1.18, 1.63].forEach(sy => {
+            const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 1.14), matMidWood);
+            shelf.position.set(shelfX, sy, shelfZ);
             vrmScene.add(shelf);
         });
-        [[0xc0392b,-0.8],[0x2980b9,-0.65],[0x27ae60,-0.5],[0xf39c12,-0.35],[0x8e44ad,-0.2],[0xe74c3c,-0.05],[0x16a085,0.1],[0xe67e22,0.25]].forEach(([col,bz]) => {
-            const book = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.26,0.08), new THREE.MeshLambertMaterial({color:col}));
-            book.position.set(W/2-0.02, 0.88, bz + -2.0 + 0.5);
-            vrmScene.add(book);
+        // Books standing upright on each shelf level
+        const bookColors = [0xc0392b,0x2980b9,0x27ae60,0xf39c12,0x8e44ad,0xe74c3c,0x16a085,0xe67e22,0x1abc9c,0xd35400,0x7f8c8d,0x2c3e50];
+        [0.28, 0.73, 1.18, 1.63].forEach((sy, lvl) => {
+            const booksOnShelf = bookColors.slice(lvl * 3, lvl * 3 + 3);
+            booksOnShelf.forEach((col, bi) => {
+                const bh = 0.28 + Math.random() * 0.1;
+                const bw = 0.06 + Math.random() * 0.03;
+                const book = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.26, bh, bw),
+                    new THREE.MeshLambertMaterial({color: col})
+                );
+                book.position.set(shelfX, sy + bh/2 + 0.02, shelfZ - 0.38 + bi * 0.28);
+                vrmScene.add(book);
+            });
         });
         // Plant on top of shelf
-        const shelfPot = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.06,0.1,8), matPot);
-        shelfPot.position.set(W/2-0.14, 2.25, -1.6);
+        const shelfPot = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.06,0.12,8), matPot);
+        shelfPot.position.set(shelfX, 2.26, shelfZ + 0.35);
         vrmScene.add(shelfPot);
-        const shelfLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6), matLeaf);
-        shelfLeaf.position.set(W/2-0.14, 2.43, -1.6);
+        const shelfLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.14,8,6), matLeaf);
+        shelfLeaf.position.set(shelfX, 2.44, shelfZ + 0.35);
         vrmScene.add(shelfLeaf);
+        // Small decorative item on top shelf
+        const deco = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.08), new THREE.MeshLambertMaterial({color:0xf1c40f}));
+        deco.position.set(shelfX, 1.85, shelfZ - 0.3);
+        vrmScene.add(deco);
 
         // ── Bed (left wall) ───────────────────────────────────────────────────
         const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.28,2.2), matBedFrame);
