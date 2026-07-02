@@ -233,10 +233,10 @@ async def stream_marin_chat(
     image_path: str = None
 ) -> AsyncIterator[str]:
     """
-    Refactored Persona-First Pipeline.
+    Two-System Pipeline:
     1. Fast Classification (Regex)
-    2. Instant Persona Stream (Aware of classification)
-    3. Async Background Tools (If needed)
+    2. Path A: Instant Persona Response (direct to user)
+    3. Path B: Background Tool Execution (if needed, result via /api/pending)
     """
     user_id = user["user_id"]
     is_owner = (user["role"] == "owner")

@@ -94,14 +94,14 @@ except:
     API_KEYS = _settings.get("api_keys", {})
 
 # ── DYNAMIC DEFAULTS ─────────────────────────────────────────────────────────
-# FORCED: Use qwen2.5:1.5b for all background/tool tasks (it supports tools)
-DEFAULT_MODEL   = "qwen2.5:1.5b"
-FAST_MODEL      = "qwen2.5:1.5b"
-STRATEGY_MODEL  = "qwen2.5:1.5b"
+# Classifiers use FAST_MODEL (mini model for quick classification)
+# LLM replies use DEFAULT_MODEL (large model for quality responses)
+FAST_MODEL      = _settings.get("models", {}).get("fast", "qwen2.5:1.5b")
+DEFAULT_MODEL   = _settings.get("models", {}).get("default", "google/gemma-2-9b-it:free")
+STRATEGY_MODEL  = FAST_MODEL  # Strategist uses fast model for tool planning
 
-# PERSONA: Use marin:latest for the character wrap
-PERSONA_MODEL   = _settings.get("models", {}).get("default", "marin:latest")
-if "cloud" in PERSONA_MODEL: PERSONA_MODEL = "marin:latest"
+# PERSONA: Use the large default model for character responses
+PERSONA_MODEL   = DEFAULT_MODEL
 
 VISION_MODEL    = _settings.get("models", {}).get("vision", IMAGE_MODELS["fallback"])
 EMBEDDING_MODEL = _settings.get("models", {}).get("embedding", "all-MiniLM-L6-v2")

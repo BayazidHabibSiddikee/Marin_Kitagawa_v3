@@ -662,6 +662,24 @@ kb = KnowledgeBase()
 app = FastAPI(title="RAG Server", version="2.0")
 
 
+from typing import List
+
+
+class EmbedRequest(BaseModel):
+    texts: List[str]
+
+@app.post("/embed")
+async def embed_texts(req: EmbedRequest):
+    if kb._embeddings is None:
+        raise HTTPException(503, "Embeddings not loaded")
+    
+    def _embed():
+        return kb._embeddings.embed_documents(req.texts)
+        
+    vecs = await asyncio.to_thread(_embed)
+    return {"embeddings": vecs}
+
+
 class SearchRequest(BaseModel):
     query:       str
     k:           int = 10
@@ -725,6 +743,14 @@ async def upload_image(file: UploadFile = File(...)):
 
 
 # ── Info ──────────────────────────────────────────────────────────────────────
+
+
+@app.get("/debug_kb")
+async def debug_kb():
+    return {
+        "kb_is_none": kb is None,
+        "embeddings_is_none": kb._embeddings is None if kb else True
+    }
 
 @app.get("/report")
 async def report():

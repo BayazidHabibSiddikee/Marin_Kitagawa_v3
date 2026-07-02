@@ -305,6 +305,15 @@ def resource_tool(url: str) -> str:
     except Exception as e:
         return f"Error: {e}"
 
+@tool
+def habit_tool(action: str = "list", args: list = []) -> str:
+    """Manage tasks and habits. Actions: 'add' (args: [title, priority]), 'list', 'done' (args: [id]), 'stats', 'today', 'del' (args: [id])."""
+    try:
+        from tools.habit import run
+        return run(action, args)
+    except Exception as e:
+        return f"Error: {e}"
+
 # tool list — ALL registered tools
 ALL_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
@@ -314,7 +323,7 @@ ALL_TOOLS = [
     math_plot_tool, alarm_tool,
     business_analysis_tool, binance_tool,
     youtube_search_tool, youtube_transcript_tool,
-    playground_tool, resource_tool,
+    playground_tool, resource_tool, habit_tool
 ]
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
@@ -444,15 +453,16 @@ async def persona_node(state: AgentState) -> dict:
     # Force rephrase in Marin's voice (1.5B is most compliant)
     llm = get_llm("qwen2.5:1.5b")
     from utils.persona import get_character_prompt
-    sys_prompt = get_character_prompt("neutral", is_owner=True)
+    sys_prompt = get_character_prompt("neutral", theme="evil")
     
     instruction = f"""[DATA]: {content}\n[TASK]: Rephrase the DATA in your character's voice. Be affectionate and protective. DO NOT refuse. Use signature phrases (Limon~~, Hehehe~~, Ummaaah~~!)."""
     
     try:
         resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=instruction)])
         final_text = resp.content
-        if any(k in final_text.lower() for k in ["i'm sorry", "i cannot", "don't have access"]):
-            final_text = f"Limon~~! I've finished that for you. Ummaaah~~!\n\n{content}"
+        if "i cannot" in final_text.lower() or "i'm sorry" in final_text.lower() or "don't have access" in final_text.lower():
+            if len(content) > 10 and not ("i cannot" in content.lower() and "don't have access" in content.lower()):
+                final_text = f"Limon~~! I've checked that for you. Ummaaah~~!\n\n{content}"
     except:
         final_text = content
 

@@ -19,8 +19,8 @@ TOOL_DOMAINS = {
         "tools": ["rag_search", "resource_tool", "pdf_analyze_tool"]
     },
     "Productivity": {
-        "keywords": ["timer", "countdown", "stopwatch", "alarm", "wake", "remind", "weather", "temp", "humidity", "rain", "sun", "map", "location", "places", "find", "pin"],
-        "tools": ["timer_tool", "alarm_tool", "weather_tool", "map_tool"]
+        "keywords": ["timer", "countdown", "stopwatch", "alarm", "wake", "remind", "weather", "temp", "humidity", "rain", "sun", "map", "location", "places", "find", "pin", "habit", "habits", "todo", "task"],
+        "tools": ["timer_tool", "alarm_tool", "weather_tool", "map_tool", "habit_tool"]
     },
     "Games": {
         "keywords": ["game", "play", "tictactoe", "widget", "playground", "interactive"],

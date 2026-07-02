@@ -210,8 +210,8 @@
 
         .tb-btn {
             font-family: 'JetBrains Mono', monospace;
-            font-size: .6rem;
-            padding: 4px 10px;
+            font-size: .65rem;
+            padding: 5px 12px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border);
             background: transparent;
@@ -224,6 +224,83 @@
         .tb-btn:hover { color: var(--teal); border-color: var(--teal-dim); background: var(--teal-soft); }
         .tb-btn.active-voice { color: var(--coral); border-color: var(--coral-dim); }
         .tb-btn.active-rag   { color: var(--success); border-color: var(--success); }
+
+        .btn-top {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem;
+            padding: 5px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            letter-spacing: .06em;
+            transition: all .2s;
+            white-space: nowrap;
+        }
+        .btn-top:hover { color: var(--teal); border-color: var(--teal-dim); background: var(--teal-soft); }
+
+        .stab {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem;
+            padding: 6px 12px;
+            border: none;
+            background: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            letter-spacing: .06em;
+            border-bottom: 2px solid transparent;
+            transition: all .2s;
+        }
+        .stab:hover { color: var(--text-dim); }
+        .stab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+        .set-dashed-btn {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem;
+            padding: 6px 14px;
+            border: 1px dashed var(--border);
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            letter-spacing: .05em;
+            transition: all .2s;
+        }
+        .set-dashed-btn:hover { color: var(--teal); border-color: var(--teal-dim); background: var(--teal-soft); }
+
+        .danger-card {
+            background: var(--ink3);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .danger-card-title {
+            font-family: 'DM Sans', sans-serif;
+            font-size: .85rem;
+            font-weight: 500;
+            color: var(--text);
+        }
+        .danger-card-desc {
+            font-size: .75rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+        .btn-danger-sm {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem;
+            padding: 5px 12px;
+            border: 1px solid var(--danger);
+            background: transparent;
+            color: var(--danger);
+            cursor: pointer;
+            letter-spacing: .05em;
+            transition: all .2s;
+            align-self: flex-start;
+        }
+        .btn-danger-sm:hover { background: rgba(224,123,106,.1); }
 
         .status-pip {
             width: 6px; height: 6px;
@@ -291,9 +368,9 @@
 
         .timer-btn {
             margin-left: auto;
-            padding: 3px 12px;
+            padding: 4px 12px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: .6rem;
+            font-size: .65rem;
             border-radius: var(--radius-sm);
             cursor: pointer;
             border: 1px solid;
@@ -568,7 +645,7 @@
         }
         .mode-tab {
             font-family: 'JetBrains Mono', monospace;
-            font-size: .6rem;
+            font-size: .65rem;
             padding: 8px 14px;
             border: none;
             background: none;
@@ -669,8 +746,8 @@
 
         .tool-btn {
             font-family: 'JetBrains Mono', monospace;
-            font-size: .6rem;
-            padding: 3px 9px;
+            font-size: .65rem;
+            padding: 5px 12px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border);
             background: transparent;
@@ -839,9 +916,9 @@
             background: var(--ink3);
             border: 1px solid var(--border-hi);
             color: var(--teal);
-            padding: 5px 12px;
+            padding: 6px 14px;
             border-radius: 20px;
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             font-family: 'JetBrains Mono', monospace;
             cursor: pointer;
             transition: all 0.2s;
@@ -1351,12 +1428,21 @@
         { id: "microsoft/Phi-3.5-mini-instruct", name: "Phi 3.5 Mini Instruct", ctx: "128K", vision: false }
     ];
 
+    const FREELLMAPI_MODELS = [
+        { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", ctx: "1M", vision: true },
+        { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", ctx: "131K", vision: false },
+        { id: "qwen/qwen-2.5-72b-instruct:free", name: "Qwen 2.5 72B", ctx: "131K", vision: false },
+        { id: "nousresearch/hermes-3-llama-3.1-405b:free", name: "Hermes 3 405B", ctx: "131K", vision: false },
+        { id: "nvidia/llama-3.1-nemotron-70b-instruct:free", name: "Nemotron 70B", ctx: "131K", vision: false },
+    ];
+
     const PRESET_MODELS = {
         openrouter: FREE_MODELS,
         gemini: GEMINI_MODELS,
         openai: OPENAI_MODELS,
         ollama: OLLAMA_MODELS,
-        hf: HF_MODELS
+        hf: HF_MODELS,
+        freellmapi: FREELLMAPI_MODELS
     };
 
     const PROVIDER_PRESETS = {
@@ -1365,6 +1451,7 @@
         gemini:     { name: "Google Gemini", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/", hasPresetModels: true },
         ollama:     { name: "Ollama Cloud", base_url: "https://api.ollama.ai/v1", hasPresetModels: true },
         hf:         { name: "HuggingFace", base_url: "https://api-inference.huggingface.co/v1", hasPresetModels: true },
+        freellmapi: { name: "FreeLLMAPI", base_url: "http://localhost:3001/v1", hasPresetModels: true },
         custom:     { name: "Custom", base_url: "", hasPresetModels: false },
     };
 
@@ -2130,7 +2217,8 @@
                     new THREE.BoxGeometry(0.26, bh, bw),
                     new THREE.MeshLambertMaterial({color: col})
                 );
-                book.position.set(shelfX, sy + bh/2 + 0.02, shelfZ - 0.38 + bi * 0.28);
+                // Protrude slightly left of the shelf body so they are visible
+                book.position.set(shelfX - 0.05, sy + bh/2 + 0.02, shelfZ - 0.38 + bi * 0.28);
                 vrmScene.add(book);
             });
         });
@@ -2147,51 +2235,53 @@
         vrmScene.add(deco);
 
         // ── Bed (left wall) ───────────────────────────────────────────────────
+        const bedX = -W/2 + 1.25;
         const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.28,2.2), matBedFrame);
-        bedFrame.position.set(-W/2+0.95, 0.14, 1.5);
+        bedFrame.position.set(bedX, 0.14, 1.5);
         vrmScene.add(bedFrame);
         // Mattress
         const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.5,0.2,2.0), new THREE.MeshLambertMaterial({color:0xe8ddd0}));
-        mattress.position.set(-W/2+0.95, 0.38, 1.5);
+        mattress.position.set(bedX, 0.38, 1.5);
         vrmScene.add(mattress);
         // Sheet
         const sheet = new THREE.Mesh(new THREE.BoxGeometry(1.48,0.04,1.4), matBedSheet);
-        sheet.position.set(-W/2+0.95, 0.5, 1.7);
+        sheet.position.set(bedX, 0.5, 1.7);
         vrmScene.add(sheet);
         // Blanket (bunched up)
         const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.46,0.1,0.6), matBlanket);
-        blanket.position.set(-W/2+0.95, 0.53, 2.2);
+        blanket.position.set(bedX, 0.53, 2.2);
         vrmScene.add(blanket);
         // Pillows
         [-0.3,0.3].forEach(px => {
             const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.1,0.35), matPillow);
-            pillow.position.set(-W/2+0.95+px, 0.52, 0.65);
+            pillow.position.set(bedX+px, 0.52, 0.65);
             vrmScene.add(pillow);
         });
         // Headboard
         const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,0.1), matBedFrame);
-        headboard.position.set(-W/2+0.95, 0.63, 0.52);
+        headboard.position.set(bedX, 0.63, 0.52);
         vrmScene.add(headboard);
         // Headboard panel detail
         const hbPanel = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.5,0.05), matWardDoor);
-        hbPanel.position.set(-W/2+0.95, 0.65, 0.48);
+        hbPanel.position.set(bedX, 0.65, 0.48);
         vrmScene.add(hbPanel);
         // Bedside table
+        const bstX = -W/2 + 0.25;
         const bst = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.4), matDarkWood);
-        bst.position.set(-W/2+0.28, 0.275, 0.65);
+        bst.position.set(bstX, 0.275, 0.65);
         vrmScene.add(bst);
         const bstTop = new THREE.Mesh(new THREE.BoxGeometry(0.44,0.04,0.44), matMidWood);
-        bstTop.position.set(-W/2+0.28, 0.57, 0.65);
+        bstTop.position.set(bstX, 0.57, 0.65);
         vrmScene.add(bstTop);
         // Bedside lamp
         const bslPost = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.28,6), matMetal);
-        bslPost.position.set(-W/2+0.28, 0.73, 0.65);
+        bslPost.position.set(bstX, 0.73, 0.65);
         vrmScene.add(bslPost);
         const bslShade = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.07,0.12,8), new THREE.MeshLambertMaterial({color:0xd4b896}));
-        bslShade.position.set(-W/2+0.28, 0.87, 0.65);
+        bslShade.position.set(bstX, 0.87, 0.65);
         vrmScene.add(bslShade);
         const bslLight = new THREE.PointLight(0xffcc88, 0.8, 2.5);
-        bslLight.position.set(-W/2+0.28, 0.87, 0.65);
+        bslLight.position.set(bstX, 0.87, 0.65);
         vrmScene.add(bslLight);
 
         // ── Wardrobe (back-left corner) ────────────────────────────────────────

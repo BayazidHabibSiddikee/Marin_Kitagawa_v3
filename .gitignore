@@ -71,3 +71,6 @@ busi_doc/
 storage/latest_news.json
 storage/api_keys.txt
 ?.py
+
+# CodeLens Graph local index
+.codelens/
