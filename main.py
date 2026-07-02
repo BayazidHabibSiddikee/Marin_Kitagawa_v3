@@ -521,7 +521,7 @@ async def upload_document(file: UploadFile = File(...)):
     async def _trigger_reindex():
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post("http://127.0.0.1:5091/reindex")
+                await client.post("http://127.0.0.1:5080/reindex")
         except Exception:
             pass
     asyncio.create_task(_trigger_reindex())
@@ -765,7 +765,7 @@ async def rag_health_proxy():
     import httpx
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get("http://127.0.0.1:5091/health")
+            r = await client.get("http://127.0.0.1:5080/health")
             return r.json()
     except Exception as e:
         return {"status": "unavailable", "error": str(e)}
@@ -776,7 +776,7 @@ async def rag_index_progress_proxy():
     import httpx
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get("http://127.0.0.1:5091/index_progress")
+            r = await client.get("http://127.0.0.1:5080/index_progress")
             return r.json()
     except Exception:
         return {"state": "idle", "current": 0, "total": 0, "file": ""}

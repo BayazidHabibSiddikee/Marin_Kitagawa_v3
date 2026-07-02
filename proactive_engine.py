@@ -47,6 +47,7 @@ _client_queues_lock = asyncio.Lock()
 
 async def _broadcast_to_clients(payload: str):
     """Send payload to ALL connected SSE clients."""
+    global _client_queues
     async with _client_queues_lock:
         dead = set()
         for q in _client_queues:
@@ -54,7 +55,8 @@ async def _broadcast_to_clients(payload: str):
                 q.put_nowait(payload)
             except asyncio.QueueFull:
                 dead.add(q)
-        _client_queues -= dead
+        if dead:
+            _client_queues = _client_queues - dead
 
 
 def record_user_message(agent: str):

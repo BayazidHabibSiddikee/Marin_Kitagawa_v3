@@ -234,7 +234,6 @@ system_guard = SystemGuard()
 ALLOWED_EGRESS = {
     "localhost",
     "127.0.0.1",
-    "host.docker.internal",
     # Ollama (local)
     "localhost:11434",
     "127.0.0.1:11434",
