@@ -81,6 +81,33 @@ def fix_spacing(text: str) -> str:
     text = re.sub(r'  +', ' ', text)
     return text
 
+def strip_tool_schemas(text: str) -> str:
+    """
+    Remove tool schemas and function definitions from LLM output.
+    Prevents small models (Gemma, Qwen 0.5B) from leaking internal schemas.
+    """
+    if not text:
+        return text
+    
+    # 1. Remove tool schema arrays: [{ "name": ..., "arguments": ... }]
+    text = re.sub(r'\[\s*\{\s*"name"\s*:', '[ SCHEMA REMOVED ]', text)
+    text = re.sub(r'"arguments"\s*:\s*\{[^}]*\}', '', text)
+    
+    # 2. Remove markdown JSON blocks with tool definitions
+    text = re.sub(r'```(?:json|python)?\s*\[\s*\{[^}]*"(?:name|function)"[^}]*\}[^`]*```', '', text, flags=re.DOTALL)
+    
+    # 3. Remove standalone function definitions
+    text = re.sub(r'(?:async\s+)?def\s+\w+\([^)]*\).*?(?=\n\n|\Z)', '', text, flags=re.DOTALL)
+    
+    # 4. Remove OpenAI-style function calling artifacts
+    text = re.sub(r'<\|tool_use\|>.*?</\|tool_use\|>', '', text, flags=re.DOTALL)
+    
+    # 5. Clean up orphaned brackets and commas
+    text = re.sub(r'\[\s*\]|\{\s*\}', '', text)
+    text = re.sub(r',\s*,', ',', text)
+    
+    return text.strip()
+
 def get_llm(model_name: str, bind_tools: list = None):
     """Factory to create the right LLM instance based on model name."""
     import inspect
@@ -381,17 +408,24 @@ def habit_tool(action: str = "list", task_args: str = "") -> str:
     except Exception as e:
         return f"Error: {e}"
 
-# tool list — ALL registered tools
-ALL_TOOLS = [
+# ── Core Tools (General Use) ─────────────────────────────────────────
+CORE_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
     rag_search, learn_topic_tool, file_tool,
     crypto_tool, stock_tool, news_tool,
     pdf_analyze_tool, batch_convert_tool, book_download_tool,
     math_plot_tool, alarm_tool,
-    business_analysis_tool, binance_tool,
     youtube_search_tool, youtube_transcript_tool,
     playground_tool, resource_tool, habit_tool
 ]
+
+# ── Business/Trading Tools (Loaded Separately) ────────────────────────
+BUSINESS_TOOLS = [
+    business_analysis_tool, binance_tool
+]
+
+# Default: use CORE_TOOLS only (follow Custom Instruction §3)
+ALL_TOOLS = CORE_TOOLS
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
 # ── Agent State ──────────────────────────────────────────────────────────────
@@ -547,8 +581,12 @@ async def persona_node(state: AgentState) -> dict:
     except:
         final_text = content
 
-    # Cleanup
-    final_text = re.sub(r'\[\s*\{\s*"name".*?\}\s*\]', '', final_text, flags=re.DOTALL)
+    # ── CRITICAL: Apply text cleanup (Fix #1 & #3) ────────────────────
+    # 1. Remove tool schemas and function definitions
+    final_text = strip_tool_schemas(final_text)
+    
+    # 2. Fix spacing issues from small models
+    final_text = fix_spacing(final_text)
     
     # Re-append extracted tags
     if tags_to_preserve:
