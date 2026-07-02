@@ -47,7 +47,39 @@ def log_agent(msg: str):
 def fix_spacing(text: str) -> str:
     """Minimal spacing fix — only collapse double spaces."""
     if not text: return text
-    return re.sub(r'  +', ' ', text)
+    # 1. camelCase: wordWord -> word Word
+    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
+    # 2. Punctuation: word,word -> word, word
+    text = re.sub(r'([,\.!?;:])([a-zA-Z])', r'\1 \2', text)
+    # 3. Common glued words (aggressive for 0.5B models)
+    glued = [
+        (r'([iI])(don\'?t)', r'\1 \2'),
+        (r'([iI])(can\'?t)', r'\1 \2'),
+        (r'([iI])(am)', r'\1 \2'),
+        (r'([iI])(\'m)', r'\1 \2'),
+        (r'(but)(as)(an)', r'\1 \2 \3'),
+        (r'(but)(an)', r'\1 \2'),
+        (r'(is)(a)', r'\1 \2'),
+        (r'(to)(you)', r'\1 \2'),
+        (r'(for)(you)', r'\1 \2'),
+        (r'(of)(the)', r'\1 \2'),
+        (r'(in)(the)', r'\1 \2'),
+        (r'(it)(is)', r'\1 \2'),
+        (r'(and)(the)', r'\1 \2'),
+        (r'(asan)', r'as an'),
+        (r'(tobe)', r'to be'),
+        (r'(witha)', r'with a'),
+        (r'(operatewitha)', r'operate with a'),
+        (r'(staticlist)', r'static list'),
+        (r'(languagemodel)', r'language model'),
+        (r'(im|I\'m)(sorry)', r"I'm \2"),
+    ]
+    for pattern, repl in glued:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+
+    # 4. Final cleanup
+    text = re.sub(r'  +', ' ', text)
+    return text
 
 def get_llm(model_name: str, bind_tools: list = None):
     """Factory to create the right LLM instance based on model name."""

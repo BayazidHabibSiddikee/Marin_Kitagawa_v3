@@ -259,9 +259,11 @@ async def stream_marin_chat(
 
     # 1. Fast Intent Detection
     from marin_fier import classify
+    log_agent(f"AgentLogic: Classifying prompt: {prompt[:50]}...")
     cls = classify(prompt)
     intent = cls["intent"]
     user_vibe = cls.get("user_vibe", "neutral")
+    log_agent(f"AgentLogic: Detected intent '{intent}' with confidence {cls['confidence']:.2f}")
     
     # Tool detection — broad keywords covering real user requests
     TOOL_KEYWORDS = [
@@ -276,7 +278,15 @@ async def stream_marin_chat(
     p_lower = prompt.lower()
     needs_tools = any(kw in p_lower for kw in TOOL_KEYWORDS) or (intent != "chat" and cls["confidence"] > 0.8)
 
-    # 2. Path A: INSTANT PERSONA RESPONSE
+    # ── HYBRID EXECUTION: Inline for high-confidence tools ──
+    tool_result = None
+    if intent != "chat" and cls["confidence"] >= 0.9 and needs_tools:
+        from marin_fier import execute_tool
+        tool_result = await execute_tool(intent, cls.get("params", {}), user_id)
+        if tool_result is not None:
+            needs_tools = False  # Have result — skip background pipeline
+
+    # 2. INSTANT PERSONA RESPONSE
     from langgraph_agent import get_llm
     from config import FAST_MODEL
     
@@ -287,7 +297,12 @@ async def stream_marin_chat(
     
     # Make Persona aware of what it is doing
     context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."
-    if needs_tools:
+    if tool_result:
+        context_instruction += (
+            f"\n[SYSTEM: Tool {intent} executed successfully. Result:\n{tool_result}\n"
+            "Present this information naturally in your character voice.]"
+        )
+    elif needs_tools:
         context_instruction += (
             f"\n[SYSTEM: The user has requested a task that requires your tools ({intent}). "
             "DO NOT say you cannot do it. Tell the user you are handling it right now and will deliver the result shortly. "
@@ -341,6 +356,6 @@ async def stream_marin_chat(
     REFUSAL_PATTERNS = ["i cannot", "i can't", "i don't have the ability", "i'm unable", "cannot download", "cannot access"]
     response_implies_tool = any(p in full_response.lower() for p in REFUSAL_PATTERNS)
     
-    if needs_tools or response_implies_tool:
+    if not tool_result and (needs_tools or response_implies_tool):
         from langgraph_agent import run_background_tools
         asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id))

@@ -11,6 +11,7 @@ from datetime import datetime
 # Single Source of Truth for Tools
 from langgraph_agent import ALL_TOOLS, tools_by_name
 from config import FAST_MODEL
+from langgraph_agent import log_agent
 
 # ── Command execution logic (shared) ─────────────────────────────────────────
 _cmd_log = []
@@ -195,8 +196,11 @@ def classify(text: str) -> dict:
     Returns: {intent, params, user_vibe, director_emotion, confidence}
     """
     result = _regex_stage(text)
+    if result:
+        log_agent(f"MarinFier (Regex): Intent '{result["intent"]}' with confidence {result["confidence"]:.2f}")
 
     if result is None:
+        log_agent("MarinFier (Regex): No match, falling back to LLM.")
         llm_res = _llm_classify(text)
         if llm_res and llm_res.get("intent") != "chat":
             result = {"intent": llm_res.get("intent"), "params": {}, "confidence": 0.7}
