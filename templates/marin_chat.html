@@ -29,7 +29,8 @@
             border-right: 1px solid var(--border);
             overflow: hidden;
             flex-shrink: 0;
-            z-index: 10;
+            z-index: 9; /* Lower than sidebar z-index (1000) */
+            left: 0;
         }
         
         #vrm-canvas { width: 100%; height: 100%; display: block; }
@@ -206,6 +207,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         .tb-btn {
@@ -383,26 +386,38 @@
         .timer-btn.stop:hover  { background:rgba(201,91,91,.15); }
 
         /* ── MAIN AREA ───────────────────────────────────────────── */
-        .main-area { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: row; 
-            overflow: hidden; 
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
             width: 100%;
             height: 100%;
+            position: relative;
         }
 
         .dropdown-wrapper { width: 100%; }
+        .sidebar-subsection {
+            padding: 6px 16px 2px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .5rem;
+            letter-spacing: .12em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
         .sidebar-dropdown {
             background: var(--ink3);
             display: none;
             flex-direction: column;
-            width: 100%;
+            width: calc(100% - 8px);
+            max-height: 240px;
+            overflow-y: auto;
             padding: 4px 0;
             border-left: 1px solid var(--teal-dim);
             margin-left: 8px;
-            width: calc(100% - 8px);
         }
+        .sidebar-dropdown::-webkit-scrollbar { width: 3px; }
+        .sidebar-dropdown::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
         .dropdown-wrapper.active .sidebar-dropdown { display: flex; }
         .dropdown-wrapper.active .sidebar-btn .icon-arrow { transform: rotate(180deg); }
 
@@ -435,7 +450,7 @@
             bottom: 0;
             z-index: 1000;
             transform: translateX(-212px); /* Hide most of it, leave a tiny trigger sliver */
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s, left 0.2s ease;
             box-shadow: 10px 0 30px rgba(0,0,0,0);
         }
         .sidebar:hover {
@@ -1003,9 +1018,9 @@
         <button class="sidebar-btn" onclick="sendAction('/habits stats')"><span class="icon">📊</span> Daily Brief</button>
         <button class="sidebar-btn" onclick="sendAction('/timer status')"><span class="icon">⏱️</span> Timer Status</button>
         
-        
+        <div class="sidebar-section">Avatar</div>
         <div class="dropdown-wrapper" id="models-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('models-dropdown').classList.toggle('active')">
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('models-dropdown')">
                 <span class="icon">👤</span> Models <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
@@ -1024,28 +1039,31 @@
             </div>
         </div>
         <div class="dropdown-wrapper" id="actions-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('actions-dropdown').classList.toggle('active')">
-                <span class="icon">🏃</span> Actions <span class="icon-arrow">▼</span>
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('actions-dropdown')">
+                <span class="icon">🏃</span> Motions <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
-                 <button class="sidebar-btn" onclick="playAnimation('action_attention_seeking')">Attention Seeking</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_crawling')">Crawling</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_crouch')">Crouch</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_gaming')">Gaming</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_greeting')">Greeting</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_greeting1')">Greeting1</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_jog')">Jog</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_jump')">Jump</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_laydown')">Laydown</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_pat')">Pat</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_pickingup')">Pickingup</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_run')">Run</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_standup')">Standup</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_walk')">Walk</button>
+                <div class="sidebar-subsection">Greetings</div>
+                 <button class="sidebar-btn" onclick="playAnimation('action_greeting')"><span class="icon">👋</span> Greeting</button>
+                 <button class="sidebar-btn" onclick="playAnimation('joy')"><span class="icon">😊</span> Happy</button>
+                 <button class="sidebar-btn" onclick="playAnimation('joy2')"><span class="icon">😂</span> Laughing</button>
+                 <button class="sidebar-btn" onclick="playAnimation('gratitude')"><span class="icon">🙏</span> Thankful</button>
+                 <button class="sidebar-btn" onclick="playAnimation('love')"><span class="icon">💋</span> Blow Kiss</button>
+                <div class="sidebar-subsection">Movement</div>
+                 <button class="sidebar-btn" onclick="playAnimation('action_jog')"><span class="icon">🏃</span> Jog</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_run')"><span class="icon">🏃‍♀️</span> Run</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_walk')"><span class="icon">🚶</span> Walk</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_pat')"><span class="icon">🐾</span> Pat</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_attention_seeking')"><span class="icon">👀</span> Attention</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_crawling')"><span class="icon">🐍</span> Crawl</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_crouch')"><span class="icon">🦶</span> Crouch</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_laydown')"><span class="icon">🛌</span> Lay Down</button>
+                 <button class="sidebar-btn" onclick="playAnimation('action_standup')"><span class="icon">⬆️</span> Stand Up</button>
+                 <button class="sidebar-btn" onclick="stopAnimation()" style="color:var(--danger); border-top:1px solid var(--border); margin-top:4px;"><span class="icon">⏹</span> Stop All</button>
             </div>
         </div>
         <div class="dropdown-wrapper" id="dances-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('dances-dropdown').classList.toggle('active')">
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('dances-dropdown')">
                 <span class="icon">💃</span> Dances <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
@@ -1063,7 +1081,7 @@
             </div>
         </div>
         <div class="dropdown-wrapper" id="emotions-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('emotions-dropdown').classList.toggle('active')">
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('emotions-dropdown')">
                 <span class="icon">😊</span> Emotions <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
@@ -1093,8 +1111,9 @@
                  <button class="sidebar-btn" onclick="playAnimation('surprise')">Surprise</button>
             </div>
         </div>
+
         <div class="dropdown-wrapper" id="idles-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('idles-dropdown').classList.toggle('active')">
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('idles-dropdown')">
                 <span class="icon">🧍</span> Idles <span class="icon-arrow">▼</span>
             </button>
             <div class="sidebar-dropdown">
@@ -1102,27 +1121,6 @@
                  <button class="sidebar-btn" onclick="playAnimation('laying_idle')">Laying Idle</button>
                  <button class="sidebar-btn" onclick="playAnimation('neutral_idle')">Neutral Idle</button>
                  <button class="sidebar-btn" onclick="playAnimation('sit_idle')">Sit Idle</button>
-            </div>
-        </div>
-
-        <div class="dropdown-wrapper" id="motions-dropdown">
-            <button class="sidebar-btn" onclick="document.getElementById('motions-dropdown').classList.toggle('active')">
-                <span class="icon">💃</span> Motions <span class="icon-arrow">▼</span>
-            </button>
-            <div class="sidebar-dropdown">
-                 <button class="sidebar-btn" onclick="playAnimation('action_greeting')"><span class="icon">👋</span> Greeting</button>
-                 <button class="sidebar-btn" onclick="playAnimation('joy')"><span class="icon">😊</span> Happy</button>
-                 <button class="sidebar-btn" onclick="playAnimation('joy2')"><span class="icon">😂</span> Laughing</button>
-                 <button class="sidebar-btn" onclick="playAnimation('gratitude')"><span class="icon">🙏</span> Thankful</button>
-                 <button class="sidebar-btn" onclick="playAnimation('love')"><span class="icon">💋</span> Blow Kiss</button>
-                 <button class="sidebar-btn" onclick="playAnimation('dance_1')"><span class="icon">💃</span> Dance 1</button>
-                 <button class="sidebar-btn" onclick="playAnimation('dance_rumba')"><span class="icon">💃</span> Samba</button>
-                 <button class="sidebar-btn" onclick="playAnimation('dance_gangnam_style')"><span class="icon">💃</span> Salsa</button>
-                 <button class="sidebar-btn" onclick="playAnimation('dance_headdrop')"><span class="icon">🎵</span> Hip Hop</button>
-                 <button class="sidebar-btn" onclick="playAnimation('action_jog')"><span class="icon">🏃</span> Run</button>
-                 <button class="sidebar-btn" onclick="playAnimation('anger')"><span class="icon">💢</span> Angry</button>
-                 <button class="sidebar-btn" onclick="playAnimation('sadness')"><span class="icon">😔</span> Sad</button>
-                 <button class="sidebar-btn" onclick="stopAnimation()" style="color:var(--danger); border-top:1px solid var(--border); margin-top:4px;"><span class="icon">⏹</span> Stop All</button>
             </div>
         </div>
 
@@ -1911,6 +1909,26 @@
         localStorage.setItem('marinNightMode', document.body.classList.contains('night-mode'));
     }
 
+    function toggleSidebarDropdown(id) {
+        const target = document.getElementById(id);
+        if (!target) return;
+        const willOpen = !target.classList.contains('active');
+        document.querySelectorAll('.dropdown-wrapper.active').forEach(el => el.classList.remove('active'));
+        if (willOpen) target.classList.add('active');
+    }
+
+    function updateSidebarOffset() {
+        const sidebar = document.querySelector('.sidebar');
+        if (!sidebar) return;
+        if (vrmVisible) {
+            const container = document.getElementById('vrm-container');
+            const vrmWidth = container?.offsetWidth || 350;
+            sidebar.style.left = (vrmWidth + 1) + 'px';
+        } else {
+            sidebar.style.left = '0px';
+        }
+    }
+
 
     // ── VRM VIEWER ──────────────────────────────────────────────────────────
     function toggleVRM() {
@@ -1922,10 +1940,12 @@
 
         container.style.display = vrmVisible ? 'block' : 'none';
         resizer.style.display = vrmVisible ? 'block' : 'none';
-        
+
         label.textContent = vrmVisible ? 'avatar: on' : 'avatar: off';
         btn.style.color = vrmVisible ? 'var(--teal)' : '';
         btn.style.borderColor = vrmVisible ? 'var(--teal-dim)' : '';
+
+        updateSidebarOffset();
 
         if (vrmVisible && !vrmRenderer) {
             requestAnimationFrame(() => {
@@ -1957,18 +1977,19 @@
             if (!isResizing) return;
             const container = document.querySelector('.main-area');
             const containerRect = container.getBoundingClientRect();
-            
-            // Sidebar is now absolute (overlay), so we calculate relative to main-area
+
+            // Calculate new width based on mouse position
             let newWidth = e.clientX - containerRect.left;
-            
+
             // Constraints
             const minWidth = 200;
             const maxWidth = containerRect.width - 300; // Leave space for chat
-            
+
             if (newWidth < minWidth) newWidth = minWidth;
             if (newWidth > maxWidth) newWidth = maxWidth;
-            
+
             leftSide.style.width = newWidth + 'px';
+            updateSidebarOffset();
             onWindowResize();
         }
 
@@ -2593,7 +2614,7 @@
         projectorObject = new THREE.CSS3DObject(projDiv);
         projectorObject.scale.set(0.00148, 0.00148, 0.00148);
         // Push CSS3D slightly forward of bezel so nothing clips in front of it
-        projectorObject.position.set(0, 1.7, -D/2 + 0.06);
+        projectorObject.position.set(0, 1.65, -D/2 + 0.06);
         projectorObject.rotation.y = 0;
         vrmScene.add(projectorObject);
 
@@ -2607,7 +2628,7 @@
             blending: THREE.NoBlending,
         });
         const holeMesh = new THREE.Mesh(holeGeo, holeMat);
-        holeMesh.position.set(0, 1.7, -D/2 + 0.065);
+        holeMesh.position.set(0, 1.65, -D/2 + 0.065);
         holeMesh.renderOrder = 999;
         vrmScene.add(holeMesh);
 
@@ -2658,6 +2679,8 @@
 
                     vrmModel = vrm;
                     vrmScene.add(vrm.scene);
+                    // Move the avatar to the sofa
+                    vrm.scene.position.set(1.0, 0, 2.3);
                     vrm.scene.rotation.y = Math.PI;
                     vrm.scene.traverse((obj) => {
                         if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
@@ -2725,16 +2748,18 @@
     };
 
     function onWindowResize() {
-        if (!vrmRenderer) return;
-        const container = document.getElementById('vrm-container');
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        if (width === 0 || height === 0) return;
-        
-        vrmCamera.aspect = width / height;
-        vrmCamera.updateProjectionMatrix();
-        vrmRenderer.setSize(width, height);
-        if (vrmCssRenderer) vrmCssRenderer.setSize(width, height);
+        if (vrmVisible && vrmRenderer) {
+            const container = document.getElementById('vrm-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (width > 0 && height > 0) {
+                vrmCamera.aspect = width / height;
+                vrmCamera.updateProjectionMatrix();
+                vrmRenderer.setSize(width, height);
+                if (vrmCssRenderer) vrmCssRenderer.setSize(width, height);
+            }
+        }
+        updateSidebarOffset();
     }
 
     function animateVRM() {
@@ -4102,6 +4127,10 @@
         }, 3000);
     }
 
+    function initLayout() {
+        updateSidebarOffset();
+    }
+
     // ── INIT ───────────────────────────────────────────────────────────────
     window.onload = () => {
         try {
@@ -4114,6 +4143,7 @@
             setInterval(fetchIntelligence, 300000);
             initAgent();
             startPolling();
+            initLayout(); // Initialize layout positioning
 
             // ── BVH preload: warm the cache for the most-used animations ──
             // Runs after a short delay so the VRM model finishes loading first.

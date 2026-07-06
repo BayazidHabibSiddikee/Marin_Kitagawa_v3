@@ -1,0 +1,863 @@
+/* ── Marin Chat Interface Styles ────────────────────────── */
+
+.marin-app {
+  --ink:        #13100e;
+  --ink2:       #1c1814;
+  --ink3:       #221e19;
+  --surface:    #2a2520;
+  --mborder:    #3a342c;
+  --border-hi:  #52473c;
+  --teal:       #4db8a4;
+  --teal-dim:   #2d8a78;
+  --teal-glow:  rgba(77,184,164,.18);
+  --teal-soft:  rgba(77,184,164,.08);
+  --coral:      #e07b6a;
+  --coral-dim:  #a85244;
+  --mtext:      #e8ddd0;
+  --text-dim:   #8a7d72;
+  --text-muted: #4a4038;
+  --gold:       #c9965a;
+  --gold-soft:  rgba(201,150,90,.12);
+  --msuccess:   #5db882;
+  --mdanger:    #e07b6a;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  background: var(--ink);
+  color: var(--mtext);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.marin-app.night {
+  --ink:        #000000;
+  --ink2:       #080808;
+  --ink3:       #111111;
+  --surface:    #161616;
+  --mborder:    #222222;
+  --border-hi:  #333333;
+  --mtext:      #e0e0e0;
+  --text-dim:   #a0a0a0;
+  --text-muted: #666666;
+  --teal:       #3aa692;
+  --teal-dim:   #257a69;
+}
+
+/* Paper grain overlay */
+.marin-grain {
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 900;
+  opacity: .6;
+}
+
+/* ── Top Bar ──────────────────────────────────────────────── */
+.marin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 54px;
+  background: var(--ink2);
+  border-bottom: 1px solid var(--mborder);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.marin-topbar::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--teal-dim), transparent);
+}
+
+.marin-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.marin-logo-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1.5px solid var(--teal-dim);
+  box-shadow: 0 0 14px var(--teal-glow);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--teal-dim), #1a5a50);
+}
+
+.marin-logo-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.marin-logo-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.05rem;
+  color: var(--mtext);
+  letter-spacing: .04em;
+  line-height: 1;
+}
+
+.marin-logo-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .58rem;
+  color: var(--teal);
+  letter-spacing: .12em;
+  opacity: .7;
+}
+
+.marin-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mtb-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--mborder);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  letter-spacing: .06em;
+  transition: all .2s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.mtb-btn:hover { color: var(--teal); border-color: var(--teal-dim); background: var(--teal-soft); }
+.mtb-btn.active { color: var(--teal); border-color: var(--teal-dim); background: var(--teal-soft); }
+.mtb-btn.active-voice { color: var(--coral); border-color: var(--coral-dim); }
+.mtb-btn.active-rag { color: var(--msuccess); border-color: var(--msuccess); }
+.mtb-btn.danger { color: var(--mdanger); border-color: var(--coral-dim); }
+.mtb-btn.danger:hover { background: rgba(224,123,106,.1); }
+
+/* ── Status pip ─────────────────────────────────────────── */
+.marin-pip {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--msuccess);
+  box-shadow: 0 0 6px var(--msuccess);
+  animation: mpip 2.5s infinite;
+  flex-shrink: 0;
+}
+@keyframes mpip { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* ── Intel Ticker ────────────────────────────────────────── */
+.marin-intel-bar {
+  background: var(--ink2);
+  border-bottom: 1px solid var(--mborder);
+  padding: 0 20px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .6rem;
+  overflow: hidden;
+  position: relative;
+  z-index: 9;
+  flex-shrink: 0;
+}
+.marin-intel-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--ink2) 0%, transparent 8%, transparent 92%, var(--ink2) 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+.marin-intel-label {
+  color: var(--gold);
+  letter-spacing: .1em;
+  flex-shrink: 0;
+  position: relative; z-index: 3;
+}
+.marin-news-ticker {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.marin-news-scroll {
+  display: inline-block;
+  animation: mticker 75s linear infinite;
+  color: var(--text-dim);
+}
+@keyframes mticker {
+  0%   { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
+
+/* ── Timer Strip ─────────────────────────────────────────── */
+.marin-timer-strip {
+  background: var(--ink2);
+  border-bottom: 1px solid var(--mborder);
+  padding: 5px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+}
+.mts-lbl { color: var(--text-muted); letter-spacing: .1em; }
+.mts-val { color: var(--teal); }
+.mts-task { color: var(--gold); }
+.mts-sep { color: var(--border-hi); }
+.mts-btn {
+  margin-left: auto;
+  padding: 4px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all .2s;
+  letter-spacing: .06em;
+  line-height: 1.4;
+}
+.mts-btn.start { color: var(--msuccess); border-color: var(--msuccess); background: rgba(93,184,130,.06); }
+.mts-btn.start:hover { background: rgba(93,184,130,.15); }
+.mts-btn.stop { color: var(--mdanger); border-color: var(--mdanger); background: rgba(201,91,91,.06); }
+.mts-btn.stop:hover { background: rgba(201,91,91,.15); }
+
+/* ── Main Area ───────────────────────────────────────────── */
+.marin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  width: 100%;
+  position: relative;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.marin-sidebar {
+  width: 220px;
+  background: var(--ink2);
+  border-right: 1px solid var(--mborder);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  z-index: 1000;
+  transform: translateX(-212px);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1), background 0.3s, box-shadow 0.3s;
+  box-shadow: 10px 0 30px rgba(0,0,0,0);
+  scrollbar-width: thin;
+  scrollbar-color: var(--mborder) transparent;
+}
+.marin-sidebar:hover, .marin-sidebar.open {
+  transform: translateX(0);
+  background: var(--ink);
+  box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+  border-right-color: var(--teal-dim);
+}
+.marin-sidebar::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(to bottom, transparent, var(--teal-dim), transparent);
+  opacity: 0.3;
+  transition: opacity 0.3s;
+}
+.marin-sidebar:hover::after { opacity: 0; }
+.marin-sidebar::-webkit-scrollbar { width: 3px; }
+.marin-sidebar::-webkit-scrollbar-track { background: transparent; }
+.marin-sidebar::-webkit-scrollbar-thumb { background: var(--mborder); border-radius: 2px; }
+
+.msb-section {
+  padding: 6px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .55rem;
+  letter-spacing: .18em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.msb-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .82rem;
+  font-weight: 400;
+  color: var(--text-dim);
+  border: none;
+  background: none;
+  text-align: left;
+  width: 100%;
+  transition: all .2s;
+  position: relative;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.msb-btn:hover { color: var(--mtext); background: rgba(77,184,164,.06); }
+.msb-btn.active {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+.msb-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--teal);
+}
+.msb-btn .msb-icon { font-size: .9rem; width: 18px; text-align: center; flex-shrink: 0; }
+.msb-arrow { margin-left: auto; font-size: .5rem; transition: transform 0.2s; opacity: 0.5; }
+
+.msb-dropdown {
+  display: none;
+  flex-direction: column;
+  width: calc(100% - 8px);
+  margin-left: 8px;
+  padding: 4px 0;
+  border-left: 1px solid var(--teal-dim);
+}
+.msb-dropdown.open { display: flex; }
+.msb-dropdown .msb-btn {
+  padding: 5px 16px 5px 24px;
+  font-size: .72rem;
+  color: var(--text-muted);
+}
+.msb-dropdown .msb-btn:hover { color: var(--mtext); }
+
+/* ── Chat Wrapper ────────────────────────────────────────── */
+.marin-chat-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--ink);
+  min-width: 300px;
+  height: 100%;
+  overflow: hidden;
+  z-index: 5;
+}
+
+/* ── Messages ────────────────────────────────────────────── */
+.marin-messages {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-behavior: smooth;
+}
+.marin-messages::-webkit-scrollbar { width: 3px; }
+.marin-messages::-webkit-scrollbar-track { background: transparent; }
+.marin-messages::-webkit-scrollbar-thumb { background: var(--mborder); border-radius: 2px; }
+
+.marin-msg {
+  display: flex;
+  gap: 12px;
+  animation: mmsgIn .28s ease;
+  max-width: 820px;
+}
+@keyframes mmsgIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+.marin-msg.ai { flex-direction: row; align-self: flex-start; }
+.marin-msg.user { flex-direction: row-reverse; align-self: flex-end; }
+
+.marin-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .8rem;
+  font-family: 'DM Serif Display', serif;
+  overflow: hidden;
+}
+.marin-avatar.ai {
+  border: 1.5px solid var(--teal-dim);
+  box-shadow: 0 0 10px var(--teal-glow);
+  background: linear-gradient(135deg, var(--teal-dim), #1a5a50);
+  color: white;
+}
+.marin-avatar.user {
+  background: var(--surface);
+  border: 1px solid var(--mborder);
+  color: var(--text-dim);
+}
+
+.marin-bubble {
+  max-width: 620px;
+  padding: 11px 15px;
+  border-radius: 10px;
+  font-size: .9rem;
+  line-height: 1.7;
+  font-weight: 400;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.marin-msg.ai .marin-bubble {
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  color: var(--mtext);
+  border-top-left-radius: 3px;
+}
+.marin-msg.user .marin-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  color: var(--mtext);
+  border-top-right-radius: 3px;
+}
+
+/* Bubble markdown styling */
+.marin-bubble strong { color: var(--mtext); font-weight: 500; }
+.marin-bubble em { color: var(--text-dim); font-style: italic; }
+.marin-bubble a { color: var(--teal); text-decoration: underline; }
+.marin-bubble code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .8rem;
+  background: var(--surface);
+  border: 1px solid var(--mborder);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--teal);
+}
+.marin-bubble pre {
+  background: var(--ink);
+  border: 1px solid var(--mborder);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.marin-bubble pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--mtext);
+  font-size: .8rem;
+}
+.marin-bubble ul, .marin-bubble ol { padding-left: 20px; margin: 6px 0; }
+.marin-bubble li { margin: 3px 0; }
+
+/* Typing indicator */
+.marin-typing-dots { display: flex; gap: 4px; align-items: center; padding: 6px 0; }
+.marin-typing-dots span {
+  width: 5px; height: 5px;
+  background: var(--teal);
+  border-radius: 50%;
+  animation: mdot .9s infinite;
+  opacity: .4;
+}
+.marin-typing-dots span:nth-child(2) { animation-delay: .2s; }
+.marin-typing-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes mdot { 0%,100%{opacity:.2;transform:scale(.8)} 50%{opacity:1;transform:scale(1.15)} }
+
+/* ── Mode Bar ────────────────────────────────────────────── */
+.marin-mode-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 28px;
+  border-top: 1px solid var(--mborder);
+  background: var(--ink2);
+  flex-shrink: 0;
+}
+.marin-mode-tab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: .08em;
+  border-bottom: 2px solid transparent;
+  transition: all .2s;
+  line-height: 1.4;
+}
+.marin-mode-tab:hover { color: var(--text-dim); }
+.marin-mode-tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+/* ── Input Area ──────────────────────────────────────────── */
+.marin-input-area {
+  padding: 16px 28px 20px;
+  background: var(--ink2);
+  border-top: 1px solid var(--mborder);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.marin-input-row { display: flex; gap: 10px; align-items: flex-end; }
+
+.marin-textarea {
+  flex: 1;
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  border-radius: 10px;
+  color: var(--mtext);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .9rem;
+  font-weight: 400;
+  padding: 10px 14px;
+  resize: none;
+  min-height: 42px;
+  max-height: 130px;
+  line-height: 1.55;
+  transition: border-color .2s, box-shadow .2s;
+  outline: none;
+  overflow-y: auto;
+}
+.marin-textarea:focus {
+  border-color: var(--teal-dim);
+  box-shadow: 0 0 0 2px var(--teal-glow);
+}
+.marin-textarea::placeholder { color: var(--text-muted); }
+
+.marin-send-btn {
+  background: linear-gradient(135deg, var(--teal-dim), #1d6e60);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0 22px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  font-weight: 500;
+  letter-spacing: .04em;
+  transition: all .2s;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.marin-send-btn:hover { background: linear-gradient(135deg, var(--teal), var(--teal-dim)); box-shadow: 0 0 16px var(--teal-glow); }
+.marin-send-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.marin-tools-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.mtool-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--mborder);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  letter-spacing: .05em;
+  transition: all .2s;
+  line-height: 1.4;
+}
+.mtool-btn:hover { color: var(--teal); border-color: var(--teal-dim); }
+.mtool-btn.active { color: var(--gold); border-color: var(--gold); background: var(--gold-soft); }
+
+.mhint-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .56rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Modals ──────────────────────────────────────────────── */
+.marin-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(13,10,8,.8);
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+}
+.marin-modal-overlay.open { display: flex; }
+
+.marin-modal-box {
+  background: var(--ink2);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  padding: 24px;
+  min-width: 300px;
+  max-width: 560px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+}
+
+.marin-modal-box h3 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1rem;
+  color: var(--teal);
+  margin-bottom: 14px;
+  font-weight: 400;
+}
+
+.marin-modal-input {
+  width: 100%;
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  color: var(--mtext);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .9rem;
+  padding: 9px 12px;
+  border-radius: 6px;
+  outline: none;
+  margin-bottom: 12px;
+}
+.marin-modal-input:focus { border-color: var(--teal-dim); }
+
+.marin-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.mbtn-primary {
+  background: var(--teal-dim);
+  color: #fff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  transition: background .2s;
+  line-height: 1.4;
+}
+.mbtn-primary:hover { background: var(--teal); }
+
+.mbtn-ghost {
+  background: none;
+  border: 1px solid var(--mborder);
+  color: var(--text-dim);
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  transition: all .2s;
+  line-height: 1.4;
+}
+.mbtn-ghost:hover { border-color: var(--border-hi); color: var(--mtext); }
+
+/* Settings tabs */
+.mstab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: .06em;
+  border-bottom: 2px solid transparent;
+  transition: all .2s;
+  line-height: 1.4;
+}
+.mstab:hover { color: var(--text-dim); }
+.mstab.active { color: var(--teal); border-bottom-color: var(--teal); }
+
+.mset-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .6rem;
+  letter-spacing: .1em;
+  color: var(--teal);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mset-input {
+  width: 100%;
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  color: var(--mtext);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  padding: 7px 10px;
+  border-radius: 6px;
+  outline: none;
+  margin-top: 4px;
+}
+.mset-input:focus { border-color: var(--teal-dim); }
+
+.mdanger-card {
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mdanger-card-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--mtext);
+}
+.mdanger-card-desc {
+  font-size: .75rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.mbtn-danger {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  padding: 5px 12px;
+  border: 1px solid var(--mdanger);
+  background: transparent;
+  color: var(--mdanger);
+  cursor: pointer;
+  letter-spacing: .05em;
+  transition: all .2s;
+  align-self: flex-start;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+.mbtn-danger:hover { background: rgba(224,123,106,.1); }
+
+/* ── Terminal Panel ──────────────────────────────────────── */
+.marin-term-panel {
+  position: fixed;
+  bottom: 0; right: 0;
+  width: 400px;
+  max-height: 300px;
+  background: var(--ink);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  z-index: 500;
+  box-shadow: 0 -8px 40px rgba(0,0,0,.4);
+  display: flex;
+  flex-direction: column;
+}
+.mterm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--ink2);
+  border-bottom: 1px solid var(--mborder);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .6rem;
+  color: var(--teal);
+}
+.mterm-entries {
+  padding: 10px 14px;
+  overflow-y: auto;
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .65rem;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mterm-entries::-webkit-scrollbar { width: 3px; }
+.mterm-entries::-webkit-scrollbar-thumb { background: var(--mborder); border-radius: 2px; }
+.mterm-entry { line-height: 1.5; }
+.mterm-entry .ts { color: var(--text-muted); }
+.mterm-entry .cmd { color: var(--teal); }
+
+/* ── Provider Card (Settings) ────────────────────────────── */
+.mprovider-card {
+  background: var(--ink3);
+  border: 1px solid var(--mborder);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.mprovider-card.enabled { border-color: var(--teal-dim); }
+.mprovider-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background .2s;
+}
+.mprovider-header:hover { background: rgba(77,184,164,.04); }
+.mprovider-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--mborder);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background .2s;
+}
+.mprovider-dot.on { background: var(--msuccess); box-shadow: 0 0 6px var(--msuccess); }
+.mprovider-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .72rem;
+  color: var(--text-dim);
+  flex: 1;
+}
+.mprovider-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--mborder);
+}
+.mprovider-field-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .55rem;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.mprovider-input {
+  width: 100%;
+  background: var(--ink);
+  border: 1px solid var(--mborder);
+  color: var(--mtext);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .8rem;
+  padding: 6px 10px;
+  border-radius: 4px;
+  outline: none;
+}
+.mprovider-input:focus { border-color: var(--teal-dim); }
+
+/* ── Thinking / Talking avatar states ───────────────────── */
+@keyframes mThinkingGlow {
+  0%,100% { box-shadow: 0 0 10px var(--teal-glow); border-color: var(--teal-dim); }
+  50% { box-shadow: 0 0 20px rgba(77,184,164,.4); border-color: var(--teal); }
+}
+.marin-thinking .marin-logo-avatar { animation: mThinkingGlow 1.2s infinite; }
+
+@keyframes mTalkPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 14px var(--teal-glow); }
+  50% { transform: scale(1.05); box-shadow: 0 0 24px rgba(77,184,164,0.6); }
+}
+.marin-talking .marin-logo-avatar { animation: mTalkPulse .7s infinite; }
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+.marin-app *::-webkit-scrollbar { width: 3px; height: 3px; }
+.marin-app *::-webkit-scrollbar-track { background: transparent; }
+.marin-app *::-webkit-scrollbar-thumb { background: var(--mborder); border-radius: 2px; }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .marin-sidebar { display: none; }
+  .marin-messages { padding: 16px; }
+  .marin-input-area { padding: 12px 16px 16px; }
+  .mhint-text { display: none; }
+}
