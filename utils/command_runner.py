@@ -25,8 +25,7 @@ def run_command(command: str, timeout: int = 30) -> tuple[int, str]:
         # OWNER-ONLY — single-user dev box
         # We are already in the sandbox
         try:
-            # Use shell=True inside docker to allow pipes/redirection
-            # This is safe because the environment itself is isolated
+            # Parse command string into args; shell=False for security
             r = subprocess.run(
                 shlex.split(command) if isinstance(command, str) else command, shell=False,
                 capture_output=True, text=True, timeout=timeout,
