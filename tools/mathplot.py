@@ -85,6 +85,7 @@ def plot_sequence(plots, delay=0.01, grid=False):
     """Draw multiple parametric plots sequentially on the same CNC canvas,
     clearing between each."""
     import time
+
     from CNC_simulation import CNC
 
     titles = [p[6] for p in plots]
@@ -226,8 +227,7 @@ def _parse_simple_equation(text: str) -> dict | None:
         return None
     if dep == "y":
         return {"x_expr": "t", "y_expr": expr.replace("x", "t"), "t_start": 0, "t_end": 6.28, "n_points": 300, "r": 10}
-    else:
-        return {"x_expr": expr.replace("y", "t"), "y_expr": "t", "t_start": 0, "t_end": 6.28, "n_points": 300, "r": 10}
+    return {"x_expr": expr.replace("y", "t"), "y_expr": "t", "t_start": 0, "t_end": 6.28, "n_points": 300, "r": 10}
 
 
 def _validate_exprs(data: dict) -> bool:

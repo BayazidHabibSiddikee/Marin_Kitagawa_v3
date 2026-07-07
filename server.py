@@ -8,13 +8,12 @@ as MCP tools that return JSON format dictionaries.
 import json
 import subprocess
 import sys
-import os
 from pathlib import Path
-from mcp.server.models import InitializationOptions
+
 import mcp.server.stdio
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
-import mcp.server.stdio
+from mcp.server.models import InitializationOptions
 
 # Base directory for Marin project - hardcoded for reliability
 BASE_DIR = Path("/home/sword/Documents/marin")
@@ -24,7 +23,7 @@ def run_marin_tool(tool_name, args):
     """Run a Marin tool with given arguments and return JSON output."""
     tool_path = TOOLS_DIR / tool_name
     cmd = [sys.executable, str(tool_path)] + args
-    
+
     try:
         result = subprocess.run(
             cmd,
@@ -113,8 +112,8 @@ async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent
             type="text",
             text=json.dumps(result, indent=2)
         )]
-    
-    elif name == "make_tictactoe_move":
+
+    if name == "make_tictactoe_move":
         position = arguments.get("position")
         if position is None:
             result = {"error": "Missing 'position' argument"}
@@ -124,15 +123,15 @@ async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent
             type="text",
             text=json.dumps(result, indent=2)
         )]
-    
-    elif name == "get_connect4_state":
+
+    if name == "get_connect4_state":
         result = run_marin_tool("connect4.py", ["--get-state"])
         return [types.TextContent(
             type="text",
             text=json.dumps(result, indent=2)
         )]
-    
-    elif name == "make_connect4_move":
+
+    if name == "make_connect4_move":
         column = arguments.get("column")
         if column is None:
             result = {"error": "Missing 'column' argument"}
@@ -142,12 +141,11 @@ async def handle_call_tool(name: str, arguments: dict) -> list[types.TextContent
             type="text",
             text=json.dumps(result, indent=2)
         )]
-    
-    else:
-        return [types.TextContent(
-            type="text",
-            text=json.dumps({"error": f"Unknown tool: {name}"})
-        )]
+
+    return [types.TextContent(
+        type="text",
+        text=json.dumps({"error": f"Unknown tool: {name}"})
+    )]
 
 async def main():
     # Run the server using stdin/stdout

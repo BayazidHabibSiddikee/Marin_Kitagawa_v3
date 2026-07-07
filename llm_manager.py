@@ -1,10 +1,13 @@
 import json
-import time
 import os
-import database
-from langchain_openai import ChatOpenAI
+import time
+
 from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+
+import database
 from config import OLLAMA_BASE_URL
+
 # ── Legacy fallback model list ──────────────────────────────────────────────────
 FALLBACK_MODELS = [
     "google/gemini-2.5-flash",
@@ -223,13 +226,12 @@ def _try_build_llm(model: str, key: str, base_url: str):
     Returns the llm on success, raises on failure.
     ChatOpenAI.__init__ never raises on bad credentials — only .invoke() does.
     """
-    llm = ChatOpenAI(
+    return ChatOpenAI(
         model=model,
         openai_api_key=key,
         base_url=base_url,
         max_retries=1,
     )
-    return llm
 
 
 # ── Core LLM selector ──────────────────────────────────────────────────────────
@@ -379,7 +381,7 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
         )
         # Test basic connection
         llm.invoke([HumanMessage(content="hi")])
-        
+
         # Test tool calling
         try:
             llm_with_tools = llm.bind_tools([dummy_search_tool])
@@ -387,7 +389,7 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
             tool_msg = " (Tool calling supported)"
         except Exception:
             tool_msg = " (Valid, but this model might not support tools)"
-            
+
         return True, f"Key is valid{tool_msg}"
     except Exception as e:
         if is_auth_error(e):

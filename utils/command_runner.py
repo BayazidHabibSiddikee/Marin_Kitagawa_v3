@@ -1,7 +1,8 @@
 import os
-import subprocess
 import shlex
+import subprocess
 from pathlib import Path
+
 try:
     from safety import _in_docker
 except ImportError:
@@ -14,12 +15,12 @@ DOCKER_CONTAINER_NAME = "marin-hs02"
 
 def run_command(command: str, timeout: int = 30) -> tuple[int, str]:
     """
-    Execute a command. 
+    Execute a command.
     If running on host, it delegates to docker container for safety/isolation.
     If running in docker, it runs directly.
     """
     in_container = _in_docker()
-    
+
     if in_container:
         # OWNER-ONLY — single-user dev box
         # We are already in the sandbox
@@ -27,7 +28,7 @@ def run_command(command: str, timeout: int = 30) -> tuple[int, str]:
             # Use shell=True inside docker to allow pipes/redirection
             # This is safe because the environment itself is isolated
             r = subprocess.run(
-                command, shell=True,
+                shlex.split(command) if isinstance(command, str) else command, shell=False,
                 capture_output=True, text=True, timeout=timeout,
                 cwd="/app",
                 env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
@@ -48,10 +49,10 @@ def run_command(command: str, timeout: int = 30) -> tuple[int, str]:
             if "true" not in check_running.stdout:
                 # Attempt to start it
                 subprocess.run(["docker", "start", DOCKER_CONTAINER_NAME], capture_output=True)
-            
+
             # Use docker exec with bash -c to support pipes/redirection inside the container
             docker_cmd = ["docker", "exec", DOCKER_CONTAINER_NAME, "bash", "-c", command]
-            
+
             r = subprocess.run(
                 docker_cmd, shell=False,
                 capture_output=True, text=True, timeout=timeout + 5

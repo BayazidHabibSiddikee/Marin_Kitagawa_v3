@@ -1,4 +1,5 @@
 import time
+
 from pythonosc import udp_client
 
 # VSeeFace default VMC/OSC port
@@ -20,11 +21,11 @@ expressions = ["fun", "joy", "neutral", "sorrow", "angry"]
 def trigger_expression(name):
     print(f"Triggering: {name}")
     client = get_client()
-    
+
     # 1. First, reset all expressions to 0 (so they don't mix)
     for exp in expressions:
         client.send_message("/vmn/blend/val", [exp, 0.0])
-    
+
     # 2. Set the target expression to 1.0 (100% intensity)
     client.send_message("/vmn/blend/val", [name, 1.0])
 

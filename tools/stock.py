@@ -2,16 +2,14 @@
 # tools/stock.py — Stock price + graph, runs as its own process
 # Usage: python stock.py --ticker AAPL   OR   python stock.py --company "Tesla"
 
-import sys, argparse
+import argparse
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
-import arrow
 import yfinance as yf
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-
 
 
 def get_ticker(company_name: str) -> str | None:
@@ -92,7 +90,7 @@ if __name__ == '__main__':
     if args.plot and not args.ticker and not args.company:
         tickers = [t.strip() for t in args.plot.split(',')]
         args.ticker = tickers[0]
-        
+
     if args.ticker:
         show_stock(args.ticker.upper())
     elif args.company:

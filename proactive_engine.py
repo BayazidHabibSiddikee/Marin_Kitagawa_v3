@@ -15,8 +15,9 @@ import asyncio
 import json
 import random
 import time
-from datetime import datetime, time as dtime, timedelta
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import datetime
+from datetime import time as dtime
 
 import database
 
@@ -123,7 +124,7 @@ def _can_fire(agent: str) -> bool:
     now = time.time()
     last_user = _last_user_msg_time.get(agent, 0)
     last_pro  = _last_proactive_time.get(agent, 0)
-    
+
     # Last activity time
     last_act = max(last_user, last_pro)
     count = _streak_count.get(agent, 0)
@@ -133,19 +134,16 @@ def _can_fire(agent: str) -> bool:
         return False
 
     required_gap = IDLE_INTERVALS[count]
-    if now - last_act >= required_gap:
-        return True
-    return False
+    return now - last_act >= required_gap
 
 
 def _get_time_greeting() -> str:
     hour = datetime.now().hour
     if hour < 12:
         return "Good morning"
-    elif hour < 17:
+    if hour < 17:
         return "Good afternoon"
-    else:
-        return "Good evening"
+    return "Good evening"
 
 
 # ── Context Gatherers ─────────────────────────────────────────────────────
@@ -157,7 +155,7 @@ def _get_habit_context() -> str | None:
 
         reminders = get_reminders_for_today()
         stats = get_stats()
-        pending = list_tasks(status="todo")
+        list_tasks(status="todo")
         in_progress = list_tasks(status="in-progress")
 
         parts = []
@@ -193,7 +191,7 @@ def _get_conversation_context(agent: str = "marin") -> str | None:
 
         # Get the last 5 exchanges (user + assistant pairs)
         recent = history[-10:]
-        
+
         conversation = []
         for m in recent:
             role = "User" if m["role"] == "user" else "Marin"
@@ -224,18 +222,17 @@ def _get_time_context() -> str:
 
     if 7 <= hour < 9:
         return "early morning — suggest starting the day with habits"
-    elif 9 <= hour < 12:
+    if 9 <= hour < 12:
         return "morning — good time for focused work"
-    elif 12 <= hour < 14:
+    if 12 <= hour < 14:
         return "lunchtime — gentle check-in"
-    elif 14 <= hour < 17:
+    if 14 <= hour < 17:
         return "afternoon — check on progress"
-    elif 17 <= hour < 20:
+    if 17 <= hour < 20:
         return "evening — wind down or review day"
-    elif 20 <= hour < 23:
+    if 20 <= hour < 23:
         return "night — light chat, no heavy topics"
-    else:
-        return "late night — brief, warm"
+    return "late night — brief, warm"
 
 
 # ── Proactive Message Generator ───────────────────────────────────────────
@@ -350,7 +347,7 @@ Rules:
         text = ""
         async for chunk in stream_local_chat(messages, max_tokens=200):
             text += chunk
-        
+
         text = text.strip()
         if text and len(text) > 10:
             _last_proactive_time[agent] = time.time()
@@ -374,7 +371,7 @@ async def proactive_broadcaster(agent: str = "marin"):
 
     # Immediate greeting on first run
     await asyncio.sleep(3)
-    now = datetime.now().time()
+    datetime.now().time()
     if not _is_quiet_hours():
         try:
             from local_llm import stream_local_chat
@@ -395,7 +392,7 @@ Rules: Under 2 sentences. Stay in character. No questions. Do NOT sign your name
             text = ""
             async for chunk in stream_local_chat(messages, max_tokens=100):
                 text += chunk
-            
+
             text = text.strip()
             if text:
                 await _broadcast(text, "greeting", agent)
@@ -433,7 +430,7 @@ async def _broadcast(text: str, trigger: str, agent: str = "marin"):
             if ok:
                 print(f"[proactive] Telegram broadcast success: {text[:60]}...")
             else:
-                print(f"[proactive] Telegram broadcast FAILED (check tool output)")
+                print("[proactive] Telegram broadcast FAILED (check tool output)")
         except Exception as e:
             print(f"[proactive] Telegram broadcast exception: {e}")
 
@@ -453,7 +450,7 @@ async def proactive_stream(agent: str = "marin") -> AsyncGenerator[str, None]:
     try:
         # Initial connection ping
         yield f"data: {json.dumps({'type': 'system', 'text': 'Proactive Engine Connected'})}\n\n"
-        
+
         while True:
             try:
                 payload = await asyncio.wait_for(client_queue.get(), timeout=15.0)

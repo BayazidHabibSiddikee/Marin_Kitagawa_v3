@@ -2,8 +2,12 @@
 # tools/timer.py — runs as its own process
 # Usage: python timer.py --duration 300   (300 seconds = 5 minutes)
 
-import os, sys, time, argparse
+import argparse
+import os
+import sys
+import time
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Suppress ALSA noise before any audio import

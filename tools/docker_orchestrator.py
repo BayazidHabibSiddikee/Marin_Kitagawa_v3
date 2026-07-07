@@ -1,6 +1,7 @@
+from typing import Any
+
 import docker
-import time
-from typing import List, Dict, Any, Optional
+
 
 class DockerOrchestrator:
     def __init__(self):
@@ -22,7 +23,7 @@ class DockerOrchestrator:
             if not self.client:
                 raise RuntimeError("Docker daemon is inaccessible. Ensure /var/run/docker.sock is mounted.")
 
-    def list_containers(self, all: bool = False) -> List[Dict[str, Any]]:
+    def list_containers(self, all: bool = False) -> list[dict[str, Any]]:
         self._check_client()
         containers = self.client.containers.list(all=all)
         return [
@@ -88,7 +89,7 @@ class DockerOrchestrator:
         try:
             container = self.client.containers.get(name)
             stats = container.stats(stream=False)
-            
+
             # CPU
             cpu_stats = stats.get('cpu_stats', {})
             precpu_stats = stats.get('precpu_stats', {})
@@ -96,7 +97,7 @@ class DockerOrchestrator:
             precpu_usage = precpu_stats.get('cpu_usage', {}).get('total_usage', 0)
             system_cpu_usage = cpu_stats.get('system_cpu_usage', 0)
             system_precpu_usage = precpu_stats.get('system_cpu_usage', 0)
-            
+
             cpu_percent = 0.0
             if system_cpu_usage - system_precpu_usage > 0:
                 cpu_delta = cpu_usage - precpu_usage
@@ -108,7 +109,7 @@ class DockerOrchestrator:
             mem_usage = stats.get('memory_stats', {}).get('usage', 0)
             mem_limit = stats.get('memory_stats', {}).get('limit', 1)
             mem_percent = (mem_usage / mem_limit) * 100.0
-            
+
             return f"Stats for {name}:\nCPU: {cpu_percent:.2f}%\nMemory: {mem_usage / (1024*1024):.2f}MB / {mem_limit / (1024*1024):.2f}MB ({mem_percent:.2f}%)"
         except Exception as e:
             return f"Failed to get stats for {name}: {e}"
@@ -137,7 +138,7 @@ class DockerOrchestrator:
             # We use subprocess here because Docker SDK doesn't natively handle compose files well
             cmd = ["docker", "compose", "-f", f"{project_dir}/docker-compose.yml", action, "-d"]
             if action in ("down", "stop"): cmd.pop() # Remove -d
-            
+
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             return f"Compose {action} output:\n{result.stdout}\n{result.stderr}"
         except Exception as e:

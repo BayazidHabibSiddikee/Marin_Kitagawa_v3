@@ -1,6 +1,6 @@
 import re
 
-with open('/home/sword/Documents/marin/marin_fier.py', 'r') as f:
+with open('/home/sword/Documents/marin/marin_fier.py') as f:
     content = f.read()
 
 # Add habit regex
@@ -40,7 +40,7 @@ Respond ONLY with JSON format: {{"intent": "...", "user_vibe": "..."}}'''
             data = resp.json()
             content = data.get("message", {}).get("content", "{}")
             return json.loads(content)
-    except:
+    except Exception:
         pass
     return None
 
@@ -65,7 +65,6 @@ def classify(text: str) -> dict:
     result["director_emotion"] = _detect_director_emotion(text)
     return result
 """
-import re
 content = re.sub(r'def classify\(text: str\) -> dict:.*?return result', llm_classifier.strip(), content, flags=re.DOTALL)
 
 with open('/home/sword/Documents/marin/marin_fier.py', 'w') as f:

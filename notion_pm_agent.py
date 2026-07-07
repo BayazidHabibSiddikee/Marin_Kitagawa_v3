@@ -1,7 +1,7 @@
+import hashlib
 import os
 import subprocess
 import time
-import hashlib
 
 # Your Notion Page ID
 PAGE_ID = "395ffebbd15180919936c13f80202395"
@@ -33,12 +33,12 @@ def update_notion_page(content):
     current = get_notion_page()
     # Append our new report to the bottom
     new_content = current + "\n\n---\n" + content
-    
+
     # Write to a temp file and push back to Notion
     with open("temp_update.md", "w") as f:
         f.write(new_content)
-    
-    with open("temp_update.md", "r") as f:
+
+    with open("temp_update.md") as f:
         subprocess.run(['ntn', 'pages', 'edit', PAGE_ID], stdin=f)
 
 def get_new_requests(content):
@@ -57,7 +57,7 @@ def get_new_requests(content):
 def is_processed(req_hash):
     if not os.path.exists(PROCESSED_LOG):
         return False
-    with open(PROCESSED_LOG, "r") as f:
+    with open(PROCESSED_LOG) as f:
         return req_hash in f.read()
 
 def mark_processed(req_hash):
@@ -67,59 +67,60 @@ def mark_processed(req_hash):
 def run_workforce(task):
     import shlex
     report = f"### PM Report for: {task}\n"
-    
+
     previous_output = ""
     # 1. Read from the workforce list and provide works to each model sequentially
     for worker in WORKFORCE:
         print(f"\n[+] Assigning task to {worker['role']}...")
-        
+
         # Create a safe command line to avoid injection
         prompt = worker["command"].split('-p ')[1].strip('"').format(task=task, previous_output=previous_output)
         model_part = worker["command"].split(' -p')[0]
-        
+
         cmd = f'{model_part} -p {shlex.quote(prompt)}'
-        
+
         # We run the agent CLI and capture what they return
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        
+        cmd_list = shlex.split(cmd)
+        result = subprocess.run(cmd_list, shell=False, capture_output=True, text=True)
+
         # 2. Check what they returned and append to our report
         agent_output = result.stdout.strip()
         if not agent_output:
             agent_output = result.stderr.strip()
-            
+
         print(f"[-] {worker['role']} finished.")
-        
+
         report += f"**{worker['role']} Result:**\n```text\n{agent_output}\n```\n\n"
         previous_output = agent_output
-    
+
     return report
 
 def main():
     print("Notion PM Agent started. Polling every 60 seconds...")
     print("To trigger me, write a line in your Notion page starting with 'REQUEST: '")
-    
+
     while True:
         try:
             page_content = get_notion_page()
             requests = get_new_requests(page_content)
-            
+
             for req_hash, task in requests:
                 if not is_processed(req_hash):
-                    print(f"\n======================================")
+                    print("\n======================================")
                     print(f"New request found in Notion: {task}")
-                    print(f"======================================")
-                    
+                    print("======================================")
+
                     # Dispatch to the multi-model workforce
                     report = run_workforce(task)
-                    
+
                     print("\n[+] Updating Notion with the final report...")
                     update_notion_page(report)
                     mark_processed(req_hash)
                     print("[+] Done. Back to polling.")
-                    
+
         except Exception as e:
             print(f"Error occurred: {e}")
-            
+
         time.sleep(60)
 
 if __name__ == "__main__":

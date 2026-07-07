@@ -1,8 +1,10 @@
 import sys
+
 from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication
+
 
 class WebEnginePage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
@@ -16,5 +18,6 @@ view.load(QUrl("http://localhost:5069"))
 view.show()
 
 from PySide6.QtCore import QTimer
+
 QTimer.singleShot(8000, app.quit)
 sys.exit(app.exec())

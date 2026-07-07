@@ -1,7 +1,6 @@
 import os
-import zipfile
 import tarfile
-import shutil
+import zipfile
 
 try:
     import py7zr

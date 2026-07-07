@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import json
 import os
 import signal
@@ -72,10 +73,8 @@ def run_sequence(commands, default_delay=3, log_callback=None):
             pgid = os.getpgid(proc.pid)
             os.killpg(pgid, signal.SIGTERM)
             time.sleep(0.4)
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 os.killpg(pgid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
             print(f"  [{name}] killed after {delay}s")
 
         result = {

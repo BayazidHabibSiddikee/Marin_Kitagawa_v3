@@ -6,16 +6,14 @@ All downloaded PDFs go to /home/marin/Documents/ for auto-RAG ingestion.
 SECURITY: SSRF protection — blocks internal/local network access.
 """
 
-import os
-import sys
-import json
 import hashlib
-import logging
 import ipaddress
+import json
+import logging
+import os
 import socket
 from pathlib import Path
-from datetime import datetime
-from urllib.parse import urljoin, urlparse, quote_plus
+from urllib.parse import quote_plus, urljoin, urlparse
 
 LOG_DIR = Path.home() / "logs"
 DOWNLOAD_DIR = Path.home() / "Documents"
@@ -122,10 +120,10 @@ def get_stealth_browser():
     context.add_init_script("""
         // Override webdriver detection
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        
+
         // Override chrome detection
         window.chrome = { runtime: {} };
-        
+
         // Override permissions
         const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
@@ -133,12 +131,12 @@ def get_stealth_browser():
             Promise.resolve({ state: Notification.permission }) :
             originalQuery(parameters)
         );
-        
+
         // Override plugins
         Object.defineProperty(navigator, 'plugins', {
             get: () => [1, 2, 3, 4, 5],
         });
-        
+
         // Override languages
         Object.defineProperty(navigator, 'languages', {
             get: () => ['en-US', 'en'],
@@ -197,9 +195,8 @@ def download_pdf(page, url: str, save_dir: Path) -> str | None:
             save_path.write_bytes(response.body())
             log.info(f"  Downloaded: {filename} ({len(response.body())} bytes)")
             return str(save_path)
-        else:
-            log.warning(f"  Failed: {url} (status {response.status})")
-            return None
+        log.warning(f"  Failed: {url} (status {response.status})")
+        return None
 
     except Exception as e:
         log.error(f"  Download error: {e}")

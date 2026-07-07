@@ -4,16 +4,14 @@ Security Module — Handles command logging.
 Consolidated from the deprecated marin.py.
 """
 
-import asyncio
-import time
 import datetime
-from typing import Dict, Any, List
+from typing import Any
 
 # ── Command Log ───────────────────────────────────────────────────────────────
 # Thread-safe global log of executed commands
-_CMD_LOG: List[Dict[str, Any]] = []
+_CMD_LOG: list[dict[str, Any]] = []
 
-def get_cmd_log(limit: int = 100) -> List[Dict[str, Any]]:
+def get_cmd_log(limit: int = 100) -> list[dict[str, Any]]:
     return _CMD_LOG[-limit:]
 
 def log_command(cmd: str, status: str, output: str = "", user_id: str = "USR-00000000"):

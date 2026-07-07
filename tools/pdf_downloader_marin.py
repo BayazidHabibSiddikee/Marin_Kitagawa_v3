@@ -1,6 +1,6 @@
 import os
 import re
-import sys
+
 import requests
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -61,20 +61,20 @@ def download_pdf(url: str, book_name: str, output_dir: str = None) -> str:
 def marin_search_and_download(query: str, download_dir: str = None) -> str:
     """Marin's internal logic: search via existing knowledge_hub and download via this tool."""
     from tools.knowledge_hub import search_web
-    
+
     # search_web handles the heavy lifting
     pdf_query = f"{query} filetype:pdf"
     results = search_web(pdf_query, max_results=10)
-    
+
     if not results:
         return None
 
-    for i, r in enumerate(results[:5], 1):
+    for _i, r in enumerate(results[:5], 1):
         href = r.get("href") or r.get("link") or ""
         if not href: continue
-        
+
         path = download_pdf(href, query, download_dir)
         if path:
             return os.path.abspath(path)
-            
+
     return None

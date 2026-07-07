@@ -3,6 +3,7 @@
 
 import os
 import sys
+
 from langchain_community.document_loaders import PyPDFLoader
 
 DOC_DIR = "doc"

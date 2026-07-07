@@ -4,10 +4,11 @@ One-Click Learn Workflow — Downloads books and indexes into RAG.
 Sources: curated free PDFs + web search for direct links.
 """
 
-import os
 import asyncio
-import requests
+import os
 from pathlib import Path
+
+import requests
 
 # Use localhost by default (since we use network_mode: host)
 _PROXY_HOST = os.getenv("MARIN_PROXY_HOST", "localhost")
@@ -128,9 +129,7 @@ def _search_free_pdfs_web(topic: str) -> list:
             url = h.get("url") or h.get("href") or ""
             if url:
                 # Be more lenient: if it's from a reputable edu/org site or looks like a doc
-                if url.lower().endswith(".pdf") or "bitstream" in url or "download" in url:
-                    results.append({"href": url, "title": h.get("title") or topic})
-                elif any(domain in url for domain in [".edu", ".org", "microchip.com", "atmel.com"]):
+                if url.lower().endswith(".pdf") or "bitstream" in url or "download" in url or any(domain in url for domain in [".edu", ".org", "microchip.com", "atmel.com"]):
                     results.append({"href": url, "title": h.get("title") or topic})
         return results
     except Exception as e:

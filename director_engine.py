@@ -16,10 +16,10 @@ The script is emitted as a single JSON payload via the stream tag:
 Frontend decodes it, then schedules each action using setTimeout.
 """
 
-import re
-import json
 import base64
-from typing import List, Dict, Any, Tuple
+import json
+import re
+from typing import Any
 
 # ── Emotion → Animation + Expression mappings ──────────────────────────────
 
@@ -79,9 +79,9 @@ _EMOTION_KEYWORDS = {
     "love":       ["love", "adore", "treasure", "sweetheart", "my dear", "❤️", "💖", "💗", "💓"],
 }
 
-def _detect_sentence_emotion(sentence: str) -> Tuple[str, int]:
+def _detect_sentence_emotion(sentence: str) -> tuple[str, int]:
     lower = sentence.lower()
-    scores: Dict[str, int] = {}
+    scores: dict[str, int] = {}
     for emotion, keywords in _EMOTION_KEYWORDS.items():
         for kw in keywords:
             if kw in lower:
@@ -94,7 +94,7 @@ def _detect_sentence_emotion(sentence: str) -> Tuple[str, int]:
 
 # ── Text segmentation ───────────────────────────────────────────────────────
 
-def _split_into_segments(text: str) -> List[str]:
+def _split_into_segments(text: str) -> list[str]:
     """Split response into natural speech segments (sentences / phrases)."""
     # Clean markdown
     text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
@@ -133,7 +133,7 @@ def _estimate_duration(text: str) -> float:
 
 # ── Director script builder ─────────────────────────────────────────────────
 
-def build_director_script(response_text: str, base_emotion: str = "neutral") -> List[Dict[str, Any]]:
+def build_director_script(response_text: str, base_emotion: str = "neutral") -> list[dict[str, Any]]:
     """
     Parse Marin's full response and produce a timed action script.
 
@@ -142,7 +142,7 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
         { "t": float, "type": str, "value": str, "dur": float }
     """
     segments = _split_into_segments(response_text)
-    script: List[Dict[str, Any]] = []
+    script: list[dict[str, Any]] = []
     cursor = 0.0
 
     # Subtle open — neutral idle, light expression (human default pose)
@@ -184,13 +184,13 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
 
 # ── Encoding ────────────────────────────────────────────────────────────────
 
-def encode_director_script(script: List[Dict[str, Any]]) -> str:
+def encode_director_script(script: list[dict[str, Any]]) -> str:
     """Encode the script as a base64 string for safe stream embedding."""
     raw = json.dumps(script, separators=(',', ':'))
     return base64.b64encode(raw.encode()).decode()
 
 
-def decode_director_script(encoded: str) -> List[Dict[str, Any]]:
+def decode_director_script(encoded: str) -> list[dict[str, Any]]:
     """Decode a base64-encoded director script back to a list of actions."""
     raw = base64.b64decode(encoded.encode()).decode()
     return json.loads(raw)
@@ -335,7 +335,7 @@ def classify_video_mood(transcript: str, title: str = "") -> str:
     Returns one of: sad | emotional | hype | chill | dance | hype_metal | normal
     """
     text = (title + " " + (transcript or "")).lower()
-    scores: dict[str, int] = {mood: 0 for mood in _VIDEO_MOOD_KEYWORDS}
+    scores: dict[str, int] = dict.fromkeys(_VIDEO_MOOD_KEYWORDS, 0)
 
     for mood, keywords in _VIDEO_MOOD_KEYWORDS.items():
         for kw in keywords:

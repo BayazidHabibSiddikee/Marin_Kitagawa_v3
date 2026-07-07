@@ -2,7 +2,6 @@
 """Serve ModuleFlow visualization on port 5070."""
 import http.server
 import os
-import sys
 from pathlib import Path
 
 PORT = 5070

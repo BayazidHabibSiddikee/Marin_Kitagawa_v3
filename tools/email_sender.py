@@ -5,10 +5,11 @@ email_sender.py — Send emails with .txt or .tex file attachments via Gmail SMT
 
 import os
 import smtplib
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,13 +29,13 @@ def send_email(
 ) -> str:
     """
     Send an email. Optionally attach a .txt or .tex file.
-    
+
     Args:
         to: Recipient email address.
         subject: Email subject line.
         body: Plain text body (used if no attachment, or as intro with attachment).
         attachment_path: Path to .txt or .tex file to attach.
-    
+
     Returns:
         Status message string.
     """
@@ -47,10 +48,7 @@ def send_email(
     final_body = body
     if attachment_path:
         fname = os.path.basename(attachment_path)
-        if not body:
-            final_body = f"Please find attached: {fname}"
-        else:
-            final_body = f"{body}\n\n---\nAttached: {fname}"
+        final_body = f"Please find attached: {fname}" if not body else f"{body}\n\n---\nAttached: {fname}"
 
     msg.attach(MIMEText(final_body, "plain"))
 

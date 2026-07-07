@@ -5,13 +5,14 @@ Part of the SwordFish Tools suite.
 """
 
 import os
+from typing import Any
+
 import requests
-from typing import List, Dict, Any
 
 DOWNLOAD_DIR = "static/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-def search_gutenberg(query: str) -> List[Dict[str, Any]]:
+def search_gutenberg(query: str) -> list[dict[str, Any]]:
     """Search Project Gutenberg via Gutendex API."""
     url = f"https://gutendex.com/books/?search={query}"
     try:
@@ -22,7 +23,7 @@ def search_gutenberg(query: str) -> List[Dict[str, Any]]:
             # Find PDF or EPUB link
             formats = book.get('formats', {})
             dl_url = formats.get('application/pdf') or formats.get('application/epub+zip') or formats.get('text/plain; charset=utf-8')
-            
+
             results.append({
                 "title": book.get('title'),
                 "author": ", ".join(a.get('name') for b in [book.get('authors', [])] for a in b),
@@ -35,7 +36,7 @@ def search_gutenberg(query: str) -> List[Dict[str, Any]]:
         print(f"Gutenberg search error: {e}")
         return []
 
-def search_open_library(query: str) -> List[Dict[str, Any]]:
+def search_open_library(query: str) -> list[dict[str, Any]]:
     """Search Open Library."""
     url = f"https://openlibrary.org/search.json?q={query}"
     try:
@@ -56,19 +57,19 @@ def search_open_library(query: str) -> List[Dict[str, Any]]:
         print(f"Open Library search error: {e}")
         return []
 
-def download_book(url: str, title: str) -> Dict[str, Any]:
+def download_book(url: str, title: str) -> dict[str, Any]:
     """Download a book from a URL."""
     try:
         response = requests.get(url, stream=True, timeout=30)
         ext = ".pdf" if "pdf" in url.lower() else ".epub" if "epub" in url.lower() else ".txt"
         filename = f"{title.replace(' ', '_')}{ext}"
         path = os.path.join(DOWNLOAD_DIR, filename)
-        
+
         with open(path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
-                    
+
         return {"ok": True, "path": path, "filename": filename}
     except Exception as e:
         return {"ok": False, "error": str(e)}

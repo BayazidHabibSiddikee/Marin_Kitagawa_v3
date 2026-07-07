@@ -3,21 +3,20 @@
 habit.py — CLI wrapper for the unified habit/task tracker.
 Uses habit_store.py for all DB operations.
 """
-import sys
-from tools.habit_store import add_task, complete_task, list_tasks, get_stats, get_reminders_for_today, delete_task
+from tools.habit_store import add_task, complete_task, delete_task, get_reminders_for_today, get_stats, list_tasks
+
 
 def run(action, args):
     if action == "add":
         return add_task(args[0], "todo", args[1] if len(args) > 1 else "normal")
-    elif action == "list":
+    if action == "list":
         return str(list_tasks())
-    elif action == "done":
+    if action == "done":
         return complete_task(int(args[0]))
-    elif action == "stats":
+    if action == "stats":
         return str(get_stats())
-    elif action == "today":
+    if action == "today":
         return str(get_reminders_for_today())
-    elif action == "del":
+    if action == "del":
         return delete_task(int(args[0]))
-    else:
-        return "Unknown action"
+    return "Unknown action"

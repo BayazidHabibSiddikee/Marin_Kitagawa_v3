@@ -10,15 +10,15 @@ Architecture:
 - Breach Detection: honey-pot mock shell + proactive rebuke
 """
 
+import hashlib
+import json
 import os
 import re
-import json
 import time
-import hashlib
-from pathlib import Path
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Any, Optional, Set
-from dataclasses import dataclass, field
+from pathlib import Path
+
 from utils.shared_logic import MASTER_USER
 
 STORAGE_DIR = Path(__file__).parent / "storage"
@@ -41,13 +41,13 @@ except Exception:
 @dataclass
 class Role:
     name: str
-    capabilities: Set[str]
+    capabilities: set[str]
     quota: int = -1          # -1 = unlimited
     latency_base: float = 0.0  # base latency in seconds
     latency_per_probe: float = 0.5  # additional seconds per probe
     max_log_lines: int = -1  # -1 = unlimited, else truncate
     redact_paths: bool = False  # replace system paths with [REDACTED]
-    guest_root: Optional[str] = None  # VFS root for file operations
+    guest_root: str | None = None  # VFS root for file operations
 
 
 # Capability definitions
@@ -59,7 +59,7 @@ CAP_NET = "network"
 CAP_LATENCY_BYPASS = "bypass_latency"
 CAP_FULL_ACCESS = "*"  # everything
 
-ROLES: Dict[str, Role] = {
+ROLES: dict[str, Role] = {
     "owner": Role(
         name="owner",
         capabilities={CAP_FULL_ACCESS, CAP_READ, CAP_WRITE, CAP_EXECUTE,
@@ -84,7 +84,7 @@ ROLES: Dict[str, Role] = {
 }
 
 # User → Role mapping
-USER_ROLES: Dict[str, str] = {
+USER_ROLES: dict[str, str] = {
     MASTER_USER: "owner",
     "USR-MASTER": "owner",
     "marin": "owner",
@@ -119,10 +119,10 @@ class PrivilegeManager:
         self._breach_attempts: list = []
         # suspicion_level: user → {"level": float, "last_update": float}
         # level 0–100; decays at 1 pt/min; raised by restricted probes
-        self._suspicion: Dict[str, Dict] = {}
+        self._suspicion: dict[str, dict] = {}
         self._deploy_honey_files()
 
-    def log_ai_action(self, user: str, action: str, intent: str = "", details: Dict = None):
+    def log_ai_action(self, user: str, action: str, intent: str = "", details: dict = None):
         """Log AI-initiated actions to the Observatory.
         Mandatory for all AI decisions."""
         entry = {
@@ -133,14 +133,14 @@ class PrivilegeManager:
             "details": details or {},
         }
         print(f"[OBSERVATORY] {user} -> {action}: {intent}")
-        
+
         # Append to the secure audit log if possible
         try:
             # On host, we might not have permission, so we fall back to STORAGE_DIR
             target_log = AI_AUDIT_LOG
             if not target_log.parent.exists() or not os.access(target_log.parent, os.W_OK):
                 target_log = STORAGE_DIR / "ai_actions.log"
-                
+
             with open(target_log, "a") as f:
                 f.write(json.dumps(entry) + "\n")
         except Exception as e:
@@ -249,13 +249,13 @@ class PrivilegeManager:
         parts = p.parts
         if self.SECRET_DIR in parts:
             self._suspicion[user] = {"level": 100.0, "last_update": time.time()}
-            entry = self.record_breach(user, path, "honeypot")
+            self.record_breach(user, path, "honeypot")
             print(f"[CANARY] BREACH: {user} accessed .secret path '{path}' — suspicion → 100")
             return True
         # Top-level honey files
         if p.name in self.HONEY_FILES:
             self._suspicion[user] = {"level": 100.0, "last_update": time.time()}
-            entry = self.record_breach(user, path, "honeypot")
+            self.record_breach(user, path, "honeypot")
             print(f"[HONEYFILE] BREACH: {user} accessed canary '{p.name}' — suspicion → 100")
             return True
         return False
@@ -293,18 +293,17 @@ class PrivilegeManager:
             # Honey-file check — spikes suspicion to 100 if canary accessed
             pm.check_honey_access(user, str(target))
             return target
-        else:
-            # Owner: resolve from /
-            base = Path("/")
-            target = (base / user_path.lstrip("/")).resolve()
-            # Even owners can't access certain paths
-            blocked = ["/etc/shadow", "/etc/gshadow", "/proc", "/sys"]
-            for b in blocked:
-                if str(target).startswith(b):
-                    raise PermissionError(
-                        f"[SECURITY] Access denied to {target}"
-                    )
-            return target
+        # Owner: resolve from /
+        base = Path("/")
+        target = (base / user_path.lstrip("/")).resolve()
+        # Even owners can't access certain paths
+        blocked = ["/etc/shadow", "/etc/gshadow", "/proc", "/sys"]
+        for b in blocked:
+            if str(target).startswith(b):
+                raise PermissionError(
+                    f"[SECURITY] Access denied to {target}"
+                )
+        return target
 
     # ── QUOTA MANAGEMENT ─────────────────────────────────────────────────────
 
@@ -485,7 +484,7 @@ def mock_shell_execute(cmd: str, user: str) -> str:
     """Execute a command in the honey-pot mock shell.
     Returns realistic-looking error output. Logs the attempt."""
     pm = get_privilege_manager()
-    entry = pm.record_breach(user, cmd, "honeypot")
+    pm.record_breach(user, cmd, "honeypot")
 
     # Find matching mock response
     cmd_lower = cmd.lower().strip()
@@ -538,10 +537,7 @@ def run_as_user(cmd: str, user: str, timeout: int = 30) -> dict:
             f"-- sh -c {_subprocess.list2cmdline([cmd])}"
         )
         # Check bwrap availability once (cached in module-level flag)
-        if _bwrap_available():
-            full_cmd = bwrap_prefix
-        else:
-            full_cmd = f"sudo -u visitor -- sh -c {_subprocess.list2cmdline([cmd])}"
+        full_cmd = bwrap_prefix if _bwrap_available() else f"sudo -u visitor -- sh -c {_subprocess.list2cmdline([cmd])}"
 
     # OWNER-ONLY — single-user dev box
     import shlex
@@ -557,7 +553,7 @@ def run_as_user(cmd: str, user: str, timeout: int = 30) -> dict:
         return {"exit": -1, "stdout": "", "stderr": str(e)}
 
 
-_bwrap_ok: Optional[bool] = None
+_bwrap_ok: bool | None = None
 
 def _bwrap_available() -> bool:
     global _bwrap_ok
@@ -584,7 +580,7 @@ def cold_latency(user: str, confidence: float = 1.0):
 # SINGLETON
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_pm: Optional[PrivilegeManager] = None
+_pm: PrivilegeManager | None = None
 
 
 def get_privilege_manager() -> PrivilegeManager:

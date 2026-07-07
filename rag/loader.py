@@ -1,12 +1,15 @@
 # rag/loader.py — one loader, both AI engines import from here
 # SECURITY: Uses safe deserialization only — no pickle
 
-import os, json, hashlib
+import hashlib
+import json
+import os
+
 import faiss
 import numpy as np
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOC_DIR   = "doc"
 FAISS_DIR = "storage/faiss_db"
@@ -72,9 +75,7 @@ def _validate_file(path: str) -> bool:
     if size_mb > MAX_FILE_SIZE_MB:
         print(f"[RAG] SKIP {os.path.basename(path)}: too large ({size_mb:.0f}MB > {MAX_FILE_SIZE_MB}MB)")
         return False
-    if size_mb == 0:
-        return False
-    return True
+    return size_mb != 0
 
 
 def load_or_build():
@@ -113,10 +114,9 @@ def load_or_build():
 
     if index is not None and new_docs:
         # Add new documents
-        from langchain_community.vectorstores import FAISS
         # We need to temporarily create a FAISS object to add documents
         # Then save using safe IO
-        embeddings_list = [doc.metadata.get("embedding", None) for doc in new_docs]
+        [doc.metadata.get("embedding", None) for doc in new_docs]
 
         # Embed and add to index
         texts = [doc.page_content for doc in new_docs]
@@ -132,7 +132,7 @@ def load_or_build():
 
         # Update docstore
         start_id = len(id_map)
-        for i, (text, meta) in enumerate(zip(texts, metadatas)):
+        for i, (text, meta) in enumerate(zip(texts, metadatas, strict=False)):
             doc_id = str(start_id + i)
             docstore[doc_id] = {"page_content": text, "metadata": meta}
             id_map.append(doc_id)
@@ -148,13 +148,12 @@ def load_or_build():
 
         docstore = {}
         id_map = []
-        for i, (text, meta) in enumerate(zip(texts, metadatas)):
+        for i, (text, meta) in enumerate(zip(texts, metadatas, strict=False)):
             doc_id = str(i)
             docstore[doc_id] = {"page_content": text, "metadata": meta}
             id_map.append(doc_id)
 
     # Check index size limit
-    import os as _os
     estimated_mb = (index.ntotal * index.d * 4) / (1024 * 1024)  # float32
     if estimated_mb > MAX_INDEX_SIZE_MB:
         print(f"[RAG] WARNING: Index size {estimated_mb:.0f}MB exceeds limit {MAX_INDEX_SIZE_MB}MB")

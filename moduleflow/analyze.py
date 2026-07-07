@@ -5,11 +5,10 @@ Scans all .py files, extracts imports/functions/calls, outputs JSON graph.
 """
 
 import ast
-import os
 import json
-import sys
-from pathlib import Path
+import os
 from collections import defaultdict
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {
@@ -27,9 +26,7 @@ def should_skip(path: Path) -> bool:
     if path.name in SKIP_FILES:
         return True
     # Skip hidden files (like .py, .py_1)
-    if path.name.startswith(".") and not path.name.startswith("__"):
-        return True
-    return False
+    return bool(path.name.startswith(".") and not path.name.startswith("__"))
 
 
 def extract_imports(tree: ast.AST) -> list[dict]:
@@ -445,7 +442,7 @@ async function init() {{
         output_html.write_text(html, encoding="utf-8")
         print(f"  HTML:      {output_html}")
 
-    print(f"Done!")
+    print("Done!")
     print(f"  Files:     {graph['stats']['total_files']}")
     print(f"  Functions: {graph['stats']['total_functions']}")
     print(f"  Classes:   {graph['stats']['total_classes']}")

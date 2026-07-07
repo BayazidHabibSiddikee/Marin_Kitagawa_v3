@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # tools/bangla.py — Bangla Voice Translator, runs as its own process
-import os
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.tts import speak_female
-
 from datetime import datetime
+
+from utils.tts import speak_female
 
 
 class BanglaVoiceTranslator:

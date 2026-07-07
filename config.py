@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # config.py — Marin /  HS-02 shared constants  (Linux-native)
 
+import json
 import os
+import random
 import shutil
 import subprocess
-import json
-import random
-from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +44,7 @@ def launch_app(name: str) -> str:
                 try:
                     subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                     return f"Opening {name}~ ✨"
-                except: pass
+                except Exception: pass
     if key in WEB_APPS:
         import webbrowser
         webbrowser.open(WEB_APPS[key])
@@ -76,14 +77,14 @@ SETTINGS_PATH = os.path.join(BASE_DIR, "settings.json")
 def load_settings():
     if not os.path.exists(SETTINGS_PATH): return {}
     try:
-        with open(SETTINGS_PATH, "r") as f: return json.load(f)
-    except: return {}
+        with open(SETTINGS_PATH) as f: return json.load(f)
+    except Exception: return {}
 
 _settings = load_settings()
 
 # ── VAULT & API KEYS ─────────────────────────────────────────────────────────
 try:
-    from vault import vault_get, get_vault
+    from vault import get_vault, vault_get
     _v = get_vault()
     _v.migrate_from_settings(SETTINGS_PATH)
     API_KEYS = {}
@@ -123,8 +124,8 @@ def _get_session_key():
     if k: return k
     if os.path.exists(_s_key_path):
         try:
-            with open(_s_key_path, "r") as f: return f.read().strip()
-        except: pass
+            with open(_s_key_path) as f: return f.read().strip()
+        except Exception: pass
     import secrets
     k = secrets.token_hex(32)
     os.makedirs(os.path.dirname(_s_key_path), exist_ok=True)

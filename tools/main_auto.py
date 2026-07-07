@@ -1,9 +1,10 @@
-import telebot
+import json
+import re
+
 import new
 import numpy as np
-import re
 import ollama
-import json
+import telebot
 
 # --- CONFIGURATION ---
 API = os.getenv("TELEGRAM_API_KEY", "")
@@ -136,8 +137,7 @@ def _regex_parse(text):
         return None
     if dep == "y":
         return {"x_expr": "t", "y_expr": expr.replace("x", "t"), "t_start": -4, "t_end": 4, "n_points": 300, "r": 10}
-    else:
-        return {"x_expr": expr.replace("y", "t"), "y_expr": "t", "t_start": -4, "t_end": 4, "n_points": 300, "r": 10}
+    return {"x_expr": expr.replace("y", "t"), "y_expr": "t", "t_start": -4, "t_end": 4, "n_points": 300, "r": 10}
 
 def _preset_lookup(text):
     key = text.strip().lower().replace(" ", "_")

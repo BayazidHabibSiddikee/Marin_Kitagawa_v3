@@ -1,10 +1,9 @@
 # business_tools.py — Specialized tools for market analysis and trading.
 # Part of the separated business pipeline.
 
+
 from langchain_core.tools import tool
-import os
-import json
-from datetime import datetime
+
 
 @tool
 def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, price: float = None, user_id: str = "USR-MASTER") -> str:
@@ -25,7 +24,7 @@ def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, pri
         price: Optional limit price.
         user_id: The ID of the user performing the trade.
     """
-    from tools.binance_client import BinanceManager
+    from tools.binance_client_tool import BinanceManager
     from tools.portfolio_tracker import PortfolioTracker
 
     try:
@@ -36,15 +35,15 @@ def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, pri
         mgr = BinanceManager(user_id)
         if action == "balance":
             return str(mgr.get_balance())
-        elif action == "price":
+        if action == "price":
             return str(mgr.get_symbol_price(symbol))
-        elif action == "buy":
+        if action == "buy":
             if not amount: return "Specify amount to buy."
             return str(mgr.execute_trade(symbol, "buy", amount, price))
-        elif action == "sell":
+        if action == "sell":
             if not amount: return "Specify amount to sell."
             return str(mgr.execute_trade(symbol, "sell", amount, price))
-        elif action == "history":
+        if action == "history":
             return str(mgr.get_history(symbol))
 
         return f"Unknown binance action: {action}"
@@ -54,7 +53,7 @@ def binance_tool(action: str, symbol: str = "BTCUSDT", amount: float = None, pri
 @tool
 def business_analysis_tool(query: str) -> str:
     """Perform deep analysis on business queries, trading strategies, or market trends.
-    
+
     Args:
         query: The business or trading question to analyze.
     """

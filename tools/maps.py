@@ -11,9 +11,9 @@ Usage examples:
   python maps.py --city Sylhet --query park --limit 5
 """
 
-import sys
-import subprocess
 import os
+import subprocess
+import sys
 
 if __name__ == "__main__":
     base   = os.path.dirname(os.path.abspath(__file__))

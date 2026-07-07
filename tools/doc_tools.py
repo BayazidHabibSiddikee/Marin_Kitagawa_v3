@@ -1,5 +1,4 @@
 import os
-import sys
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -14,8 +13,8 @@ def word_to_pdf(docx_path: str, pdf_path: str = None) -> str:
 
     # ── Primary: mammoth → HTML → pymupdf (fitz) Story ──────────────────────
     try:
-        import mammoth
         import fitz  # pymupdf
+        import mammoth
 
         with open(docx_path, "rb") as f:
             result = mammoth.convert_to_html(f)
@@ -63,11 +62,12 @@ def word_to_pdf(docx_path: str, pdf_path: str = None) -> str:
 
     # ── Fallback 1: mammoth → HTML → Qt QPdfWriter ───────────────────────────
     try:
-        import mammoth
-        from PySide6.QtGui import QTextDocument, QPdfWriter, QPageLayout, QPageSize
-        from PySide6.QtCore import QMarginsF, QSizeF
-        from PySide6.QtWidgets import QApplication
         import sys
+
+        import mammoth
+        from PySide6.QtCore import QMarginsF, QSizeF
+        from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
+        from PySide6.QtWidgets import QApplication
 
         # Ensure QApplication exists (needed for Qt painting)
         if not QApplication.instance():
@@ -155,7 +155,6 @@ def pdf_to_word(pdf_path: str, docx_path: str = None) -> str:
         import fitz
         from docx import Document
         from docx.shared import Pt
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
 
         doc  = Document()
         pdf  = fitz.open(pdf_path)

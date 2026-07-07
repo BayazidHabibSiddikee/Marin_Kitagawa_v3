@@ -13,22 +13,22 @@ Security hardening applied:
 """
 
 import asyncio
+import contextlib
 import os
-import time
+import pty
 import secrets
 import threading
-from typing import Dict
+import time
 
-import pty
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
 # ── AUTH TOKEN STORE ──────────────────────────────────────────────────────────
 # Maps token -> issued_at timestamp.  Tokens expire after 60 seconds.
-_TOKENS: Dict[str, float] = {}
+_TOKENS: dict[str, float] = {}
 _TOKEN_TTL = 60  # seconds
 
 # ── SESSION LIMITER ───────────────────────────────────────────────────────────
@@ -58,9 +58,7 @@ def consume_token(token: str) -> bool:
     issued_at = _TOKENS.pop(token, None)
     if issued_at is None:
         return False
-    if time.time() - issued_at > _TOKEN_TTL:
-        return False
-    return True
+    return not time.time() - issued_at > _TOKEN_TTL
 
 
 # ── TERMINAL HTML ─────────────────────────────────────────────────────────────
@@ -191,18 +189,12 @@ async def websocket_endpoint(
     finally:
         with _session_lock:
             _active_sessions = max(0, _active_sessions - 1)
-        try:
+        with contextlib.suppress(Exception):
             loop.remove_reader(fd)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.close(fd)
-        except OSError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.kill(pid, 9)
-        except OSError:
-            pass
 
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────

@@ -1,10 +1,12 @@
-import httpx
-from bs4 import BeautifulSoup
+import asyncio
 import json
 import os
-import asyncio
 from datetime import datetime
+
+import httpx
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
 load_dotenv()
 import ollama
 
@@ -171,7 +173,7 @@ async def main():
     try:
         import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from database import init_db, save_news, delete_old_news
+        from database import delete_old_news, init_db, save_news
         init_db()
         save_news(analyzed_news)
         print(f"Saved {len(analyzed_news)} items to database.")

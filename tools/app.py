@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, jsonify
 import sqlite3
-from datetime import datetime, date
+from datetime import date
+
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 DB = "todos.db"

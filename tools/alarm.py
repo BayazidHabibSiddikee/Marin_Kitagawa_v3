@@ -2,8 +2,12 @@
 # tools/alarm.py — runs as its own process
 # Usage: python alarm.py --time "05:00"   OR   python alarm.py --time "7:30 AM"
 
-import os, sys, time, argparse
+import argparse
+import os
+import sys
+import time
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Suppress ALSA noise before any audio import

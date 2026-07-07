@@ -1,13 +1,14 @@
-import sqlite3
 import json
+import logging
 import os
 import secrets
-import logging
+import sqlite3
 import threading
+from collections.abc import Callable
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, TypeVar
+from typing import Any, TypeVar
 
-from vault import encrypt_secret, decrypt_secret
+from vault import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ def init_db():
 
 # ── NEWS API ─────────────────────────────────────────────────────────────────
 
-def save_news(news_list: List[Dict[str, Any]]):
+def save_news(news_list: list[dict[str, Any]]):
     def _save():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -190,7 +191,7 @@ def save_news(news_list: List[Dict[str, Any]]):
     _db_op(_save)
 
 
-def get_latest_news(limit: int = 10) -> List[Dict[str, Any]]:
+def get_latest_news(limit: int = 10) -> list[dict[str, Any]]:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -232,7 +233,7 @@ def create_user(username: str, role: str = "guest", display_name: str = None) ->
     return _db_op(_create, default={})
 
 
-def get_user_by_api_key(api_key: str) -> Optional[dict]:
+def get_user_by_api_key(api_key: str) -> dict | None:
     return None
 
 
@@ -259,7 +260,7 @@ def save_message(agent: str, role: str, content: str, user_id: str = "USR-MASTER
     _db_op(_save)
 
 
-def get_history(agent: str, limit: int = 50, user_id: str = "USR-MASTER", session_id: str = "default") -> List[Dict[str, str]]:
+def get_history(agent: str, limit: int = 50, user_id: str = "USR-MASTER", session_id: str = "default") -> list[dict[str, str]]:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -300,7 +301,7 @@ def save_user_key(user_id: str, provider: str, key: str):
     _db_op(_save)
 
 
-def get_user_keys(user_id: str) -> Dict[str, str]:
+def get_user_keys(user_id: str) -> dict[str, str]:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -309,7 +310,7 @@ def get_user_keys(user_id: str) -> Dict[str, str]:
     return _db_op(_get, default={})
 
 
-def get_user_key(user_id: str, provider: str) -> Optional[str]:
+def get_user_key(user_id: str, provider: str) -> str | None:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -401,7 +402,7 @@ def end_timer(timer_id: int, status: str = "completed"):
     _db_op(_end)
 
 
-def get_timer_stats(user_id: str = "USR-MASTER") -> List[Dict[str, Any]]:
+def get_timer_stats(user_id: str = "USR-MASTER") -> list[dict[str, Any]]:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -410,7 +411,7 @@ def get_timer_stats(user_id: str = "USR-MASTER") -> List[Dict[str, Any]]:
     return _db_op(_get, default=[])
 
 
-def get_timer_summary(user_id: str = "USR-MASTER") -> Dict[str, Any]:
+def get_timer_summary(user_id: str = "USR-MASTER") -> dict[str, Any]:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -454,7 +455,7 @@ def get_timer_summary(user_id: str = "USR-MASTER") -> Dict[str, Any]:
     })
 
 
-def get_last_timer(user_id: str = "USR-MASTER") -> Optional[Dict[str, Any]]:
+def get_last_timer(user_id: str = "USR-MASTER") -> dict[str, Any] | None:
     def _get():
         with get_db_connection() as conn:
             cursor = conn.cursor()

@@ -2,8 +2,8 @@
 # tools/playground.py — Generate interactive HTML/CSS/JS widgets
 
 import json
-import sys
 import os
+import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -56,7 +56,7 @@ RULES:
             if all(k in data for k in ("html", "css", "js")):
                 data.setdefault("title", "Interactive Widget")
                 signal = f"__PLAYGROUND__{json.dumps(data, ensure_ascii=False)}"
-                print(f"SPEAK: Widget built successfully.")
+                print("SPEAK: Widget built successfully.")
                 sys.stdout.flush()
                 return signal
 

@@ -1,16 +1,20 @@
-import sys
 import os
+import sys
 
 # Disable sandbox to prevent Chromium crashes on certain Linux/Wayland configurations
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--no-sandbox"
 
 
-from PySide6.QtCore import QUrl, Qt
+from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineCore import (
-    QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor, QWebEnginePage
+    QWebEnginePage,
+    QWebEngineProfile,
+    QWebEngineSettings,
+    QWebEngineUrlRequestInterceptor,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
+
 
 class WebEnginePage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):

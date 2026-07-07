@@ -1,29 +1,30 @@
+import cv2
+import numpy as np
 from CNC_simulation import CNC
 from create_c_array import export_to_c_array as array
-import numpy as np
-import cv2
+
 
 def image_to_cnc_coords(image_path, scale=25):
     # 1. Load and downscale for speed
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None: return []
-    
+
     # Blur the image to remove "noise" (tiny dots)
     img = cv2.GaussianBlur(img, (5, 5), 0)
-    
+
     # 2. Simple Threshold (makes it pure Black & White)
     _, thresh = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
 
     # 3. Find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
     simple_paths = []
     for cnt in contours:
         # --- THE CARTOON TRICK ---
         # epsilon is the 'tightness'. Higher = simpler/more blocky.
-        epsilon = 0.02 * cv2.arcLength(cnt, True) 
+        epsilon = 0.02 * cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, epsilon, True)
-        
+
         # Only keep shapes with more than 2 points
         if len(approx) > 2:
             # Scale to your CNC range (-scale to +scale)
@@ -31,7 +32,7 @@ def image_to_cnc_coords(image_path, scale=25):
             points[:, 0] = (points[:, 0] / img.shape[1] - 0.5) * (scale * 2)
             points[:, 1] = (0.5 - points[:, 1] / img.shape[0]) * (scale * 2)
             simple_paths.append(points)
-            
+
     return simple_paths
 
 def solution(xc,yc,t,name="Circle"):
@@ -47,13 +48,13 @@ class Draw:
         self.x = x
         self.y = y
         self.r = r
-    
+
     def circle(self,radius=None):
-        r = radius if radius is not None else self.r   
+        r = radius if radius is not None else self.r
         t = np.linspace(0, 2*np.pi, 120)
         xc,yc = self.x + r*np.cos(t), self.y + r*np.sin(t)
         solution(xc,yc,t,"Circle")
-    
+
     def heart_curve(self):
         #x = 16\sin^3(t), \quad y = 13\cos(t) - 5\cos(2t) - 2\cos(3t) - \cos(4t)$
         t = np.linspace(0, 2*np.pi, 300)
@@ -88,7 +89,7 @@ class Draw:
         y = self.y + r * np.cos(t) * expr
         solution(x,y,t,"Butterfly Curve")
 
-    
+
     def spiral(self, radius=None):
         """Archimedean Spiral: r = a*theta"""
         r = radius if radius is not None else self.r
@@ -96,7 +97,7 @@ class Draw:
         x = self.x + (r/10) * t * np.cos(t)
         y = self.y + (r/10) * t * np.sin(t)
         solution(x,y,t,"Archimedean Spiral")
-    
+
     def cardioid(self, radius=None):
         """Cardioid: r = a(1 + cos(theta))"""
         r = radius if radius is not None else self.r
@@ -105,7 +106,7 @@ class Draw:
         x = self.x + r_val * np.cos(t)
         y = self.y + r_val * np.sin(t)
         solution(x,y,t,"Cardioid")
-    
+
     def astroid(self, radius=None):
         """Astroid: x = a*cos³(t), y = a*sin³(t)"""
         r = radius if radius is not None else self.r
@@ -113,7 +114,7 @@ class Draw:
         x = self.x + r * np.cos(t)**3
         y = self.y + r * np.sin(t)**3
         solution(x,y,t,"Astroid")
-    
+
     def epitrochoid(self, radius=None):
         """Epitrochoid: flower-like pattern"""
         r = radius if radius is not None else self.r
@@ -122,7 +123,7 @@ class Draw:
         x = self.x + (R + r_small) * np.cos(t) - d * np.cos((R + r_small)/r_small * t)
         y = self.y + (R + r_small) * np.sin(t) - d * np.sin((R + r_small)/r_small * t)
         solution(x,y,t,"Epitrochoid")
-    
+
     def hypotrochoid(self, radius=None):
         """Hypotrochoid: spirograph-like pattern"""
         r = radius if radius is not None else self.r
@@ -131,7 +132,7 @@ class Draw:
         x = self.x + (R - r_small) * np.cos(t) + d * np.cos((R - r_small)/r_small * t)
         y = self.y + (R - r_small) * np.sin(t) - d * np.sin((R - r_small)/r_small * t)
         solution(x,y,t,"Hypotrochoid")
-    
+
     def rhodonea(self, radius=None, petals=7):
         """Rhodonea (Rose Curve): r = a*cos(k*theta)"""
         r = radius if radius is not None else self.r
@@ -140,7 +141,7 @@ class Draw:
         x = self.x + r_val * np.cos(t)
         y = self.y + r_val * np.sin(t)
         solution(x,y,t,f"Rhodonea {petals}-petal")
-    
+
     def limacon(self, radius=None):
         """Limaçon: r = a + b*cos(theta)"""
         r = radius if radius is not None else self.r
@@ -150,7 +151,7 @@ class Draw:
         x = self.x + r_val * np.cos(t)
         y = self.y + r_val * np.sin(t)
         solution(x,y,t,"Limacon")
-    
+
     def cycloid(self, radius=None):
         """Cycloid: path traced by a point on a rolling circle"""
         r = radius if radius is not None else self.r
@@ -158,7 +159,7 @@ class Draw:
         x = self.x + r * (t - np.sin(t))
         y = self.y + r * (1 - np.cos(t))
         solution(x,y,t,"Cycloid")
-    
+
     def deltoid(self, radius=None):
         """Deltoid (three-cusped hypocycloid)"""
         r = radius if radius is not None else self.r
@@ -166,7 +167,7 @@ class Draw:
         x = self.x + r * (2*np.cos(t) + np.cos(2*t))
         y = self.y + r * (2*np.sin(t) - np.sin(2*t))
         solution(x,y,t,"Deltoid")
-    
+
     def logarithmic_spiral(self, radius=None):
         """Logarithmic (Equiangular) Spiral: r = a*e^(b*theta)"""
         r = radius if radius is not None else self.r
@@ -175,7 +176,7 @@ class Draw:
         x = self.x + r_val * np.cos(t)
         y = self.y + r_val * np.sin(t)
         solution(x,y,t,"Logarithmic Spiral")
-    
+
     def lemniscate(self, radius=None):
         """Lemniscate of Bernoulli — beautiful infinity figure-eight"""
         r = radius if radius is not None else self.r
@@ -204,16 +205,16 @@ class Draw:
     def draw_image(self,image_path):
         paths = image_to_cnc_coords(image_path)
         from CNC_simulation import CNC
-        
+
         cnc = CNC(title="Cartoon Trace", width=800, height=800, x_range=(-30, 30), y_range=(-30, 30))
-        
+
         for path in paths:
             # Draw the simplified lines
             for i in range(len(path) - 1):
                 cnc.segment(tuple(path[i]), tuple(path[i+1]), color='red', width=2)
             # Close the loop for the cartoon effect
             cnc.segment(tuple(path[-1]), tuple(path[0]), color='red', width=2)
-            
+
         cnc.show()
 
 if __name__=="__main__":

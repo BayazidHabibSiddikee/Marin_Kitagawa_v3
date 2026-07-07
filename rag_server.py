@@ -10,26 +10,23 @@
 # pip install docx2txt   (for .docx support)
 
 import asyncio
-import gc
-import os
-import json
-import shutil
-import time
-import pickle
 import ctypes
-import struct
+import gc
+import json
+import os
+import shutil
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 try:
     import faiss
-    from langchain_huggingface import HuggingFaceEmbeddings
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_core.documents import Document
+    from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
     FAISS_AVAILABLE = True
 except ImportError:
     FAISS_AVAILABLE = False
@@ -63,6 +60,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 # ═══════════════════════════════════════════════════════════════════════════════
 # KNOWLEDGE BASE  —  persistent embeddings: loaded once, stay in memory
 # ═══════════════════════════════════════════════════════════════════════════════
+import contextlib
 import hashlib
 
 _LIBC = None
@@ -74,10 +72,8 @@ def _malloc_trim():
             _LIBC = ctypes.CDLL("libc.so.6")
         except Exception:
             return
-    try:
+    with contextlib.suppress(Exception):
         _LIBC.malloc_trim(0)
-    except Exception:
-        pass
 
 
 def _compact(force=False):
@@ -97,10 +93,11 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from config import EMBEDDING_MODEL
 
+
 def _create_embedding_model():
     """Create embedding model — loaded once at startup, kept in memory."""
     from sentence_transformers import SentenceTransformer
-    
+
     # TRULY OFFLINE: Use local cache path if in Docker
     LOCAL_CACHE = "/root/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
     model_to_load = LOCAL_CACHE if os.path.exists(LOCAL_CACHE) else EMBEDDING_MODEL
@@ -111,12 +108,12 @@ def _create_embedding_model():
             # local_files_only prevents hanging on network requests if not cached
             is_local = os.path.exists(model_name)
             self.model = SentenceTransformer(model_name, device="cpu", local_files_only=not is_local)
-        def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
             embeddings = self.model.encode(texts, batch_size=32, show_progress_bar=False)
             if hasattr(embeddings, "tolist"):
                 return embeddings.tolist()
             return embeddings
-        def embed_query(self, text: str) -> List[float]:
+        def embed_query(self, text: str) -> list[float]:
             embedding = self.model.encode([text], show_progress_bar=False)
             if len(embedding) > 0 and hasattr(embedding[0], "tolist"):
                 return embedding[0].tolist()
@@ -126,6 +123,7 @@ def _create_embedding_model():
         def __init__(self):
             print("🔄 Loading Ollama Fallback Embedder: nomic-embed-text")
             from langchain_ollama import OllamaEmbeddings
+
             import config
             self.model = OllamaEmbeddings(
                 model="nomic-embed-text",
@@ -133,9 +131,9 @@ def _create_embedding_model():
             )
             # Warm up to ensure it works
             self.model.embed_query("test")
-        def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
             return self.model.embed_documents(texts)
-        def embed_query(self, text: str) -> List[float]:
+        def embed_query(self, text: str) -> list[float]:
             return self.model.embed_query(text)
 
     try:
@@ -183,8 +181,8 @@ class KnowledgeBase:
         self._raw_index = None
         self._docstore  = None
         self._id_map    = None
-        self.manifest: Dict[str, Any] = {"indexed": [], "failed": []}
-        self.checksums: Dict[str, str] = {}   # filename → checksum
+        self.manifest: dict[str, Any] = {"indexed": [], "failed": []}
+        self.checksums: dict[str, str] = {}   # filename → checksum
         self._lc_vectorstore = None
         self._embeddings = None
         self._boot()
@@ -222,7 +220,7 @@ class KnowledgeBase:
                     self._id_map = json.load(f)
                 n = len(self.manifest["indexed"])
                 print(f"✅ KB loaded (safe JSON): {n} files, {self._raw_index.ntotal} vectors")
-                
+
                 # Dimension check
                 test_dim = len(self._embeddings.embed_query("test"))
                 if test_dim != self._raw_index.d:
@@ -234,27 +232,11 @@ class KnowledgeBase:
                 self._docstore  = None
                 self._id_map    = None
         elif index_file.exists() and pkl_file.exists():
-            try:
-                import warnings
-                warnings.warn("Loading from legacy pickle — will migrate to JSON on next save", DeprecationWarning)
-                self._raw_index = faiss.read_index(
-                    str(index_file), faiss.IO_FLAG_MMAP
-                )
-                with open(pkl_file, "rb") as f:
-                    self._docstore, self._id_map = pickle.load(f)
-                n = len(self.manifest["indexed"])
-                print(f"⚠️ KB loaded (LEGACY pickle — will migrate): {n} files, {self._raw_index.ntotal} vectors")
-                
-                # Dimension check
-                test_dim = len(self._embeddings.embed_query("test"))
-                if test_dim != self._raw_index.d:
-                    print(f"⚠️ Embedding dimension mismatch ({test_dim} != {self._raw_index.d}). Rebuilding index...")
-                    raise ValueError("Dimension mismatch")
-            except Exception as e:
-                print(f"⚠️ pickle load failed ({e}) — falling back to rebuild")
-                self._raw_index = None
-                self._docstore  = None
-                self._id_map    = None
+            print("⚠️ Legacy pickle index found but loading is disabled for security.")
+            print("⚠️ Please delete index.pkl and run /reindex to rebuild.")
+            self._raw_index = None
+            self._docstore  = None
+            self._id_map    = None
         else:
             # First boot — build from scratch
             self._index_new_files()
@@ -268,10 +250,8 @@ class KnowledgeBase:
     def _unload_embeddings(self):
         """Release the embedding model to free PyTorch RAM."""
         if self._embeddings is not None:
-            try:
+            with contextlib.suppress(Exception):
                 del self._embeddings
-            except Exception:
-                pass
             self._embeddings = None
         _compact(force=True)
 
@@ -304,7 +284,7 @@ class KnowledgeBase:
             json.dump(self.checksums, f, indent=2)
 
     # ── File discovery ────────────────────────────────────────────────────────
-    def _all_files(self) -> List[Path]:
+    def _all_files(self) -> list[Path]:
         files = []
         # Recursive glob search for all documents and code
         for ext in DOC_EXTENSIONS:
@@ -382,7 +362,6 @@ class KnowledgeBase:
         live_index = self._lc_vectorstore.index
         # Clone to a writable (non-mmap) index before writing
         try:
-            import io, pickle as _pickle
             writable = faiss.deserialize_index(faiss.serialize_index(live_index))
             faiss.write_index(writable, str(index_file))
         except Exception as e:
@@ -412,10 +391,7 @@ class KnowledgeBase:
                 json.dump(docstore_data, f, indent=2)
 
             # Convert id_map to JSON
-            if hasattr(self._id_map, '__iter__'):
-                id_map_data = list(self._id_map)
-            else:
-                id_map_data = self._id_map
+            id_map_data = list(self._id_map) if hasattr(self._id_map, '__iter__') else self._id_map
             with open(idmap_json, "w") as f:
                 json.dump(id_map_data, f, indent=2)
         except Exception as e:
@@ -452,7 +428,7 @@ class KnowledgeBase:
             self._lc_vectorstore = None
 
     # ── Loaders ───────────────────────────────────────────────────────────────
-    def _load_file(self, path: Path) -> List[Document]:
+    def _load_file(self, path: Path) -> list[Document]:
         ext         = path.suffix.lower()
         name        = path.name
         source_type = "code" if path.parent.resolve() == CODE_DIR.resolve() else "doc"
@@ -552,15 +528,13 @@ class KnowledgeBase:
             print(f"  ✗ {name}: SKIPPED — {e}")
 
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 del documents, chunks, valid
-            except Exception:
-                pass
             _compact()
 
     # ── Public API ────────────────────────────────────────────────────────────
     def search(self, query: str, k: int = 10,
-               source_type: str = None) -> List[Dict[str, Any]]:
+               source_type: str = None) -> list[dict[str, Any]]:
         if self._raw_index is None or self._embeddings is None:
             return []
         try:
@@ -571,7 +545,7 @@ class KnowledgeBase:
             # Search using raw FAISS index (mmap'd, no RAM load)
             scores, idxs = self._raw_index.search(q_np, k * 3 if source_type else k)
             results = []
-            for score, idx in zip(scores[0], idxs[0]):
+            for _score, idx in zip(scores[0], idxs[0], strict=False):
                 if idx < 0:
                     continue
                 doc_id  = self._id_map.get(int(idx))
@@ -608,7 +582,7 @@ class KnowledgeBase:
         if not results:
             return ""
 
-        by_source: Dict[str, List[Dict]] = {}
+        by_source: dict[str, list[dict]] = {}
         for r in results:
             by_source.setdefault(r["source"], []).append(r)
 
@@ -625,7 +599,7 @@ class KnowledgeBase:
                     parts.append(chunk["content"][:600])
         return "\n".join(parts)
 
-    def add_file(self, path: Path) -> Dict[str, Any]:
+    def add_file(self, path: Path) -> dict[str, Any]:
         name = path.name
         if name in self.manifest["indexed"]:
             self.manifest["indexed"].remove(name)
@@ -641,10 +615,10 @@ class KnowledgeBase:
         success = name in self.manifest["indexed"]
         return {
             "ok":      success,
-            "message": f"Indexed {name}" if success else f"Failed: see /report",
+            "message": f"Indexed {name}" if success else "Failed: see /report",
         }
 
-    def get_report(self) -> Dict[str, Any]:
+    def get_report(self) -> dict[str, Any]:
         return {
             "total":   len(self.manifest["indexed"]),
             "indexed": self.manifest["indexed"],
@@ -662,20 +636,19 @@ kb = KnowledgeBase()
 app = FastAPI(title="RAG Server", version="2.0")
 
 
-from typing import List
 
 
 class EmbedRequest(BaseModel):
-    texts: List[str]
+    texts: list[str]
 
 @app.post("/embed")
 async def embed_texts(req: EmbedRequest):
     if kb._embeddings is None:
         raise HTTPException(503, "Embeddings not loaded")
-    
+
     def _embed():
         return kb._embeddings.embed_documents(req.texts)
-        
+
     vecs = await asyncio.to_thread(_embed)
     return {"embeddings": vecs}
 
@@ -776,7 +749,7 @@ async def health():
 @app.post("/reindex")
 async def reindex():
     """Manually trigger re-indexing of all files (new + changed)."""
-    result = await asyncio.to_thread(kb._index_changed_files)
+    await asyncio.to_thread(kb._index_changed_files)
     return {
         "ok":      True,
         "total":   len(kb.manifest["indexed"]),
@@ -801,7 +774,8 @@ async def reload_embeddings():
 
 
 if __name__ == "__main__":
-    import argparse, resource
+    import argparse
+    import resource
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=5080)
     parser.add_argument("--max-memory-mb", type=int, default=0,

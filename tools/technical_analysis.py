@@ -4,8 +4,9 @@ Technical Analysis Engine — calculates RSI, MACD, Bollinger Bands, etc.
 Used by the Quantitative Analysis Agent ('The Mathematician').
 """
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 
 class TechnicalAnalyzer:
     def __init__(self, prices: list):
@@ -29,7 +30,7 @@ class TechnicalAnalyzer:
             "macd": macd.iloc[-1],
             "signal": signal_line.iloc[-1],
             "histogram": hist.iloc[-1],
-            "crossover": "bullish" if hist.iloc[-1] > 0 and hist.iloc[-2] <= 0 else 
+            "crossover": "bullish" if hist.iloc[-1] > 0 and hist.iloc[-2] <= 0 else
                          "bearish" if hist.iloc[-1] < 0 and hist.iloc[-2] >= 0 else "neutral"
         }
 
@@ -39,11 +40,11 @@ class TechnicalAnalyzer:
         upper = sma + (rstd * std)
         lower = sma - (rstd * std)
         current = self.df['close'].iloc[-1]
-        
+
         position = "middle"
         if current >= upper.iloc[-1]: position = "upper_band"
         elif current <= lower.iloc[-1]: position = "lower_band"
-        
+
         return {
             "upper": upper.iloc[-1],
             "middle": sma.iloc[-1],
@@ -62,8 +63,8 @@ class TechnicalAnalyzer:
 
     def atr(self, high: list, low: list, period: int = 14) -> float:
         # Simplified ATR using close prices if high/low not available
-        tr = np.maximum(np.array(high) - np.array(low), 
-                        np.maximum(np.abs(np.array(high) - np.roll(self.df['close'], 1)), 
+        tr = np.maximum(np.array(high) - np.array(low),
+                        np.maximum(np.abs(np.array(high) - np.roll(self.df['close'], 1)),
                                    np.abs(np.array(low) - np.roll(self.df['close'], 1))))
         return pd.Series(tr).rolling(window=period).mean().iloc[-1]
 
@@ -73,7 +74,7 @@ class TechnicalAnalyzer:
         macd_data = self.macd()
         bb = self.bollinger_bands()
         levels = self.support_resistance()
-        
+
         # Simple scoring
         score = 0
         if rsi_val < 30: score += 2  # oversold
@@ -82,9 +83,9 @@ class TechnicalAnalyzer:
         if macd_data["crossover"] == "bearish": score -= 2
         if bb["position"] == "lower_band": score += 1
         if bb["position"] == "upper_band": score -= 1
-        
+
         trend = "bullish" if curr_price > self.ema(50) else "bearish"
-        
+
         return {
             "price": curr_price,
             "rsi": round(rsi_val, 2),

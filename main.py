@@ -2,13 +2,8 @@ import asyncio
 import os
 import sys
 import time
-import threading
-import shlex
-import json
-from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 # Ensure project root is on sys.path so local modules like llm_manager are found
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,20 +11,21 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import httpx
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Depends
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import (
-    DEFAULT_MODEL, FAST_MODEL, VISION_MODEL, OLLAMA_BASE_URL,
-    SESSION_SECRET_KEY, HOST, PORT, UPLOAD_FOLDER
-)
-from proactive_engine import proactive_stream
-from database import init_db
 import database
-from utils.agent_logic import stream_marin_chat
+from config import (
+    HOST,
+    PORT,
+    UPLOAD_FOLDER,
+)
+from database import init_db
 from langgraph_agent import ALL_TOOLS, tools_by_name
+from proactive_engine import proactive_stream
+from utils.agent_logic import stream_marin_chat
 
 # Top-level import so lazy imports inside route functions always succeed
 try:
@@ -46,12 +42,12 @@ async def lifespan(app: FastAPI):
     from tools.habit_store import init_todo_db
     init_todo_db()
     print("[Database] Initialized Marin Tools.")
-    
+
     # Start the proactive conversation engine
     from proactive_engine import proactive_broadcaster, seed_from_db
     seed_from_db("marin")
     asyncio.create_task(proactive_broadcaster("marin"))
-    
+
     yield
 
 app = FastAPI(title="Marin Tools", lifespan=lifespan)
@@ -73,10 +69,12 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # ── MOUNT COMMAND API AS SUB-ROUTER ──────────────────────────────────────
 from command_api import app as command_api_app
+
 app.mount("/cmd", command_api_app)
 
 # ── MOUNT SENTINEL ENGINE (PROXY) ────────────────────────────────────────
 from sentinel_engine import sentinel_app
+
 app.mount("/v1", sentinel_app)
 
 # ── CORE ROUTES ──────────────────────────────────────────────────────────
@@ -129,7 +127,7 @@ async def set_voice_setting(request: Request):
     else:
         form = await request.form()
         enabled = form.get("enabled") == "1" or form.get("voice_enabled") == "1"
-    
+
     marin.VOICE_ENABLED = bool(enabled)
     print(f"[VOICE] Manual Override: {'ON' if marin.VOICE_ENABLED else 'OFF'}")
     return {"status": "success", "voice_enabled": marin.VOICE_ENABLED}
@@ -148,7 +146,7 @@ async def set_rag_setting(request: Request):
     else:
         form = await request.form()
         enabled = form.get("enabled") == "1" or form.get("rag_enabled") == "1"
-    
+
     marin.RAG_ENABLED = bool(enabled)
     return {"status": "success", "rag_enabled": marin.RAG_ENABLED}
 
@@ -166,7 +164,7 @@ async def set_wordlimit(request: Request):
     else:
         form = await request.form()
         limit = form.get("word_limit") or form.get("limit") or 0
-    
+
     marin.WORD_LIMIT = int(limit)
     return {"status": "success", "word_limit": marin.WORD_LIMIT}
 
@@ -178,8 +176,9 @@ async def stop_audio():
 
 @app.get("/audio/speak")
 async def speak_audio(text: str):
-    from utils.tts import generate_wav
     import io
+
+    from utils.tts import generate_wav
     wav_bytes = await generate_wav(text)
     if not wav_bytes:
         raise HTTPException(status_code=500, detail="Failed to generate audio")
@@ -219,14 +218,14 @@ async def timer_command(
     task: str = Form("Focus")
 ):
     user = request.state.user
-    from database import start_timer, clear_active_timers, end_timer
     import sqlite3
-    from database import DB_PATH
-    
+
+    from database import DB_PATH, end_timer, start_timer
+
     if command == "start":
         start_timer(task, user_id=user["user_id"])
         return {"status": "started", "task": task}
-    elif command == "stop":
+    if command == "stop":
         # Find active timer ID
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -249,7 +248,7 @@ async def chat_endpoint(
 ):
     from proactive_engine import record_user_message
     record_user_message("marin")
-    
+
     user = request.state.user
     return StreamingResponse(
         stream_marin_chat(message, user=user, session_id=session_id),
@@ -324,6 +323,7 @@ async def delete_todo_api(id: int):
 @app.get("/api/categories")
 async def list_categories_api():
     import sqlite3
+
     from tools.habit_store import DB_PATH
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
@@ -349,10 +349,12 @@ async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):
     try:
         sym_list = [s.upper().strip() for s in symbols.split(",") if s.strip()]
         binance_syms = [s for s in sym_list if s.endswith("USDT") or s.endswith("BTC")]
-        
+
         market_data = {}
         if binance_syms:
-            import httpx, json
+            import json
+
+            import httpx
             url = f"https://api.binance.com/api/v3/ticker/24hr?symbols={json.dumps(binance_syms).replace(' ', '')}"
             async with httpx.AsyncClient(timeout=5) as client:
                 res = await client.get(url)
@@ -362,7 +364,7 @@ async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):
                             "price": f"{float(item['lastPrice']):,.2f}",
                             "change": f"{float(item['priceChangePercent']):+.2f}%"
                         }
-        
+
         for s in sym_list:
             if s in market_data:
                 data.append({"symbol": s, "price": market_data[s]["price"], "change": market_data[s]["change"]})
@@ -372,7 +374,7 @@ async def market_quotes_api(symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT,SPY"):
         print(f"Market quotes error: {e}")
         for s in symbols.split(","):
             data.append({"symbol": s.strip(), "price": "Error", "change": "Error"})
-            
+
     return JSONResponse(data)
 
 @app.post("/api/authorize")
@@ -383,8 +385,7 @@ async def authorize_session(request: Request):
     from safety import system_guard
     if system_guard.verify(user["user_id"], password):
         return {"status": "success", "message": "Session authorized."}
-    else:
-        raise HTTPException(status_code=403, detail="Invalid system password.")
+    raise HTTPException(status_code=403, detail="Invalid system password.")
 
 @app.get("/profile", response_class=HTMLResponse)
 async def get_profile(request: Request):
@@ -452,8 +453,9 @@ async def research_search_api(request: Request):
 
 @app.post("/api/research/browse")
 async def research_browse_api(request: Request):
-    from tools.knowledge_hub import scrape_content
     import urllib.parse
+
+    from tools.knowledge_hub import scrape_content
     data = await request.json()
     url = data.get("url", "")
     # Basic SSRF guard: only http/https schemes
@@ -650,12 +652,12 @@ async def proxy_stream(request: Request, url: str = ""):
 
 @app.get("/moduleflow")
 async def moduleflow_page(request: Request):
-    with open(os.path.join(BASE_DIR, "moduleflow", "index.html"), "r", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "moduleflow", "index.html"), encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 @app.get("/moduleflow/graph.json")
 async def moduleflow_graph(request: Request):
-    with open(os.path.join(BASE_DIR, "moduleflow", "graph.json"), "r", encoding="utf-8") as f:
+    with open(os.path.join(BASE_DIR, "moduleflow", "graph.json"), encoding="utf-8") as f:
         return HTMLResponse(f.read(), media_type="application/json")
 
 @app.get("/api/settings")
@@ -731,8 +733,9 @@ async def uninstall(request: Request):
     results = {}
 
     if data.get("clear_faiss"):
-        from config import FAISS_DIR
         import shutil
+
+        from config import FAISS_DIR
         try:
             if os.path.exists(FAISS_DIR):
                 shutil.rmtree(FAISS_DIR)
@@ -818,6 +821,8 @@ async def validate_api_key_endpoint(request: Request):
         return {"valid": False, "error": str(e)}
 
 from pydantic import BaseModel as _BaseModel
+
+
 class PlaygroundRequest(_BaseModel):
     title: str = ""
     description: str = ""
@@ -878,7 +883,7 @@ async def get_document_content(filename: str):
                 result = mammoth.extract_raw_text(f)
                 content = result.value
         elif ext in ["txt", "md"]:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 content = f.read()
 
         return {"content": content[:50000]}

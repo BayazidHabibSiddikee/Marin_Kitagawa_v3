@@ -1,5 +1,4 @@
 import os
-import json
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -17,7 +16,7 @@ def manage_vault(agent, action, filename=None, content=None, category="misc", us
 
     if action == "list":
         results = {}
-        for root, dirs, files in os.walk(user_vault):
+        for root, _dirs, files in os.walk(user_vault):
             rel_path = os.path.relpath(root, user_vault)
             if files:
                 results[rel_path] = files
@@ -38,7 +37,7 @@ def manage_vault(agent, action, filename=None, content=None, category="misc", us
 
     if action == "read":
         if not file_path.exists(): return {"error": "file not found"}
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return {"content": f.read()}
 
     if action == "delete":

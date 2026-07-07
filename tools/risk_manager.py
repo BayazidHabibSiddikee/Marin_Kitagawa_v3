@@ -6,6 +6,7 @@ Used by the Quantitative Analysis Agent ('The Mathematician').
 
 import numpy as np
 
+
 class RiskManager:
     @staticmethod
     def kelly_criterion(win_rate: float, win_loss_ratio: float) -> float:
@@ -19,8 +20,7 @@ class RiskManager:
         """Calculate position size based on dollar risk."""
         if entry == stop_loss: return 0.0
         risk_amount = account_balance * risk_per_trade
-        size = risk_amount / abs(entry - stop_loss)
-        return size
+        return risk_amount / abs(entry - stop_loss)
 
     @staticmethod
     def sharpe_ratio(returns: list, risk_free_rate: float = 0.05) -> float:
@@ -37,10 +37,9 @@ class RiskManager:
         # Simple implementation: assumes holdings are values
         total_value = sum(holdings)
         # Assuming 5% volatility for crypto daily
-        volatility = 0.05 
+        volatility = 0.05
         z_score = 1.645 if confidence == 0.95 else 2.326 # for 99%
-        var = total_value * z_score * volatility
-        return var
+        return total_value * z_score * volatility
 
     @staticmethod
     def check_portfolio_risk(user_id: str, new_trade_value: float) -> dict:
@@ -48,16 +47,16 @@ class RiskManager:
         # In reality, fetch account balance and current exposure
         mock_balance = 10000.0
         mock_exposure = 4000.0
-        
+
         limit_percent = 0.20 # Max 20% per trade
         exposure_limit = 0.80 # Max 80% total exposure
-        
+
         warnings = []
         if new_trade_value > (mock_balance * limit_percent):
             warnings.append("New trade exceeds 20% of account balance.")
         if (mock_exposure + new_trade_value) > (mock_balance * exposure_limit):
             warnings.append("Total portfolio exposure exceeds 80% limit.")
-            
+
         return {
             "is_safe": len(warnings) == 0,
             "warnings": warnings,
@@ -69,6 +68,6 @@ if __name__ == "__main__":
     # Test
     kelly = RiskManager.kelly_criterion(0.60, 2.0)
     print(f"Kelly Suggestion: {kelly*100:.1f}%")
-    
+
     size = RiskManager.position_size(10000, 0.02, 60000, 58000)
     print(f"Trade Size: {size:.4f} BTC")

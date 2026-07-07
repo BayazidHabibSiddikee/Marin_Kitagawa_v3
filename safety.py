@@ -4,13 +4,12 @@ Safety Controller — Kill Switch, HITL confirmation, and egress filtering.
 Central safety layer for Marin OS.
 """
 
-import os
 import json
-import time
+import os
 import subprocess
-from pathlib import Path
-from typing import Dict, Any, Optional
+import time
 from datetime import datetime
+from pathlib import Path
 
 STORAGE_DIR = Path(__file__).parent / "storage"
 KILL_SWITCH_FILE = STORAGE_DIR / "kill_switch.json"
@@ -62,7 +61,7 @@ class KillSwitch:
         self._state = {"active": False, "activated_at": None, "reason": None}
         self._save()
         self._restore_sudo()
-        print(f"[SAFETY] Kill switch deactivated")
+        print("[SAFETY] Kill switch deactivated")
 
     def _revoke_sudo(self):
         """Temporarily revoke marin's sudo access."""
@@ -111,7 +110,7 @@ AGENT_REQUIRES_CONFIRM = {
     "network": ["block_host"],
 }
 
-_pending: Dict[str, dict] = {}
+_pending: dict[str, dict] = {}
 _counter = 0
 
 
@@ -150,7 +149,7 @@ def check_agent_confirmation(cid: str, approved: bool) -> bool:
     return approved
 
 
-def get_pending_confirmations() -> Dict[str, dict]:
+def get_pending_confirmations() -> dict[str, dict]:
     """Get all pending confirmations."""
     return {k: v for k, v in _pending.items() if v["status"] == "pending"}
 
@@ -181,9 +180,9 @@ import secrets
 
 class SystemGuard:
     """Handles password-based authorization for sensitive system actions."""
-    
+
     PASSWORD_FILE = STORAGE_DIR / ".sys_pass"
-    _authorized_sessions: Dict[str, float] = {}  # user_id -> expiry_ts
+    _authorized_sessions: dict[str, float] = {}  # user_id -> expiry_ts
     SESSION_DURATION = 3600  # 1 hour
 
     def __init__(self):
@@ -216,9 +215,7 @@ class SystemGuard:
 
     def is_authorized(self, user_id: str) -> bool:
         expiry = self._authorized_sessions.get(user_id, 0)
-        if time.time() < expiry:
-            return True
-        return False
+        return time.time() < expiry
 
     def revoke(self, user_id: str):
         if user_id in self._authorized_sessions:

@@ -1,13 +1,13 @@
-import os
-import json
-import time
 import asyncio
-import httpx
-import subprocess
+import json
 import logging
+import os
+import subprocess
+import time
 from collections import defaultdict
-from typing import Optional
-from fastapi import FastAPI, Request, HTTPException
+
+import httpx
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -22,7 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sentinel")
 
-from config import OLLAMA_BASE_URL, DEFAULT_MODEL
+from config import DEFAULT_MODEL, OLLAMA_BASE_URL
+
 DEFAULT_LOCAL_MODEL = DEFAULT_MODEL
 DEFAULT_CLOUD_MODEL = "google/gemma-4-31b-it:free"
 
@@ -71,7 +72,7 @@ class KeyPool:
     def ollama_keys(self):
         return [k for k in self.keys if not k.startswith("sk-")]
 
-    def next_or_key(self) -> Optional[str]:
+    def next_or_key(self) -> str | None:
         active = self.or_keys
         if not active:
             return None
@@ -191,7 +192,7 @@ async def chat_completions(request: Request):
                     return await stream_proxy(
                         "https://openrouter.ai/api/v1/chat/completions", req_body, headers
                     )
-                
+
                 resp = await _http_client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json=req_body, headers=headers,
@@ -260,9 +261,9 @@ async def chat_completions(request: Request):
 # ── Native Module Interfaces (No HTTP Loopback) ────────────────────────────────
 def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
     """Native LangChain factory. Returns a model with built-in key fallbacks."""
-    from langchain_openai import ChatOpenAI
     from langchain_ollama import ChatOllama
-    
+    from langchain_openai import ChatOpenAI
+
     # If it's a cloud model and we have OpenRouter keys, build a fallback chain
     if "/" in model_name and pool.or_keys:
         llms = []
@@ -270,12 +271,12 @@ def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
         start_idx = pool.index
         ordered_keys = [pool.or_keys[(start_idx + i) % len(pool.or_keys)] for i in range(len(pool.or_keys))]
         pool.index = (pool.index + 1) % len(pool.or_keys) # advance for next time
-        
+
         for key in ordered_keys:
             llm = ChatOpenAI(
-                model=model_name, 
-                api_key=key, 
-                base_url="https://openrouter.ai/api/v1", 
+                model=model_name,
+                api_key=key,
+                base_url="https://openrouter.ai/api/v1",
                 max_retries=0, # Let fallbacks handle retries
                 request_timeout=120,
                 **kwargs
@@ -283,40 +284,38 @@ def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
             if bind_tools:
                 llm = llm.bind_tools(bind_tools)
             llms.append(llm)
-            
+
         primary = llms[0]
         if len(llms) > 1:
             primary = primary.with_fallbacks(llms[1:])
         return primary
-        
-    else:
-        if "/" in model_name:
-            model_name = DEFAULT_LOCAL_MODEL
-        llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL, request_timeout=120, **kwargs)
-        
-        # If the user has OpenRouter keys, provide a cloud fallback in case Ollama is dead!
-        if pool.or_keys:
-            cloud_fallbacks = []
-            for key in pool.or_keys:
-                cloud_llm = ChatOpenAI(
-                    model=DEFAULT_CLOUD_MODEL,
-                    api_key=key,
-                    base_url="https://openrouter.ai/api/v1",
-                    max_retries=0,
-                    request_timeout=120,
-                    **kwargs
-                )
-                if bind_tools:
-                    cloud_llm = cloud_llm.bind_tools(bind_tools)
-                cloud_fallbacks.append(cloud_llm)
-            if bind_tools:
-                llm = llm.bind_tools(bind_tools)
-            llm = llm.with_fallbacks(cloud_fallbacks)
-            return llm
 
+    if "/" in model_name:
+        model_name = DEFAULT_LOCAL_MODEL
+    llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL, request_timeout=120, **kwargs)
+
+    # If the user has OpenRouter keys, provide a cloud fallback in case Ollama is dead!
+    if pool.or_keys:
+        cloud_fallbacks = []
+        for key in pool.or_keys:
+            cloud_llm = ChatOpenAI(
+                model=DEFAULT_CLOUD_MODEL,
+                api_key=key,
+                base_url="https://openrouter.ai/api/v1",
+                max_retries=0,
+                request_timeout=120,
+                **kwargs
+            )
+            if bind_tools:
+                cloud_llm = cloud_llm.bind_tools(bind_tools)
+            cloud_fallbacks.append(cloud_llm)
         if bind_tools:
             llm = llm.bind_tools(bind_tools)
-        return llm
+        return llm.with_fallbacks(cloud_fallbacks)
+
+    if bind_tools:
+        llm = llm.bind_tools(bind_tools)
+    return llm
 
 async def stream_chat_native(model: str, messages: list, max_tokens: int = 4096):
     """Native async generator for local_llm.py to bypass localhost HTTP."""
@@ -327,9 +326,9 @@ async def stream_chat_native(model: str, messages: list, max_tokens: int = 4096)
         "max_tokens": max_tokens,
         "temperature": 0.7
     }
-    
+
     if pool.or_keys and "/" in model:
-        for attempt in range(len(pool.or_keys)):
+        for _attempt in range(len(pool.or_keys)):
             key = pool.next_or_key()
             headers = {
                 "Authorization": f"Bearer {key}",
@@ -344,7 +343,7 @@ async def stream_chat_native(model: str, messages: list, max_tokens: int = 4096)
             except Exception as e:
                 pool.mark_failed(key)
                 logger.warning(f"Native stream OR fallback triggered: {e}")
-    
+
     # Ollama Fallback
     if "/" in model:
         req_body["model"] = DEFAULT_LOCAL_MODEL

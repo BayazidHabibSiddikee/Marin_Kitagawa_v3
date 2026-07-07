@@ -2,19 +2,20 @@
 """
 Agent loop for Marin: enables tool use via simple command parsing.
 """
+import asyncio
 import json
 import re
 import subprocess
 import sys
-import asyncio
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 # Ensure we can import local_llm from the parent directory
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from local_llm import stream_local_chat
 # Import persona for system prompt (same directory)
 from persona import get_character_prompt
+
+from local_llm import stream_local_chat
 
 # Import hermes web_search tool
 try:
@@ -22,8 +23,9 @@ try:
 except Exception:  # pragma: no cover
     web_search = None
 
-def _run_terminal(cmd: str, timeout: int = 60) -> Dict[str, Any]:
+def _run_terminal(cmd: str, timeout: int = 60) -> dict[str, Any]:
     """Run a shell command with basic safety checks."""
+    import shlex
     cmd_lower = cmd.lower().strip()
     blocked = [
         "rm -rf /", "rm -rf ~", "mkfs", "> /dev/sd", "dd if=",
@@ -35,8 +37,8 @@ def _run_terminal(cmd: str, timeout: int = 60) -> Dict[str, Any]:
             return {"error": f"Blocked dangerous command: {cmd}"}
     try:
         completed = subprocess.run(
-            cmd,
-            shell=True,
+            shlex.split(cmd),
+            shell=False,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -51,7 +53,7 @@ def _run_terminal(cmd: str, timeout: int = 60) -> Dict[str, Any]:
     except Exception as e:  # pragma: no cover
         return {"error": str(e)}
 
-def _web_search(query: str) -> Dict[str, Any]:
+def _web_search(query: str) -> dict[str, Any]:
     """Search using Hermes web_search tool and return first result snippet."""
     if web_search is None:
         return {"error": "Hermes web_search tool not available"}
@@ -72,7 +74,7 @@ def _web_search(query: str) -> Dict[str, Any]:
 
 _BLOCKED_READ_PATHS = [".env", ".sys_pass", ".session_key"]
 
-def _read_file(path_str: str) -> Dict[str, Any]:
+def _read_file(path_str: str) -> dict[str, Any]:
     """Read a file with basic safety checks."""
     try:
         p = Path(path_str).expanduser().resolve()
@@ -90,7 +92,7 @@ def _read_file(path_str: str) -> Dict[str, Any]:
 
 _BLOCKED_WRITE_PATHS = [".env", "config.py", "database.py", "privilege_manager.py"]
 
-def _write_file(input_str: str) -> Dict[str, Any]:
+def _write_file(input_str: str) -> dict[str, Any]:
     """Expect format: 'path::content'. Write content to path (sandboxed)."""
     try:
         if "::" not in input_str:
@@ -171,9 +173,8 @@ Now, based on that result, answer the user's original request in natural languag
             )
         final_answer = asyncio.run(_second_call())
         return final_answer.strip()
-    else:
-        # No tool needed; return the LLM's direct answer
-        return llm_output.strip()
+    # No tool needed; return the LLM's direct answer
+    return llm_output.strip()
 
 if __name__ == "__main__":  # pragma: no cover
     # Simple CLI test

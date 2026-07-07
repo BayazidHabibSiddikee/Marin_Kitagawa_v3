@@ -5,9 +5,8 @@ When memory is low, kills less critical services before OOM killer strikes.
 """
 
 import subprocess
-import os
-from typing import Dict, Any, List
 from datetime import datetime
+from typing import Any
 
 # Service priority tiers (lower number = higher priority = killed last)
 # Tier 0: Never kill (core system)
@@ -50,8 +49,7 @@ def _get_free_memory_mb() -> int:
             if line.startswith("Mem:"):
                 parts = line.split()
                 # free = total - used - buff/cache, but we want available
-                available = int(parts[6]) if len(parts) > 6 else int(parts[3])
-                return available
+                return int(parts[6]) if len(parts) > 6 else int(parts[3])
     except Exception:
         pass
     return 9999  # assume healthy if we can't read
@@ -74,7 +72,7 @@ def _get_service_memory(service: str) -> int:
     return 0
 
 
-def check_memory() -> Dict[str, Any]:
+def check_memory() -> dict[str, Any]:
     """Check memory status and kill services if needed."""
     free_mb = _get_free_memory_mb()
     killed = []
@@ -124,7 +122,7 @@ def check_memory() -> Dict[str, Any]:
     }
 
 
-def get_memory_report() -> Dict[str, Any]:
+def get_memory_report() -> dict[str, Any]:
     """Get detailed memory report for all services."""
     free_mb = _get_free_memory_mb()
     services = {}

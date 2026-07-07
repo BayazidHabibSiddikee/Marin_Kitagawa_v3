@@ -4,9 +4,9 @@ swordfish — app launcher
 a minimal launcher for everyday apps
 """
 
+import shutil
 import subprocess
 import sys
-import shutil
 
 # ── app registry ──────────────────────────────────────────────────────────────
 APPS = {

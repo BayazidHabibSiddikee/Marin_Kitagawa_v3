@@ -1,5 +1,4 @@
 import re
-from typing import List
 
 # Import all tools from langgraph_agent to ensure we have the complete list
 try:
@@ -44,7 +43,7 @@ TOOL_DOMAINS = {
     }
 }
 
-def get_relevant_tools(query: str, threshold: float = 0.3) -> List[str]:
+def get_relevant_tools(query: str, threshold: float = 0.3) -> list[str]:
     """
     Level 1 Router: Classifies the query into a specific tool domain using zero-latency keyword mapping.
     This replaces the FAISS embeddings (which fail when Ollama/HuggingFace are unreachable) and is

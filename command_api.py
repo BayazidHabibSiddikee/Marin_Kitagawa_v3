@@ -4,15 +4,16 @@ Marin Command API — Full control panel for Marin OS.
 Marin owns this system. She can do anything.
 """
 
-import subprocess
-import os
 import json
-import shutil
+import os
 import secrets
-from pathlib import Path
+import shutil
+import subprocess
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header
-from fastapi.responses import HTMLResponse, JSONResponse
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
@@ -97,7 +98,7 @@ SAFE_COMMANDS = {
 def run_safe(cmd_key: str, timeout: int = 30) -> dict:
     if cmd_key not in SAFE_COMMANDS:
         return {"stdout": "", "stderr": f"Command '{cmd_key}' is not in the safe allow-list.", "code": -1}
-    
+
     try:
         args = SAFE_COMMANDS[cmd_key]
         r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -151,11 +152,8 @@ def get_token():
 def execute(cmd: Command, _auth: None = Depends(require_token)):
     # Legacy support: if cmd starts with a known safe key, run it
     first_word = cmd.cmd.split()[0]
-    if first_word in SAFE_COMMANDS:
-        result = run_safe(first_word, cmd.timeout)
-    else:
-        result = run_custom(cmd.cmd, cmd.timeout)
-        
+    result = run_safe(first_word, cmd.timeout) if first_word in SAFE_COMMANDS else run_custom(cmd.cmd, cmd.timeout)
+
     with open(LOG_DIR / "command_history.log", "a") as f:
         f.write(f"[{datetime.now().isoformat()}] $ {cmd.cmd} -> {result.get('stderr','')}\n")
     return result
@@ -177,11 +175,12 @@ def system_info():
                 p = line.split()
                 mem_total = int(p[1])
                 mem_used = int(p[2])
-    except: pass
-    
+    except Exception:
+        pass
+
     load = run_safe("loadavg")
     uptime = run_safe("uptime")
-    
+
     return {
         "hostname": platform.node(),
         "platform": platform.platform(),
@@ -430,15 +429,17 @@ def list_pending_confirmations_legacy(_auth: None = Depends(require_token)):
 
 @app.post("/confirm/approve")
 async def approve_confirmation(cid: str = Form(...)):
-    from marin import _check_confirmation, PENDING_CONFIRMATIONS
+    from marin import PENDING_CONFIRMATIONS, _check_confirmation
     if _check_confirmation(cid, approved=True):
         entry = PENDING_CONFIRMATIONS[cid]
         # Execute the confirmed command
+        import shlex
         import subprocess
         cmd = entry["cmd"]
+        if isinstance(cmd, str): cmd = shlex.split(cmd)
         try:
             r = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=60
+                cmd, shell=False, capture_output=True, text=True, timeout=60
             )
             entry["result"] = {"exit": r.returncode, "output": (r.stdout + r.stderr)[:500]}
             return {"ok": True, "cid": cid, "result": entry["result"]}
@@ -450,7 +451,7 @@ async def approve_confirmation(cid: str = Form(...)):
 
 @app.post("/confirm/reject")
 async def reject_confirmation(cid: str = Form(...)):
-    from marin import _check_confirmation, PENDING_CONFIRMATIONS
+    from marin import _check_confirmation
     if _check_confirmation(cid, approved=False):
         return {"ok": True, "cid": cid, "status": "rejected"}
     return {"ok": False, "error": f"Confirmation {cid} not found or already processed"}

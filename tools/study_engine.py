@@ -4,15 +4,15 @@ Dynamic Study Engine — Create study plans, quizzes, and track learning progres
 Part of the SwordFish Tools suite.
 """
 
-import os
 import json
-from typing import Dict, Any, List
+import os
 from datetime import datetime
+from typing import Any
 
 STUDY_STORAGE = "storage/study_progress"
 os.makedirs(STUDY_STORAGE, exist_ok=True)
 
-def create_study_plan(topic: str, level: str = "beginner") -> Dict[str, Any]:
+def create_study_plan(topic: str, level: str = "beginner") -> dict[str, Any]:
     """Generate a structured study plan for a topic."""
     # In a real app, this would use LLM to generate a custom plan
     # For now, we'll provide a template that the agent can fill
@@ -38,14 +38,14 @@ def create_study_plan(topic: str, level: str = "beginner") -> Dict[str, Any]:
             }
         ]
     }
-    
+
     path = os.path.join(STUDY_STORAGE, f"plan_{topic.replace(' ', '_')}.json")
     with open(path, 'w') as f:
         json.dump(plan, f, indent=4)
-        
+
     return {"ok": True, "plan": plan, "path": path}
 
-def generate_quiz(topic: str, content: str = None) -> Dict[str, Any]:
+def generate_quiz(topic: str, content: str = None) -> dict[str, Any]:
     """Generate a quiz based on topic or specific content."""
     # This is a stub for LLM generation
     quiz = {
@@ -67,27 +67,27 @@ def generate_quiz(topic: str, content: str = None) -> Dict[str, Any]:
     }
     return {"ok": True, "quiz": quiz}
 
-def save_progress(user_id: str, topic: str, chapter: str, score: int = None) -> Dict[str, Any]:
+def save_progress(user_id: str, topic: str, chapter: str, score: int = None) -> dict[str, Any]:
     """Track user's learning progress."""
     log_path = os.path.join(STUDY_STORAGE, f"progress_{user_id}.json")
-    
+
     progress = {}
     if os.path.exists(log_path):
-        with open(log_path, 'r') as f:
+        with open(log_path) as f:
             progress = json.load(f)
-            
+
     if topic not in progress:
         progress[topic] = {"started_at": datetime.now().isoformat(), "chapters_completed": [], "scores": []}
-        
+
     if chapter not in progress[topic]["chapters_completed"]:
         progress[topic]["chapters_completed"].append(chapter)
-        
+
     if score is not None:
         progress[topic]["scores"].append({"chapter": chapter, "score": score, "date": datetime.now().isoformat()})
-        
+
     with open(log_path, 'w') as f:
         json.dump(progress, f, indent=4)
-        
+
     return {"ok": True, "progress": progress[topic]}
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # tools/tictactoe.py — wrapper that proxies to games/tiktaktoe.py
-import os, sys
+import os
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 _dn = os.open(os.devnull, os.O_WRONLY)

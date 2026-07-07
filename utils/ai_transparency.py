@@ -1,13 +1,15 @@
 import os
-from rembg import remove
+
 from PIL import Image
+from rembg import remove
+
 
 def remove_background(directory):
     for filename in os.listdir(directory):
         if filename.lower().endswith(".png"):
             input_path = os.path.join(directory, filename)
             print(f"Applying AI background removal to {filename}...")
-            
+
             try:
                 input_image = Image.open(input_path)
                 output_image = remove(input_image)

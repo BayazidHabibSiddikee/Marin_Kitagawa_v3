@@ -6,18 +6,18 @@ Leo - Image Analysis Module
 Uses configured MODEL for vision analysis.
 """
 
-import ollama
-import os
 import json
-import glob
+import os
 import subprocess
-import time
+
+import ollama
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MODEL CONFIGURATION — Same as bayazid.py, change in one place
 # Import from bayazid if available, otherwise define here
 # ═══════════════════════════════════════════════════════════════════════════
-from config import DEFAULT_MODEL as MODEL, VISION_MODEL
+from config import DEFAULT_MODEL as MODEL
+from config import VISION_MODEL
 
 # ── Config ─────────────────────────────────────────────────────────────────
 CHARACTER_NAME = "leo"
@@ -72,13 +72,13 @@ def setup_model():
 def _effective_model(for_vision: bool = False) -> str:
     """
     Return the model string to pass to ollama.chat().
-    
+
     For vision tasks: Always use VISION_MODEL (local, vision-capable)
     For text tasks: Use CHARACTER_NAME if local, MODEL if cloud
     """
     if for_vision:
         return VISION_MODEL
-    
+
     if ":cloud" in MODEL:
         return MODEL
     return CHARACTER_NAME
@@ -90,7 +90,7 @@ def _load_history() -> list:
     if not os.path.exists(HISTORY_FILE):
         return []
     try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        with open(HISTORY_FILE, encoding="utf-8") as f:
             data = json.load(f)
             # Ensure we don't exceed max
             return data[-HISTORY_MAX:]
@@ -125,7 +125,7 @@ def response(prompt: str, image_path: str = None):
     # Build message list
     # For cloud models, inject character via system prompt
     messages = [{"role": "system", "content": CHARACTER}]
-    
+
     # For vision tasks with a different model, don't include history
     # (different model context would be confusing)
     if not is_vision_task:
@@ -143,7 +143,7 @@ def response(prompt: str, image_path: str = None):
             print(f"[Leo] ⚠ Image not found: {image_path} — continuing text-only")
             is_vision_task = False
     else:
-        print(f"[Leo] No image — text only")
+        print("[Leo] No image — text only")
 
     messages.append(user_message)
 

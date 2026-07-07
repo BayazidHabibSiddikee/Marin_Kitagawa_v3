@@ -4,9 +4,10 @@ Trade Executor — background service for price alerts and trade execution.
 """
 
 import asyncio
-import time
+
 from database import save_trade
-from tools.binance_client import BinanceManager
+from tools.binance_client_tool import BinanceManager
+
 
 class TradeExecutor:
     def __init__(self):
@@ -31,25 +32,23 @@ class TradeExecutor:
         while True:
             for alert in self.alerts[:]:
                 if alert["status"] != "active": continue
-                
+
                 # Check price
                 mgr = BinanceManager(alert["user_id"])
                 res = mgr.get_symbol_price(alert["symbol"])
-                
+
                 if res["ok"]:
                     current_price = float(res["price"])
                     triggered = False
-                    
-                    if alert["condition"] == "below" and current_price <= alert["target"]:
+
+                    if alert["condition"] == "below" and current_price <= alert["target"] or alert["condition"] == "above" and current_price >= alert["target"]:
                         triggered = True
-                    elif alert["condition"] == "above" and current_price >= alert["target"]:
-                        triggered = True
-                        
+
                     if triggered:
                         print(f"[TradeExecutor] TRIGGERED: {alert['side']} {alert['symbol']} at {current_price}")
                         # Execute trade
                         trade_res = mgr.execute_trade(alert["symbol"], alert["side"], alert["amount"])
-                        
+
                         if trade_res["ok"]:
                             save_trade(alert["user_id"], alert["symbol"], alert["side"], alert["amount"], current_price, status='executed', order_id=str(trade_res["order"]["orderId"]))
                             alert["status"] = "triggered"
@@ -57,7 +56,7 @@ class TradeExecutor:
                         else:
                             save_trade(alert["user_id"], alert["symbol"], alert["side"], alert["amount"], current_price, status='failed')
                             alert["status"] = "failed"
-                            
+
             await asyncio.sleep(60) # Check every minute
 
 # Singleton for runtime (or run as separate process)

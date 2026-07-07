@@ -5,23 +5,25 @@ Part of the SwordFish Tools suite.
 """
 
 import os
-import fitz # PyMuPDF
-from typing import Dict, Any, List
+from typing import Any
 
-def analyze_pdf(pdf_path: str) -> Dict[str, Any]:
+import fitz  # PyMuPDF
+
+
+def analyze_pdf(pdf_path: str) -> dict[str, Any]:
     """Analyze a PDF document for structure and content."""
     if not os.path.exists(pdf_path):
         return {"ok": False, "error": "File not found."}
-        
+
     try:
         doc = fitz.open(pdf_path)
         metadata = doc.metadata
         page_count = doc.page_count
-        
+
         # Extract first 1000 chars for type detection
         first_page = doc[0].get_text()
         text_preview = first_page[:2000]
-        
+
         # Detect type based on keywords
         doc_type = "document"
         if any(x in text_preview.lower() for x in ("textbook", "chapter", "exercise")):
@@ -30,10 +32,10 @@ def analyze_pdf(pdf_path: str) -> Dict[str, Any]:
             doc_type = "research_paper"
         elif any(x in text_preview.lower() for x in ("invoice", "bill", "amount due", "total")):
             doc_type = "invoice/bill"
-            
+
         # Extract TOC if available
         toc = doc.get_toc()
-        
+
         return {
             "ok": True,
             "filename": os.path.basename(pdf_path),

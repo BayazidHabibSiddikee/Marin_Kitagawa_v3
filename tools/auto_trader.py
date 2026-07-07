@@ -8,17 +8,22 @@ Features:
   - All activity reported to your Telegram
 """
 
-import os
 import asyncio
 import logging
-import time
+import os
 from datetime import datetime
+
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ConversationHandler, ContextTypes, filters,
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
 )
 
 # ─────────────────────────────────────────────

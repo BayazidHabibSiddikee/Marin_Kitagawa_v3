@@ -1,16 +1,16 @@
 import os
-import re
-import time
 import subprocess
+import time
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 import database
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ── Dynamic Owner Detection ──────────────────────────────────────────────────
 def detect_owner() -> str:
-    """Detect the master user of the system. 
+    """Detect the master user of the system.
     In live mode, it's 'marin'. In installed mode, it's the UID 1000 user."""
     try:
         # OWNER-ONLY — single-user dev box
@@ -49,8 +49,8 @@ class StudyTimer:
     """Track focus sessions and store them in the database."""
 
     def __init__(self):
-        self.current_id: Optional[int] = None
-        self.current_task: Optional[str] = None
+        self.current_id: int | None = None
+        self.current_task: str | None = None
         self.start_time: float = 0
 
     def start_session(self, task: str):
@@ -58,7 +58,7 @@ class StudyTimer:
         self.start_time = time.time()
         self.current_id = database.start_timer(task)
         print(f"⏱️ Focus session started: {task}")
-        
+
         # Trigger background book download and indexing for the session topic
         import threading
         threading.Thread(target=self._prepare_session_materials, args=(task,), daemon=True).start()
@@ -76,17 +76,17 @@ class StudyTimer:
         _log(f"📚 Marin is gathering materials for: {topic}...")
         try:
             from tools.pdf_downloader_marin import marin_search_and_download
-            
+
             # Directory from user request
             vault_dir = os.path.join(BASE_DIR, "unique", "marin_vault")
             os.makedirs(vault_dir, exist_ok=True)
-            
+
             queries = [
                 f"{topic} technical book",
                 f"Advanced {topic} engineering",
                 f"{topic} specialized manual"
             ]
-            
+
             downloaded_count = 0
             for q in queries:
                 _log(f"🔍 Searching for: {q}...")
@@ -95,34 +95,34 @@ class StudyTimer:
                     downloaded_count += 1
                     _log(f"✅ Downloaded: {path}")
                 if downloaded_count >= 3: break
-                
+
             if downloaded_count > 0:
                 _log(f"🧠 {downloaded_count} materials added to marin_vault. Ready for analysis.")
                 # Trigger RAG update if the server is reachable
                 try:
                     import requests
                     requests.post("http://localhost:5080/update", json={"path": vault_dir}, timeout=2)
-                except: pass
+                except Exception: pass
             else:
                 _log("⚠️ No specific materials found, but I will use my internal knowledge base.")
         except Exception as e:
             _log(f"❌ Failed to gather materials: {e}")
 
-    def end_session(self, status: str = "completed") -> Optional[Dict[str, Any]]:
+    def end_session(self, status: str = "completed") -> dict[str, Any] | None:
         if not self.current_id:
             return None
-        
+
         database.end_timer(self.current_id, status)
         elapsed = time.time() - self.start_time
         task = self.current_task
-        
+
         self.current_id = None
         self.current_task = None
         self.start_time = 0
-        
+
         return {"task": task, "elapsed_seconds": int(elapsed), "status": status}
 
-    def get_session_status(self) -> Dict[str, Any]:
+    def get_session_status(self) -> dict[str, Any]:
         if not self.current_id:
             return {"active": False, "total_today": self._get_today_total()}
         elapsed = time.time() - self.start_time
@@ -151,11 +151,11 @@ class StudyTimer:
         if mins  > 0: return f"{mins}m {secs}s"
         return f"{secs}s"
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         today_total = self._get_today_total()
         if self.current_id:
             today_total += time.time() - self.start_time
-        
+
         sessions = database.get_timer_stats()
         today = datetime.now().date()
         return {
@@ -184,7 +184,7 @@ async def handle_timer_command(command: str, task: str = "") -> str:
             f"Time started: {datetime.now().strftime('%H:%M')}\n\n"
             f"Execute with precision. 🐸"
         )
-    elif command == "resume":
+    if command == "resume":
         last = db.get_last_timer()
         if not last:
             return "No previous session found to resume."
@@ -201,7 +201,7 @@ async def handle_timer_command(command: str, task: str = "") -> str:
             f"Picking up where we left off. 🐸"
         )
 
-    elif command == "stop":
+    if command == "stop":
         session = timer.end_session()
         if not session:
             return "No active session to stop."
@@ -211,7 +211,7 @@ async def handle_timer_command(command: str, task: str = "") -> str:
             f"Duration: {timer._format_duration(session['elapsed_seconds'])}\n"
             f"Great work. Momentum preserved. 🐸"
         )
-    elif command == "status":
+    if command == "status":
         status = timer.get_session_status()
         if not status["active"]:
             return f"Currently idle. Today's focus: {timer._format_duration(status['total_today'])}"

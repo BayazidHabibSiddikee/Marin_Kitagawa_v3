@@ -19,8 +19,8 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str = None) -> str:
 
     # ── Primary: pandas → HTML → pymupdf Story ──────────────────────────────
     try:
-        import pandas as pd
         import fitz
+        import pandas as pd
 
         xlsx     = pd.ExcelFile(xlsx_path)
         all_html = []
@@ -61,8 +61,8 @@ def xlsx_to_pdf(xlsx_path: str, pdf_path: str = None) -> str:
     # ── Fallback: pandas → HTML → Qt QPdfWriter ─────────────────────────────
     try:
         import pandas as pd
-        from PySide6.QtGui import QTextDocument, QPdfWriter, QPageLayout, QPageSize
         from PySide6.QtCore import QMarginsF
+        from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
         from PySide6.QtWidgets import QApplication
 
         if not QApplication.instance():
@@ -121,18 +121,17 @@ def pdf_to_xlsx(pdf_path: str, xlsx_path: str = None) -> str:
 
     # ── Primary: pdfplumber ──────────────────────────────────────────────────
     try:
-        import pdfplumber
         import pandas as pd
+        import pdfplumber
 
         sheets_written = 0
-        with pdfplumber.open(pdf_path) as pdf:
-            with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-                for i, page in enumerate(pdf.pages):
-                    table = page.extract_table()
-                    if table:
-                        df = pd.DataFrame(table[1:], columns=table[0])
-                        df.to_excel(writer, sheet_name=f"Page_{i+1}", index=False)
-                        sheets_written += 1
+        with pdfplumber.open(pdf_path) as pdf, pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+            for i, page in enumerate(pdf.pages):
+                table = page.extract_table()
+                if table:
+                    df = pd.DataFrame(table[1:], columns=table[0])
+                    df.to_excel(writer, sheet_name=f"Page_{i+1}", index=False)
+                    sheets_written += 1
         if sheets_written > 0:
             return xlsx_path
         print("[pdf_to_xlsx] pdfplumber found no tables, trying text fallback…")
@@ -239,8 +238,8 @@ def pptx_to_pdf(pptx_path: str, pdf_path: str = None) -> str:
 
     # ── Fallback: Qt QPdfWriter ─────────────────────────────────────────────
     try:
-        from PySide6.QtGui import QTextDocument, QPdfWriter, QPageLayout, QPageSize
         from PySide6.QtCore import QMarginsF
+        from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter, QTextDocument
         from PySide6.QtWidgets import QApplication
 
         if not QApplication.instance():
@@ -260,8 +259,8 @@ def pptx_to_pdf(pptx_path: str, pdf_path: str = None) -> str:
 
     # ── Last resort: fpdf2 ──────────────────────────────────────────────────
     try:
-        from pptx import Presentation
         from fpdf import FPDF
+        from pptx import Presentation
 
         prs = Presentation(pptx_path)
         pdf = FPDF()
@@ -311,7 +310,7 @@ def pdf_to_pptx(pdf_path: str, pptx_path: str = None) -> str:
         prs.save(pptx_path)
         return pptx_path
 
-    except Exception as e:
+    except Exception:
         # Fallback: pypdf
         from pptx import Presentation
         from pptx.util import Inches

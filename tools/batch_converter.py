@@ -5,14 +5,16 @@ Part of the SwordFish Tools suite.
 """
 
 import os
-from typing import List, Dict, Any
-from tools.office_tools import pdf_to_xlsx, xlsx_to_pdf, docx_to_pdf, pdf_to_text
+from typing import Any
 
-def batch_convert_to_pdf(directory: str) -> Dict[str, Any]:
+from tools.office_tools import docx_to_pdf, pdf_to_text, xlsx_to_pdf
+
+
+def batch_convert_to_pdf(directory: str) -> dict[str, Any]:
     """Convert all supported files in a directory to PDF."""
     if not os.path.isdir(directory):
         return {"ok": False, "error": "Not a directory."}
-        
+
     results = []
     for filename in os.listdir(directory):
         path = os.path.join(directory, filename)
@@ -21,21 +23,21 @@ def batch_convert_to_pdf(directory: str) -> Dict[str, Any]:
             try:
                 docx_to_pdf(path, out)
                 results.append(out)
-            except: pass
+            except Exception: pass
         elif filename.endswith(".xlsx"):
             out = path.replace(".xlsx", ".pdf")
             try:
                 xlsx_to_pdf(path, out)
                 results.append(out)
-            except: pass
-            
+            except Exception: pass
+
     return {"ok": True, "converted": results}
 
-def batch_extract_text(directory: str) -> Dict[str, Any]:
+def batch_extract_text(directory: str) -> dict[str, Any]:
     """Extract text from all PDFs in a directory."""
     if not os.path.isdir(directory):
         return {"ok": False, "error": "Not a directory."}
-        
+
     results = []
     for filename in os.listdir(directory):
         if filename.endswith(".pdf"):
@@ -44,8 +46,8 @@ def batch_extract_text(directory: str) -> Dict[str, Any]:
             try:
                 pdf_to_text(path, out)
                 results.append(out)
-            except: pass
-            
+            except Exception: pass
+
     return {"ok": True, "extracted": results}
 
 if __name__ == "__main__":

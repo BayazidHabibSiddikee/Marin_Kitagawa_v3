@@ -3,9 +3,12 @@
 # Works on Linux via maim + convert
 # Usage: python image.py --prompt "Starry Night"
 
-import sys, argparse
+import argparse
+import os
+import subprocess
+import sys
+
 from PIL import Image, ImageDraw
-import os, time, subprocess
 
 
 def capture_and_draw(prompt: str = "Screenshot"):

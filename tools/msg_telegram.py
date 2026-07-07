@@ -9,12 +9,12 @@ Or import and use as a function:
   send("Hello from Python!")
 """
 
-import sys
-import os
 import argparse
-import urllib.request
-import urllib.parse
 import json
+import os
+import sys
+import urllib.parse
+import urllib.request
 
 # ── Default credentials (set these once, never pass args again) ──
 DEFAULT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -40,9 +40,8 @@ def send(message: str, token: str = DEFAULT_TOKEN, chat_id: str = DEFAULT_CHAT_I
         if result.get("ok"):
             print(f"✅ Sent: {message[:60]}{'...' if len(message) > 60 else ''}")
             return True
-        else:
-            print(f"❌ Telegram error: {result}")
-            return False
+        print(f"❌ Telegram error: {result}")
+        return False
     except Exception as e:
         print(f"❌ Failed to send: {e}")
         return False

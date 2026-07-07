@@ -253,7 +253,7 @@
   display: flex;
   flex-direction: column;
   padding: 16px 0;
-  gap: 2px;
+  gap: 8px;
   overflow-y: auto;
   overflow-x: hidden;
   position: absolute;
@@ -292,14 +292,15 @@
   letter-spacing: .18em;
   color: var(--text-muted);
   text-transform: uppercase;
-  margin-top: 8px;
+  margin-top: 14px;
+  margin-bottom: 8px;
 }
 
 .msb-btn {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 16px;
+  padding: 8px 16px;
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
   font-size: .82rem;

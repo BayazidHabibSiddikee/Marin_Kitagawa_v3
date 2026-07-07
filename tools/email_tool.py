@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # tools/email_tool.py — runs as its own process
 import os
-import sys
 import smtplib
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Suppress ALSA noise
@@ -18,8 +19,11 @@ finally:
     os.close(_se)
     os.close(_dn)
 
-from config import EMAILS, EMAIL_SENDER
-from utils.tts import speak_female as talk1, speak_male as talk2
+import contextlib
+
+from config import EMAIL_SENDER, EMAILS
+from utils.tts import speak_female as talk1
+from utils.tts import speak_male as talk2
 
 
 def listen_once() -> str:
@@ -68,13 +72,11 @@ def get_body_typed():
 
 def review_and_confirm(receiver, email_addr, subject, body) -> bool:
     print(f"\n--- Email Review ---\nTo: {receiver} <{email_addr}>\nSubject: {subject}\nBody:\n{body}\n---")
-    try:
+    with contextlib.suppress(Exception):
         pyautogui.alert(
             f"To: {receiver}\nEmail: {email_addr}\nSubject: {subject}\nBody:\n{body}",
             title="Email Review"
         )
-    except Exception:
-        pass
     ans = input("Send? (yes/no): ").lower().strip()
     return ans == 'yes'
 

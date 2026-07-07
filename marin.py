@@ -1,15 +1,10 @@
-import os
-import re
-import json
 import asyncio
 import datetime
-import threading
-from typing import AsyncIterator, Optional, Dict, Any
+import os
 
-import httpx
-from utils.persona import get_character_prompt, analyze_marin_vibe
-from utils.security import apply_friction, log_command
 import database
+from utils.persona import analyze_marin_vibe
+from utils.security import apply_friction
 
 # ── CONFIG (canonical location for runtime toggles) ──────────────────────
 OWNER_USER = os.getenv("OWNER_USER", "Bayazid")
@@ -19,7 +14,7 @@ WORD_LIMIT = 0  # 0 = unlimited
 
 # ── PENDING CONFIRMATIONS (stub for command_api.py HITL) ─────────────────
 # Maps confirmation IDs to pending actions so the user can approve/reject
-PENDING_CONFIRMATIONS: Dict[str, dict] = {}
+PENDING_CONFIRMATIONS: dict[str, dict] = {}
 _confirm_counter = 0
 
 
@@ -59,7 +54,7 @@ async def main(prompt: str, image_path: str = None, user: dict = None, session_i
     user_id = user["user_id"]
     is_owner = (user["role"] == "owner")
 
-    from privilege_manager import get_privilege_manager, cold_latency
+    from privilege_manager import cold_latency, get_privilege_manager
 
     pm = get_privilege_manager()
 
@@ -77,12 +72,12 @@ async def main(prompt: str, image_path: str = None, user: dict = None, session_i
     prep = await preprocess_input(prompt, image_path=image_path, rag_enabled=RAG_ENABLED)
 
     # 3. Load History
-    history = database.get_history("marin", limit=20, user_id=user_id, session_id=session_id)
+    database.get_history("marin", limit=20, user_id=user_id, session_id=session_id)
 
     # 4. Stream from Agent
     from utils.agent_logic import stream_marin_chat
     full_response = ""
-    user_vibe = prep["classification"].get("user_vibe", "neutral")
+    prep["classification"].get("user_vibe", "neutral")
 
     async for chunk in stream_marin_chat(
         prompt,

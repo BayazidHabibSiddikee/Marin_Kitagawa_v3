@@ -1,19 +1,15 @@
-import os
-import re
-import json
 import asyncio
-import subprocess
+import re
 import threading
-from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
-from config import RAG_PORT
-from utils.persona import get_character_prompt, analyze_marin_vibe
-from utils.security import log_command
-from langgraph_agent import stream_chat_with_marin
 import database
+from config import RAG_PORT
+from utils.persona import analyze_marin_vibe, get_character_prompt
+from utils.security import log_command
 
 # ── RAG configuration ──────────────────────────────────────────────────────────
 RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
@@ -51,10 +47,9 @@ def fix_spacing(text: str) -> str:
     ]
     for pattern, repl in glued:
         text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-    
+
     # 4. Final cleanup
-    text = re.sub(r'  +', ' ', text)
-    return text
+    return re.sub(r'  +', ' ', text)
 
 async def get_rag_context(query: str, enabled: bool = True) -> str:
     if not enabled:
@@ -85,7 +80,7 @@ async def analyze_youtube(url: str) -> str:
                 vid_id = url.split("/shorts/")[1].split("?")[0]
             elif "v=" in url:
                 vid_id = url.split("v=")[1].split("&")[0]
-            
+
             if not vid_id: return None
             ytt_api = YouTubeTranscriptApi()
             tlist   = ytt_api.list(vid_id)
@@ -217,23 +212,22 @@ def execute_text_commands(text: str, user: dict):
 
 # ── Unified Preprocessor ─────────────────────────────────────────────────────
 
-async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False) -> Dict[str, Any]:
+async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False) -> dict[str, Any]:
     from marin_fier import classify
-    
+
     classification = classify(user_input)
-    
+
     rag_context = ""
     if rag_enabled:
         rag_context = await get_rag_context(user_input)
 
-    media_blocks = []
     # (YouTube transcript logic can be added here if needed)
 
     parts = []
     if rag_context:   parts.append(f"[KNOWLEDGE HUB - SYSTEM RETRIEVED CONTEXT]\n{rag_context}\n[END KNOWLEDGE HUB]")
 
     enriched_prompt = "\n\n".join(parts)
-    
+
     return {
         "enriched_prompt": enriched_prompt,
         "classification": classification,
@@ -253,11 +247,11 @@ _CONTROL_TAG_PATTERNS = [
     r'__PROJECTOR_OFF__',
 ]
 
-def extract_control_tags(text: str) -> Tuple[str, List[str]]:
+def extract_control_tags(text: str) -> tuple[str, list[str]]:
     """Split control tags from speakable text. Tags are yielded separately to the UI."""
     if not text:
         return "", []
-    tags: List[str] = []
+    tags: list[str] = []
     clean = text
     for pattern in _CONTROL_TAG_PATTERNS:
         for match in re.findall(pattern, clean):
@@ -273,8 +267,8 @@ def extract_control_tags(text: str) -> Tuple[str, List[str]]:
 
 
 async def stream_marin_chat(
-    prompt: str, 
-    user: dict, 
+    prompt: str,
+    user: dict,
     session_id: str = "default",
     image_path: str = None
 ) -> AsyncIterator[str]:
@@ -288,14 +282,14 @@ async def stream_marin_chat(
     is_owner = (user["role"] == "owner")
 
     # 1. Fast Intent Detection
-    from marin_fier import classify
     from langgraph_agent import get_llm, log_agent
+    from marin_fier import classify
     log_agent(f"AgentLogic: Classifying prompt: {prompt[:50]}...")
     cls = classify(prompt)
     intent = cls["intent"]
     user_vibe = cls.get("user_vibe", "neutral")
     log_agent(f"AgentLogic: Detected intent '{intent}' with confidence {cls['confidence']:.2f}")
-    
+
     # Tool detection — broad keywords covering real user requests
     TOOL_KEYWORDS = [
         "download", "search", "find", "get me", "fetch", "grab",
@@ -311,7 +305,7 @@ async def stream_marin_chat(
 
     # ── HYBRID EXECUTION: Inline for high-confidence tools ──
     tool_result = None
-    tool_tags: List[str] = []
+    tool_tags: list[str] = []
     inline_complete = False
 
     if intent != "chat" and cls["confidence"] >= 0.9 and needs_tools:
@@ -332,7 +326,7 @@ async def stream_marin_chat(
     theme = "evil" if is_owner else "standard"
     user_name = database.get_state("USER_NAME") or "Limon"
     system = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
-    
+
     # Make Persona aware of what it is doing
     context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."
     if tool_result:
@@ -347,22 +341,22 @@ async def stream_marin_chat(
             "DO NOT say you cannot do it. Tell the user you are handling it right now and will deliver the result shortly. "
             "Be confident and in-character. Keep it under 2 sentences.]"
         )
-    
+
     history = database.get_history("marin", limit=10, user_id=user_id, session_id=session_id)
-    
+
     full_response = ""
-    
+
     fast_msgs = [
         {"role": "system", "content": system + context_instruction},
         *[{"role": m["role"], "content": m["content"]} for m in history],
         {"role": "user", "content": prompt}
     ]
-    
+
     # Optional: Voice trigger for the response
     import marin
     if getattr(marin, "VOICE_ENABLED", False):
         yield "__TALK_ON__"
-    
+
     try:
         async for chunk in persona_llm.astream(fast_msgs):
             if chunk.content:
@@ -395,7 +389,7 @@ async def stream_marin_chat(
     # Trigger if: keywords matched OR Marin's response shows she refused/deferred a tool task
     REFUSAL_PATTERNS = ["i cannot", "i can't", "i don't have the ability", "i'm unable", "cannot download", "cannot access"]
     response_implies_tool = any(p in full_response.lower() for p in REFUSAL_PATTERNS)
-    
+
     if not inline_complete and (needs_tools or response_implies_tool):
         from langgraph_agent import run_background_tools
         asyncio.create_task(run_background_tools(prompt, history, user_id, user["role"], user_vibe, session_id))

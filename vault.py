@@ -4,12 +4,11 @@ Secure Vault — encrypted API key storage using Fernet symmetric encryption.
 Keys are derived from a machine-specific secret (not stored on disk).
 """
 
-import os
-import json
 import base64
 import hashlib
+import json
+import os
 from pathlib import Path
-from typing import Optional, Dict, Any
 
 try:
     from cryptography.fernet import Fernet
@@ -24,14 +23,14 @@ VAULT_META = VAULT_DIR / "vault_meta.json"
 # Machine-specific key derivation (tied to hostname + user)
 def _derive_key() -> bytes:
     """Derive a Fernet key from machine-specific attributes."""
-    import socket
     import getpass
+    import socket
     try:
         # os.getlogin() fails in many restricted environments (Docker, SSH, etc.)
         user = getpass.getuser()
     except Exception:
         user = os.getenv("USER") or "root"
-    
+
     secret = f"{socket.gethostname()}-{user}-marin-os-vault"
     digest = hashlib.sha256(secret.encode()).digest()
     return base64.urlsafe_b64encode(digest)
@@ -43,7 +42,7 @@ class SecureVault:
     def __init__(self):
         VAULT_DIR.mkdir(parents=True, exist_ok=True)
         self._fernet = Fernet(_derive_key()) if HAS_CRYPTO else None
-        self._data: Dict[str, str] = {}
+        self._data: dict[str, str] = {}
         self._load()
 
     def _load(self):
@@ -66,15 +65,12 @@ class SecureVault:
     def _save(self):
         """Encrypt and save vault to disk."""
         plain = json.dumps(self._data, indent=2).encode()
-        if self._fernet:
-            encrypted = self._fernet.encrypt(plain)
-        else:
-            encrypted = base64.b64encode(plain)
+        encrypted = self._fernet.encrypt(plain) if self._fernet else base64.b64encode(plain)
         VAULT_FILE.write_bytes(encrypted)
         # Set restrictive permissions
         os.chmod(VAULT_FILE, 0o600)
 
-    def get(self, key: str, default: str = None) -> Optional[str]:
+    def get(self, key: str, default: str = None) -> str | None:
         """Get a secret value by key."""
         return self._data.get(key, default)
 
@@ -119,7 +115,7 @@ class SecureVault:
 
 
 # Singleton
-_vault: Optional[SecureVault] = None
+_vault: SecureVault | None = None
 
 
 def get_vault() -> SecureVault:
@@ -130,7 +126,7 @@ def get_vault() -> SecureVault:
 
 
 # Convenience functions
-def vault_get(key: str, default: str = None) -> Optional[str]:
+def vault_get(key: str, default: str = None) -> str | None:
     return get_vault().get(key, default)
 
 def vault_set(key: str, value: str):

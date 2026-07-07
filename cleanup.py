@@ -5,11 +5,9 @@ Deletes logs, temp files, and old data older than 14 days.
 Runs daily via cron.
 """
 
-import os
-import glob
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 RETENTION_DAYS = 14
 MARIN_HOME = Path.home()
@@ -47,7 +45,7 @@ def cleanup_dir(directory: Path, patterns: list[str], days: int = RETENTION_DAYS
 
 
 def main():
-    log.info("Starting retention cleanup ({} days)".format(RETENTION_DAYS))
+    log.info(f"Starting retention cleanup ({RETENTION_DAYS} days)")
     total = 0
 
     # Logs
@@ -70,9 +68,8 @@ def main():
         if log_file.stat().st_size > 10 * 1024 * 1024:  # > 10MB
             try:
                 import gzip
-                with open(log_file, 'rb') as f_in:
-                    with gzip.open(str(log_file) + '.gz', 'wb') as f_out:
-                        f_out.writelines(f_in)
+                with open(log_file, 'rb') as f_in, gzip.open(str(log_file) + '.gz', 'wb') as f_out:
+                    f_out.writelines(f_in)
                 log_file.unlink()
                 log.info(f"Compressed {log_file.name}")
             except Exception:

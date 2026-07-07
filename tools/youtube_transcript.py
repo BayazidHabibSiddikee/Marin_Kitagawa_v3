@@ -1,12 +1,6 @@
-import os
-import json
-import glob
-import base64
-import requests
-import sys
 import re
-import time
- 
+
+
 def extract_youtube_url(text: str):
     """Pull YouTube URL from user message if present."""
     pattern = r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w\-]+)'

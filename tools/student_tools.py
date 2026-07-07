@@ -1,6 +1,6 @@
-import os
-import qrcode
 from io import BytesIO
+
+import qrcode
 
 
 def generate_qr(text: str, output_path: str = "qrcode.png", box_size: int = 10) -> str:
@@ -88,9 +88,9 @@ def _convert_temperature(value: float, from_unit: str, to_unit: str) -> float:
         raise ValueError(f"Unknown temp unit: {from_unit}")
     if to_unit == "celsius":
         return kelvin - 273.15
-    elif to_unit == "fahrenheit":
+    if to_unit == "fahrenheit":
         return (kelvin - 273.15) * 9 / 5 + 32
-    elif to_unit == "kelvin":
+    if to_unit == "kelvin":
         return kelvin
     raise ValueError(f"Unknown temp unit: {to_unit}")
 
@@ -115,11 +115,11 @@ def programmer_calc(value: str, from_base: str, to_base: str) -> str:
         elif from_base == "hex": val = int(value, 16)
         elif from_base == "oct": val = int(value, 8)
         else: return "Invalid base"
-        
+
         if to_base == "dec": return str(val)
-        elif to_base == "bin": return bin(val)[2:]
-        elif to_base == "hex": return hex(val)[2:].upper()
-        elif to_base == "oct": return oct(val)[2:]
+        if to_base == "bin": return bin(val)[2:]
+        if to_base == "hex": return hex(val)[2:].upper()
+        if to_base == "oct": return oct(val)[2:]
         return "Invalid base"
     except Exception as e:
         return f"Error: {e}"

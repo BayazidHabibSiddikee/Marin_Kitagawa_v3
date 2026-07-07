@@ -18,21 +18,19 @@ Fixed bugs vs original:
   HUB5  _resolve_amenity extended with bakery/fuel/clinic categories
 """
 
-import requests
+import ipaddress
 import json
 import os
+import socket
 import sys
 import time
-import asyncio
-import ipaddress
-import socket
 from urllib.parse import urlparse
-from functools import lru_cache
-from duckduckgo_search import DDGS
-from geopy.geocoders import Nominatim
+
 import folium
-from bs4 import BeautifulSoup
 import httpx
+import requests
+from bs4 import BeautifulSoup
+from geopy.geocoders import Nominatim
 
 # ── Geocoder singleton with 1-second delay (Nominatim usage policy) ───────────
 _geolocator = Nominatim(
@@ -81,9 +79,7 @@ def _is_safe_url(url: str) -> bool:
                 if ip in net: return False
         except (socket.gaierror, ValueError):
             pass
-        if parsed.scheme not in ("http", "https"):
-            return False
-        return True
+        return parsed.scheme in ("http", "https")
     except Exception:
         return False
 
@@ -531,7 +527,7 @@ def create_integrated_hub_map(
     m.save(map_path)
 
     return {
-        "map_url":  f"/static/generated/knowledge_hub_map.html",
+        "map_url":  "/static/generated/knowledge_hub_map.html",
         "weather":  weather,
         "floods":   floods,
         "route":    route_info,
@@ -597,10 +593,10 @@ def _fallback_search(query: str, max_results: int = 5) -> list:
         url = f"https://www.google.com/search?q={query}&num={max_results}"
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
-        
+
         soup = BeautifulSoup(r.text, 'html.parser')
         results = []
-        
+
         # Google mobile results usually in div.vvP6id or similar
         for g in soup.find_all('div', class_='vvP6id'):
             anchors = g.find_all('a')
@@ -608,14 +604,14 @@ def _fallback_search(query: str, max_results: int = 5) -> list:
             link = anchors[0]['href']
             title = g.find('div', class_='UP779b').get_text() if g.find('div', class_='UP779b') else link
             snippet = g.find('div', class_='VwiC3b').get_text() if g.find('div', class_='VwiC3b') else ""
-            
+
             results.append({
                 "title": title,
                 "href": link,
                 "body": snippet
             })
             if len(results) >= max_results: break
-            
+
         if not results:
             # Try even simpler scrape for desktop style
             for g in soup.find_all('div', class_='tF2Cxc'):
@@ -700,7 +696,8 @@ def register_hub_routes(app):
 
     @app.route("/api/knowledge-hub/update", methods=["POST"])
     def _hub_update():
-        from flask import request as _req, jsonify
+        from flask import jsonify
+        from flask import request as _req
         data = _req.get_json(force=True, silent=True) or {}
         city        = data.get("location", "Dhaka")
         query       = data.get("query",    "cafe")
@@ -714,7 +711,8 @@ def register_hub_routes(app):
     @app.route("/api/market/quotes", methods=["GET"])
     def _market_quotes():
         """Proxy Yahoo Finance for stock quotes (avoids CORS in browser)."""
-        from flask import request as _req, jsonify
+        from flask import jsonify
+        from flask import request as _req
         symbols_raw = _req.args.get("symbols", "AAPL,TSLA,META")
         symbols = [s.strip().upper() for s in symbols_raw.split(",") if s.strip()]
         out = []
@@ -732,13 +730,13 @@ def register_hub_routes(app):
                     out.append({"symbol": sym, "price": 0, "change_pct": 0.0})
         except ImportError:
             out = [{"symbol": s, "price": 0, "change_pct": 0.0} for s in symbols]
-        from flask import jsonify
         return jsonify(out)
 
     @app.route("/api/tools/open", methods=["POST"])
     def _tools_open():
         """Launch a tool subprocess requested by hub_dashboard (stock/crypto tracker)."""
-        from flask import request as _req, jsonify
+        from flask import jsonify
+        from flask import request as _req
         data   = _req.get_json(force=True, silent=True) or {}
         tool   = data.get("tool", "")
         params = data.get("params", {})
@@ -767,7 +765,8 @@ def register_hub_routes(app):
 
     @app.route("/api/research/search", methods=["POST"])
     def _research_search():
-        from flask import request as _req, jsonify
+        from flask import jsonify
+        from flask import request as _req
         data  = _req.get_json(force=True, silent=True) or {}
         query = data.get("query", "")
         if not query:

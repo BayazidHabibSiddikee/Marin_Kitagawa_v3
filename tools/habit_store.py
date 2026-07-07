@@ -6,7 +6,7 @@ Uses storage/todos.db (shared with main.py).
 
 import os
 import sqlite3
-from datetime import datetime, date, timedelta
+from datetime import date
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "storage", "todos.db")
 
@@ -51,13 +51,13 @@ def init_todo_db():
             FOREIGN KEY (task_id) REFERENCES todos (id)
         )
     ''')
-    
+
     # Migration: Add task_level column if it doesn't exist
     try:
         db.execute("ALTER TABLE todos ADD COLUMN task_level INTEGER DEFAULT 5")
     except sqlite3.OperationalError:
         pass # Column already exists
-        
+
     # Insert default category
     db.execute("INSERT OR IGNORE INTO categories (name) VALUES ('general')")
     db.commit()
@@ -67,7 +67,7 @@ def init_todo_db():
 def _get_or_create_category(name: str) -> int:
     db = _get_db()
     try:
-        cur = db.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,))
+        db.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,))
         db.commit()
         row = db.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
         return row["id"] if row else None
@@ -125,14 +125,14 @@ def list_tasks(status: str = None, category: str = None) -> list:
 
 def get_stats() -> dict:
     db = _get_db()
-    
+
     # 1. Status summary
     status_rows = db.execute("SELECT status, COUNT(*) as c FROM todos GROUP BY status").fetchall()
     status_map = {row["status"]: row["c"] for row in status_rows}
     # Ensure all statuses exist
     for s in ["todo", "in-progress", "done"]:
         if s not in status_map: status_map[s] = 0
-        
+
     # 2. Categories
     by_cat = db.execute(
         "SELECT c.name, COUNT(t.id) as total, "
@@ -196,7 +196,7 @@ def update_task(task_id: int, **kwargs) -> str:
     db = _get_db()
     allowed = {"title", "priority", "status", "remind_daily", "task_level"}
     updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
-    
+
     # Handle category separately if it's a string
     if "category" in kwargs and kwargs["category"]:
         cat_id = _get_or_create_category(kwargs["category"])
@@ -205,7 +205,7 @@ def update_task(task_id: int, **kwargs) -> str:
     if not updates:
         db.close()
         return "Nothing to update."
-        
+
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [task_id]
     db.execute(f"UPDATE todos SET {set_clause} WHERE id = ?", values)

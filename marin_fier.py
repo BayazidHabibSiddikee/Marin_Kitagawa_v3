@@ -1,17 +1,12 @@
-import os
-import re
-import json
 import asyncio
-from pathlib import Path
-from difflib import get_close_matches
-from typing import Optional, Tuple, Dict, Any
-from pydantic import BaseModel, Field
+import json
+import re
 from datetime import datetime
 
-# Single Source of Truth for Tools
-from langgraph_agent import ALL_TOOLS, tools_by_name
 from config import FAST_MODEL
-from langgraph_agent import log_agent
+
+# Single Source of Truth for Tools
+from langgraph_agent import log_agent, tools_by_name
 
 # ── Command execution logic (shared) ─────────────────────────────────────────
 _cmd_log = []
@@ -39,7 +34,7 @@ _DANCE_PAT   = re.compile(r'\b(dance|dancing|twerk|boogie|groove)\b|let\'?s danc
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
     lower = text.lower().strip()
-    
+
     # Study / Learning (God-Tier Workflow)
     if _STUDY_PAT.search(lower):
         topic = re.sub(_STUDY_PAT, '', lower).replace('me', '').replace('how to', '').strip()
@@ -105,13 +100,12 @@ def _regex_stage(text: str) -> dict | None:
             return {"intent": "terminal_tool", "params": {"command": "ls -F"}, "confidence": 1.0}
         return {"intent": "terminal_tool", "params": {"command": "ls"}, "confidence": 0.8}
 
-    if _READ_PAT.search(lower):
-        if "file" in lower:
-             # Try to extract filename
-             fname = "notes.txt"
-             for part in lower.split():
-                 if '.' in part: fname = part
-             return {"intent": "file_tool", "params": {"action": "read", "path": fname}, "confidence": 0.9}
+    if _READ_PAT.search(lower) and "file" in lower:
+         # Try to extract filename
+         fname = "notes.txt"
+         for part in lower.split():
+             if '.' in part: fname = part
+         return {"intent": "file_tool", "params": {"action": "read", "path": fname}, "confidence": 0.9}
 
     if _TIMER_PAT.search(lower):
         # Extract duration: "10 minutes", "5m", "30 seconds", "1 hour", etc.
@@ -260,6 +254,7 @@ def _detect_director_emotion(text: str) -> str:
 
 def _llm_classify(text: str) -> dict:
     import json
+
     import httpx
     try:
         prompt = f'''Classify the message into an intent and user_vibe.
@@ -278,7 +273,7 @@ Respond ONLY with JSON format: {{"intent": "...", "user_vibe": "..."}}'''
             data = resp.json()
             content = data.get("message", {}).get("content", "{}")
             return json.loads(content)
-    except:
+    except Exception:
         pass
     return None
 
@@ -289,7 +284,7 @@ def classify(text: str) -> dict:
     """
     result = _regex_stage(text)
     if result:
-        log_agent(f"MarinFier (Regex): Intent '{result["intent"]}' with confidence {result["confidence"]:.2f}")
+        log_agent(f"MarinFier (Regex): Intent '{result['intent']}' with confidence {result['confidence']:.2f}")
 
     if result is None:
         log_agent("MarinFier (Regex): No match, falling back to LLM.")
@@ -314,14 +309,14 @@ async def execute_tool(intent: str, params: dict, user_id: str = "USR-00000000")
         # Inject user context
         if "user_id" not in params:
             params["user_id"] = user_id
-            
+
         tool = tools_by_name[intent]
         # Robust execution: handle both sync and async tools
         if asyncio.iscoroutinefunction(tool._run):
             result = await tool.ainvoke(params)
         else:
             result = await asyncio.to_thread(tool.invoke, params)
-        
+
         ts = datetime.now().strftime("%H:%M:%S")
         _cmd_log.append({
             "cmd": f"[tool:{intent}] {json.dumps(params)}",
@@ -333,11 +328,11 @@ async def execute_tool(intent: str, params: dict, user_id: str = "USR-00000000")
     except Exception as e:
         return f"Tool {intent} failed: {e}"
 
-def extract_timer_task(text: str) -> Optional[str]:
+def extract_timer_task(text: str) -> str | None:
     m = re.search(r'(?:timer|countdown)\s+(?:for|on)?\s*(.+)', text, re.I)
     return m.group(1).strip() if m else None
 
-def is_cmd_allowed(cmd: str) -> Tuple[bool, str]:
+def is_cmd_allowed(cmd: str) -> tuple[bool, str]:
     """
     Validates if a command is allowed to run.
     Checks against blocked patterns and metacharacters.

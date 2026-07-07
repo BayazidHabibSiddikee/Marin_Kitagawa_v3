@@ -1,12 +1,14 @@
 import os
+
 from PIL import Image
+
 
 def process_avatars(directory):
     for filename in os.listdir(directory):
         if filename.endswith(".png") and filename != "README.md":
             path = os.path.join(directory, filename)
             print(f"Processing {filename}...")
-            
+
             try:
                 img = Image.open(path)
                 img = img.convert("RGBA")

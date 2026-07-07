@@ -2,8 +2,11 @@
 # tools/translate.py — CLI Dictionary Translator
 # Usage: python translate.py --text "I love you" --to bn
 
-import sys, asyncio, argparse
+import argparse
+import asyncio
+import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.tts import speak_female

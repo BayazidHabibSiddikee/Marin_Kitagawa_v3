@@ -13,15 +13,14 @@ Designed to run as a background task alongside the FastAPI server,
 or standalone for Telegram-only usage.
 """
 
-import os
-import sys
-import json
-import time
 import asyncio
-import urllib.request
+import json
+import os
 import urllib.parse
-from datetime import datetime
+import urllib.request
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────

@@ -1,10 +1,11 @@
+import ipaddress
 import os
 import re
-import sys
-import requests
-import ipaddress
 import socket
+import sys
 from urllib.parse import urlparse
+
+import requests
 
 # ── SSRF PROTECTION ──────────────────────────────────────────────────────────
 _BLOCKED_NETWORKS = [
@@ -46,7 +47,8 @@ REQUEST_TIMEOUT = 30
 def _search_via_knowledge_hub(query: str) -> list:
     """Search using knowledge_hub.search_pdfs (Camoufox → ddgs → Google)."""
     try:
-        import sys, os as _os
+        import os as _os
+        import sys
         _tools_dir = _os.path.dirname(_os.path.abspath(__file__))
         if _tools_dir not in sys.path:
             sys.path.insert(0, _tools_dir)
@@ -107,7 +109,8 @@ def _search_via_camoufox(query: str, max_results: int = 5) -> list:
 def _search_via_stealth_browser(query: str) -> list:
     """Fallback: use stealth_browser.stealth_search and parse markdown output."""
     try:
-        import sys, os as _os
+        import os as _os
+        import sys
         _tools_dir = _os.path.dirname(_os.path.abspath(__file__))
         if _tools_dir not in sys.path:
             sys.path.insert(0, _tools_dir)
@@ -143,8 +146,7 @@ def search_pdfs(query: str) -> list:
         return results
 
     print("  Trying stealth_browser fallback...")
-    results = _search_via_stealth_browser(pdf_query)
-    return results
+    return _search_via_stealth_browser(pdf_query)
 
 
 # ── PDF Validation ─────────────────────────────────────────────────────────────
@@ -200,7 +202,7 @@ def download_pdf(url: str, book_name: str, output_dir: str = None) -> str:
                 if b"<html" in first_chunk.lower():
                     print(f"  [reject] Got HTML instead of PDF from {url[:60]}")
                 else:
-                    print(f"  [warn] PDF validation failed")
+                    print("  [warn] PDF validation failed")
                 return ""
 
             # Stream the rest to file

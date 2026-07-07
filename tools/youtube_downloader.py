@@ -5,13 +5,14 @@ Part of the SwordFish Tools suite.
 """
 
 import os
+from typing import Any
+
 import yt_dlp
-from typing import Dict, Any, Optional
 
 DOWNLOAD_DIR = "static/downloads"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-def get_video_info(url: str) -> Dict[str, Any]:
+def get_video_info(url: str) -> dict[str, Any]:
     """Get metadata for a YouTube video."""
     ydl_opts = {
         'quiet': True,
@@ -34,7 +35,7 @@ def get_video_info(url: str) -> Dict[str, Any]:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-def download_video(url: str, quality: str = "bestvideo+bestaudio/best", output_dir: str = DOWNLOAD_DIR) -> Dict[str, Any]:
+def download_video(url: str, quality: str = "bestvideo+bestaudio/best", output_dir: str = DOWNLOAD_DIR) -> dict[str, Any]:
     """Download a YouTube video."""
     ydl_opts = {
         'format': quality,
@@ -55,7 +56,7 @@ def download_video(url: str, quality: str = "bestvideo+bestaudio/best", output_d
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-def download_audio(url: str, output_dir: str = DOWNLOAD_DIR) -> Dict[str, Any]:
+def download_audio(url: str, output_dir: str = DOWNLOAD_DIR) -> dict[str, Any]:
     """Download audio only from a YouTube video."""
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         url = sys.argv[1]
         action = sys.argv[2] if len(sys.argv) > 2 else "info"
-        
+
         if action == "video":
             print(download_video(url))
         elif action == "audio":
