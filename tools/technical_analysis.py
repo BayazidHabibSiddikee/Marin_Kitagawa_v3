@@ -4,6 +4,8 @@ Technical Analysis Engine — calculates RSI, MACD, Bollinger Bands, etc.
 Used by the Quantitative Analysis Agent ('The Mathematician').
 """
 
+import json
+
 import numpy as np
 import pandas as pd
 
