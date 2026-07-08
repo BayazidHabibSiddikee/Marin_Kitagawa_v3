@@ -1920,13 +1920,7 @@
     function updateSidebarOffset() {
         const sidebar = document.querySelector('.sidebar');
         if (!sidebar) return;
-        if (vrmVisible) {
-            const container = document.getElementById('vrm-container');
-            const vrmWidth = container?.offsetWidth || 350;
-            sidebar.style.left = (vrmWidth + 1) + 'px';
-        } else {
-            sidebar.style.left = '0px';
-        }
+        sidebar.style.left = '0px'; // Fixed UI overlapping bug by pinning to left edge
     }
 
 
