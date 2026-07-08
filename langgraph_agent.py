@@ -482,6 +482,8 @@ class AgentState(TypedDict):
     role: str
     session_id: str
     user_vibe: str
+    auditor_feedback: str
+    revision_count: int
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
 STRATEGIST_SYSTEM = """You are Marin's intelligent assistant. Your job is to decide which tool (if any) to call for the user's request.
@@ -725,6 +727,74 @@ async def persona_node(state: AgentState) -> dict:
 
     return {"messages": [AIMessage(content=final_text.strip())]}
 
+
+AUDITOR_SYSTEM = """You are the Auditor Agent. Your role is to evaluate the tool execution plan proposed by the Strategist before it is executed.
+Available tools: {tools}
+
+Check for hallucinations:
+1. Does the action name exactly match an available tool?
+2. Are the arguments realistic and correctly formatted?
+
+Respond strictly with either "APPROVE" or "REJECT: <reason>".
+"""
+
+async def node_auditor(state: AgentState) -> dict:
+    log_agent("Auditor started.")
+    plan = state.get("plan", [])
+    if not plan or plan[0].get("action") == "respond":
+        return {"auditor_feedback": "APPROVE"}
+
+    rev_count = state.get("revision_count", 0)
+    if rev_count >= 3:
+        log_agent("Auditor: Max revisions reached, approving fallback.")
+        return {"auditor_feedback": "APPROVE"}
+
+    from utils.tool_registry import get_relevant_tools
+    from config import STRATEGY_MODEL
+
+    last_user_msg = ""
+    for m in reversed(state["messages"]):
+        if isinstance(m, HumanMessage) and not getattr(m, 'is_feedback', False):
+            last_user_msg = m.content
+            break
+
+    relevant_tool_names = get_relevant_tools(last_user_msg)
+    if not relevant_tool_names:
+        filtered_tools = [t.name for t in tools_by_name.values()]
+    else:
+        filtered_tools = [t.name for t in tools_by_name.values() if t.name in relevant_tool_names]
+
+    llm = get_llm(STRATEGY_MODEL)
+    sys_msg = SystemMessage(content=AUDITOR_SYSTEM.format(tools=filtered_tools))
+    plan_str = json.dumps(plan, indent=2)
+    human_msg = HumanMessage(content=f"User request: {last_user_msg}\n\nProposed Plan:\n{plan_str}\n\nApprove or Reject?")
+
+    try:
+        resp = await llm.ainvoke([sys_msg, human_msg])
+        feedback = resp.content.strip()
+    except Exception as e:
+        log_agent(f"Auditor Error: {e}")
+        feedback = "APPROVE"
+
+    log_agent(f"Auditor feedback: {feedback}")
+
+    if feedback.startswith("REJECT"):
+        msg = HumanMessage(content=f"System Auditor Feedback: Your previous plan was rejected. {feedback}. Please provide a revised plan. If the tool is not available, just respond.")
+        msg.is_feedback = True
+        return {
+            "auditor_feedback": feedback,
+            "revision_count": rev_count + 1,
+            "messages": [msg]
+        }
+
+    return {"auditor_feedback": "APPROVE", "revision_count": rev_count}
+
+def route_auditor(state: AgentState):
+    feedback = state.get("auditor_feedback", "APPROVE")
+    if feedback.startswith("REJECT"):
+        return "strategist"
+    return "executor"
+
 # ── Graph Logic ──────────────────────────────────────────────────────────────
 def route_after_executor(state: AgentState):
     if "__final_response__" in state.get("tool_outputs", {}) or len([k for k in state.get("tool_outputs", {}) if k.startswith("step_")]) >= len(state.get("plan", [])):
@@ -735,6 +805,7 @@ workflow = StateGraph(AgentState)
 workflow.add_node("strategist", node_strategist)
 workflow.add_node("executor", node_executor)
 workflow.add_node("persona", persona_node)
+workflow.add_node("auditor", node_auditor)
 
 workflow.set_entry_point("strategist")
 
@@ -746,9 +817,10 @@ def route_strategist(x):
             return "persona"
     except (IndexError, KeyError, TypeError):
         pass
-    return "executor"
+    return "auditor"
 
 workflow.add_conditional_edges("strategist", route_strategist)
+workflow.add_conditional_edges("auditor", route_auditor)
 workflow.add_conditional_edges("executor", route_after_executor)
 workflow.add_edge("persona", END)
 
@@ -771,6 +843,8 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
             "messages": msgs, "plan": [], "tool_outputs": {},
             "user_id": user_id, "role": role, "session_id": session_id,
             "user_vibe": user_vibe,
+            "auditor_feedback": "",
+            "revision_count": 0,
         })
 
         final_msg = ""
