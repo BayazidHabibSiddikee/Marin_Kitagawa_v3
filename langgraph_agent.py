@@ -473,6 +473,43 @@ BUSINESS_TOOLS = [
 ALL_TOOLS = CORE_TOOLS
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
+# ── Sensitive-tool guard ─────────────────────────────────────────────────────
+# These tools change system state or move money — require explicit user
+# confirmation before executing. Plans held here until the user replies.
+SENSITIVE_TOOLS = {"terminal_tool", "file_tool", "binance_tool", "business_analysis_tool"}
+_SAFE_TERMINAL_RE = re.compile(r"^\s*(ls|pwd|whoami|date|cat|head|tail|df|du|free|uptime|uname|ps)(\s|$)")
+_SHELL_META_RE = re.compile(r"[;&|><`$]")
+
+_pending_plans: dict[str, tuple[list, float]] = {}  # "user_id:session_id" -> (plan, timestamp)
+_PENDING_PLAN_TTL = 300
+_CONFIRM_RE = re.compile(
+    r"^\s*(yes|yeah|yep|yup|sure|ok(ay)?|confirm(ed)?|do it|go ahead|proceed|run it|send it)\b[\s!.]*$",
+    re.IGNORECASE,
+)
+
+def step_needs_confirmation(step: dict) -> bool:
+    action = step.get("action")
+    if action not in SENSITIVE_TOOLS:
+        return False
+    args = step.get("args") or {}
+    if action == "file_tool":
+        return args.get("action") == "write"
+    if action == "terminal_tool":
+        cmd = str(args.get("command", ""))
+        return not (_SAFE_TERMINAL_RE.match(cmd) and not _SHELL_META_RE.search(cmd))
+    return True
+
+def describe_step(step: dict) -> str:
+    action = step.get("action", "?")
+    args = step.get("args") or {}
+    if action == "terminal_tool":
+        return f"run the shell command `{args.get('command', '')}`"
+    if action == "file_tool":
+        return f"write to the file `{args.get('path', '')}`"
+    if action in ("binance_tool", "business_analysis_tool"):
+        return f"execute the trading action {json.dumps(args)}"
+    return f"run {action} with {json.dumps(args)}"
+
 # ── Agent State ──────────────────────────────────────────────────────────────
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], lambda x, y: x + y]
@@ -484,6 +521,7 @@ class AgentState(TypedDict):
     user_vibe: str
     auditor_feedback: str
     revision_count: int
+    confirmed: bool
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
 STRATEGIST_SYSTEM = """You are Marin's intelligent assistant. Your job is to decide which tool (if any) to call for the user's request.
@@ -499,8 +537,21 @@ Instructions:
 
 async def node_strategist(state: AgentState) -> dict:
     log_agent("Strategist started.")
-    last = state["messages"][-1]
-    user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
+
+    # User already confirmed a guarded plan — pass it straight through to the auditor/executor.
+    if state.get("confirmed") and state.get("plan"):
+        log_agent("Strategist: Executing pre-approved plan.")
+        return {}
+
+    # Route on the user's actual request, not on auditor feedback injected during revisions.
+    user_msg = ""
+    for m in reversed(state["messages"]):
+        if isinstance(m, HumanMessage) and not m.additional_kwargs.get("is_feedback", False):
+            user_msg = m.content
+            break
+    if not user_msg:
+        last = state["messages"][-1]
+        user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
 
     # 1. Regex Priority
     from marin_fier import classify
@@ -731,70 +782,87 @@ async def persona_node(state: AgentState) -> dict:
     return {"messages": [AIMessage(content=final_text.strip())]}
 
 
-AUDITOR_SYSTEM = """You are the Auditor Agent. Your role is to evaluate the tool execution plan proposed by the Strategist before it is executed.
-Available tools: {tools}
+def _validate_plan(plan) -> str:
+    """Deterministic hallucination check — no LLM call. Returns '' if valid, else the reason.
 
-Check for hallucinations:
-1. Does the action name exactly match an available tool?
-2. Are the arguments realistic and correctly formatted?
-
-Respond strictly with either "APPROVE" or "REJECT: <reason>".
-"""
+    When tools are bound through the native tool-calling interface the model can't
+    invent names, but plans can also come from JSON parsing fallback, so every step
+    is checked against the real registry and each tool's argument schema.
+    """
+    import difflib
+    if not isinstance(plan, list) or not plan:
+        return "Plan must be a non-empty list of steps."
+    for i, step in enumerate(plan):
+        if not isinstance(step, dict):
+            return f"Step {i} is not an object."
+        action = step.get("action")
+        if action == "respond":
+            continue
+        if action not in tools_by_name:
+            close = difflib.get_close_matches(str(action), list(tools_by_name), n=1)
+            hint = f" Did you mean '{close[0]}'?" if close else ""
+            return f"Step {i}: '{action}' is not an available tool.{hint}"
+        args = step.get("args", {})
+        if not isinstance(args, dict):
+            return f"Step {i}: args for '{action}' must be an object."
+        try:
+            valid_keys = set(tools_by_name[action].args)
+        except Exception:
+            continue
+        unknown = set(args) - valid_keys
+        if unknown:
+            return (f"Step {i}: unknown argument(s) {sorted(unknown)} for '{action}'. "
+                    f"Valid arguments: {sorted(valid_keys)}.")
+    return ""
 
 async def node_auditor(state: AgentState) -> dict:
+    """Validates the plan deterministically, then gates sensitive tools on user confirmation."""
     log_agent("Auditor started.")
     plan = state.get("plan", [])
-    if not plan or plan[0].get("action") == "respond":
+    if not plan or (isinstance(plan[0], dict) and plan[0].get("action") == "respond"):
         return {"auditor_feedback": "APPROVE"}
 
     rev_count = state.get("revision_count", 0)
-    if rev_count >= 3:
-        log_agent("Auditor: Max revisions reached, approving fallback.")
-        return {"auditor_feedback": "APPROVE"}
+    reason = _validate_plan(plan)
+    if reason:
+        log_agent(f"Auditor: plan rejected — {reason}")
+        if rev_count >= 2:
+            log_agent("Auditor: max revisions reached — falling back to plain response.")
+            return {
+                "auditor_feedback": "APPROVE",
+                "plan": [{"action": "respond", "args": {},
+                          "rationale": "I couldn't find the right tool for that — could you rephrase what you need?"}],
+            }
+        msg = HumanMessage(
+            content=(f"System Auditor Feedback: Your previous plan was rejected. {reason} "
+                     "Provide a revised plan using only the available tools, or just respond in plain text."),
+            additional_kwargs={"is_feedback": True},
+        )
+        return {"auditor_feedback": f"REJECT: {reason}", "revision_count": rev_count + 1, "messages": [msg]}
 
-    from utils.tool_registry import get_relevant_tools
-    from config import STRATEGY_MODEL
+    # ── Guard: sensitive tools need explicit user confirmation ──────────
+    if not state.get("confirmed", False):
+        guarded = [s for s in plan if step_needs_confirmation(s)]
+        if guarded:
+            key = f"{state.get('user_id', 'USR-MASTER')}:{state.get('session_id', 'default')}"
+            _pending_plans[key] = (plan, time.time())
+            summary = "; ".join(describe_step(s) for s in guarded)
+            log_agent(f"Auditor: plan held for confirmation — {summary}")
+            outputs = dict(state.get("tool_outputs", {}))
+            outputs["__final_response__"] = (
+                f"Before I do this I need your OK — the plan is to {summary}. "
+                "Reply 'yes' to run it, or anything else to cancel."
+            )
+            return {"auditor_feedback": "CONFIRM", "tool_outputs": outputs}
 
-    last_user_msg = ""
-    for m in reversed(state["messages"]):
-        if isinstance(m, HumanMessage) and not m.additional_kwargs.get("is_feedback", False):
-            last_user_msg = m.content
-            break
-
-    relevant_tool_names = get_relevant_tools(last_user_msg)
-    if not relevant_tool_names:
-        filtered_tools = [t.name for t in tools_by_name.values()]
-    else:
-        filtered_tools = [t.name for t in tools_by_name.values() if t.name in relevant_tool_names]
-
-    llm = get_llm(STRATEGY_MODEL)
-    sys_msg = SystemMessage(content=AUDITOR_SYSTEM.format(tools=filtered_tools))
-    plan_str = json.dumps(plan, indent=2)
-    human_msg = HumanMessage(content=f"User request: {last_user_msg}\n\nProposed Plan:\n{plan_str}\n\nApprove or Reject?")
-
-    try:
-        resp = await llm.ainvoke([sys_msg, human_msg])
-        feedback = resp.content.strip()
-    except Exception as e:
-        log_agent(f"Auditor Error: {e}")
-        feedback = "APPROVE"
-
-    log_agent(f"Auditor feedback: {feedback}")
-
-    if feedback.startswith("REJECT"):
-        msg = HumanMessage(content=f"System Auditor Feedback: Your previous plan was rejected. {feedback}. Please provide a revised plan. If the tool is not available, just respond.", additional_kwargs={"is_feedback": True})
-        return {
-            "auditor_feedback": feedback,
-            "revision_count": rev_count + 1,
-            "messages": [msg]
-        }
-
-    return {"auditor_feedback": "APPROVE", "revision_count": rev_count}
+    return {"auditor_feedback": "APPROVE"}
 
 def route_auditor(state: AgentState):
     feedback = state.get("auditor_feedback", "APPROVE")
     if feedback.startswith("REJECT"):
         return "strategist"
+    if feedback == "CONFIRM":
+        return "persona"
     return "executor"
 
 # ── Graph Logic ──────────────────────────────────────────────────────────────
@@ -816,7 +884,9 @@ def route_strategist(x):
     try:
         plan = x.get("plan", [])
         if plan and isinstance(plan, list) and len(plan) > 0 and plan[0].get("action") == "respond":
-            return "persona"
+            # Through the executor, not straight to persona: the executor copies
+            # the plan's rationale into __final_response__, which persona reads.
+            return "executor"
     except (IndexError, KeyError, TypeError):
         pass
     return "auditor"
@@ -839,14 +909,31 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
         msgs.append(HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]))
     msgs.append(HumanMessage(content=message))
 
+    # ── Guard: resolve any plan waiting on user confirmation ────────────
+    key = f"{user_id}:{session_id}"
+    confirmed_plan: list = []
+    confirmed = False
+    pending = _pending_plans.pop(key, None)
+    if pending:
+        held_plan, ts = pending
+        if time.time() - ts > _PENDING_PLAN_TTL:
+            log_agent("Guard: pending plan expired — ignoring.")
+        elif _CONFIRM_RE.match(message):
+            confirmed_plan = held_plan
+            confirmed = True
+            log_agent("Guard: user confirmed pending plan — executing.")
+        else:
+            log_agent("Guard: user did not confirm — pending plan discarded.")
+
     try:
         log_agent(f"Starting pipeline for {user_id}")
         result = await agent.ainvoke({
-            "messages": msgs, "plan": [], "tool_outputs": {},
+            "messages": msgs, "plan": confirmed_plan, "tool_outputs": {},
             "user_id": user_id, "role": role, "session_id": session_id,
             "user_vibe": user_vibe,
             "auditor_feedback": "",
             "revision_count": 0,
+            "confirmed": confirmed,
         })
 
         final_msg = ""

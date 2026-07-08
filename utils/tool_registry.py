@@ -22,7 +22,7 @@ TOOL_DOMAINS = {
         "tools": ["youtube_search_tool", "youtube_transcript_tool", "news_tool"]
     },
     "System": {
-        "keywords": ["ls", "list", "show", "check", "scan", "files", "directory", "cwd", "read", "open", "cat", "analyze", "view", "terminal", "bash", "shell", "run", "execute"],
+        "keywords": ["ls", "list", "show", "check", "scan", "file", "files", "folder", "save", "write", "directory", "cwd", "read", "open", "cat", "analyze", "view", "terminal", "bash", "shell", "run", "execute"],
         "tools": ["terminal_tool", "file_tool", "batch_convert_tool"]
     },
     "Research": {
@@ -47,27 +47,40 @@ TOOL_DOMAINS = {
     }
 }
 
+# Cross-domain requests are common ("get the transcript and save it to a file"),
+# so expose the union of the top-scoring domains instead of a single winner —
+# capped so the strategist never sees an unmanageable tool list.
+MAX_DOMAINS = 3
+MAX_TOOLS = 12
+
 def get_relevant_tools(query: str, threshold: float = 0.3) -> list[str]:
     """
-    Level 1 Router: Classifies the query into a specific tool domain using zero-latency keyword mapping.
+    Level 1 Router: Classifies the query into tool domains using zero-latency keyword mapping.
     This replaces the FAISS embeddings (which fail when Ollama/HuggingFace are unreachable) and is
     incredibly robust for small model classification pipelines.
-    Returns ALL tools if no domain matches, allowing the strategist to still plan effectively.
+    Returns the union of the top MAX_DOMAINS matching domains' tools (capped at MAX_TOOLS),
+    or an empty list if nothing matches so the strategist answers directly.
     """
     lower_query = query.lower()
 
-    best_domain = None
-    best_score = 0
-
+    scored = []
     for domain, data in TOOL_DOMAINS.items():
-        score = sum(1 for kw in data["keywords"] if re.search(r'\b' + kw + r'\b', lower_query))
-        if score > best_score:
-            best_score = score
-            best_domain = domain
+        score = sum(1 for kw in data["keywords"] if re.search(r'\b' + re.escape(kw) + r'\b', lower_query))
+        if score > 0:
+            scored.append((score, domain))
 
-    if best_score > 0 and best_domain:
-        print(f"[SemanticRouter] Matched Domain: {best_domain} (Score: {best_score})")
-        return TOOL_DOMAINS[best_domain]["tools"]
+    if not scored:
+        print("[SemanticRouter] No domain matched. Returning empty tools list to force clarification.")
+        return []
 
-    print("[SemanticRouter] No domain matched. Returning empty tools list to force clarification.")
-    return []
+    scored.sort(key=lambda x: x[0], reverse=True)
+    tools: list[str] = []
+    picked = []
+    for score, domain in scored[:MAX_DOMAINS]:
+        picked.append(f"{domain}({score})")
+        for t in TOOL_DOMAINS[domain]["tools"]:
+            if t not in tools and len(tools) < MAX_TOOLS:
+                tools.append(t)
+
+    print(f"[SemanticRouter] Matched domains: {', '.join(picked)} -> {len(tools)} tools")
+    return tools
