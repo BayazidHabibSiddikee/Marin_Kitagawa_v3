@@ -9,16 +9,20 @@ except ImportError:
     ALL_TOOL_NAMES = []
 
 TOOL_DOMAINS = {
-    "Finance": {
-        "keywords": ["crypto", "bitcoin", "ethereum", "solana", "price", "market", "stock", "share", "equity", "company", "aapl", "tsla", "nvda", "trade", "buy", "sell", "portfolio", "binance", "arena", "judge", "finance"],
-        "tools": ["crypto_tool", "stock_tool", "business_analysis_tool", "binance_tool"]
+    "Finance-data": {
+        "keywords": ["crypto", "bitcoin", "ethereum", "solana", "price", "market", "stock", "share", "equity", "company", "aapl", "tsla", "nvda", "finance"],
+        "tools": ["crypto_tool", "stock_tool"]
+    },
+    "Finance-trading": {
+        "keywords": ["trade", "buy", "sell", "portfolio", "binance", "arena", "judge", "business"],
+        "tools": ["business_analysis_tool", "binance_tool"]
     },
     "Media": {
         "keywords": ["youtube", "yt", "video", "videos", "watch", "song", "music", "play", "news", "headlines", "world", "latest", "dance", "dancing", "twerk", "boogie", "groove"],
         "tools": ["youtube_search_tool", "youtube_transcript_tool", "news_tool"]
     },
     "System": {
-        "keywords": ["ls", "list", "show", "check", "scan", "files", "directory", "cwd", "read", "open", "cat", "analyze", "view", "terminal", "bash", "shell"],
+        "keywords": ["ls", "list", "show", "check", "scan", "files", "directory", "cwd", "read", "open", "cat", "analyze", "view", "terminal", "bash", "shell", "run", "execute"],
         "tools": ["terminal_tool", "file_tool", "batch_convert_tool"]
     },
     "Research": {
@@ -65,12 +69,5 @@ def get_relevant_tools(query: str, threshold: float = 0.3) -> list[str]:
         print(f"[SemanticRouter] Matched Domain: {best_domain} (Score: {best_score})")
         return TOOL_DOMAINS[best_domain]["tools"]
 
-    print("[SemanticRouter] No domain matched. Returning ALL tools.")
-    # Return all registered tools from langgraph_agent for maximum coverage
-    if ALL_TOOL_NAMES:
-        return ALL_TOOL_NAMES
-    # Fallback to domain-based tools if import failed
-    all_tools = []
-    for data in TOOL_DOMAINS.values():
-        all_tools.extend(data["tools"])
-    return list(dict.fromkeys(all_tools))
+    print("[SemanticRouter] No domain matched. Returning empty tools list to force clarification.")
+    return []

@@ -514,10 +514,10 @@ async def node_strategist(state: AgentState) -> dict:
     from utils.tool_registry import get_relevant_tools
     relevant_tool_names = get_relevant_tools(user_msg)
 
-    # If no domain matched, offer all tools so the strategist can still plan
+    # If no domain matched, DO NOT offer all tools. Force the LLM to respond directly.
     if not relevant_tool_names:
-        log_agent("Strategist (Semantic Router): No domain match — using all tools.")
-        filtered_tools = [t.name for t in ALL_TOOLS]
+        log_agent("Strategist (Semantic Router): No domain match — returning no tools to avoid hallucination.")
+        filtered_tools = []
     else:
         filtered_tools = [t.name for t in ALL_TOOLS if t.name in relevant_tool_names]
         log_agent(f"Strategist (Semantic Router): Filtered {len(ALL_TOOLS)} down to {len(filtered_tools)} tools.")
@@ -528,7 +528,10 @@ async def node_strategist(state: AgentState) -> dict:
         # Get tools to bind
         tools_to_bind = [tools_by_name[name] for name in filtered_tools if name in tools_by_name]
 
-        llm = get_llm(STRATEGY_MODEL, bind_tools=tools_to_bind)
+        if not tools_to_bind:
+            llm = get_llm(STRATEGY_MODEL)
+        else:
+            llm = get_llm(STRATEGY_MODEL, bind_tools=tools_to_bind)
         sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=filtered_tools))
 
         # LangGraph may serialize messages to dicts — convert back to BaseMessage
@@ -754,7 +757,7 @@ async def node_auditor(state: AgentState) -> dict:
 
     last_user_msg = ""
     for m in reversed(state["messages"]):
-        if isinstance(m, HumanMessage) and not getattr(m, 'is_feedback', False):
+        if isinstance(m, HumanMessage) and not m.additional_kwargs.get("is_feedback", False):
             last_user_msg = m.content
             break
 
@@ -779,8 +782,7 @@ async def node_auditor(state: AgentState) -> dict:
     log_agent(f"Auditor feedback: {feedback}")
 
     if feedback.startswith("REJECT"):
-        msg = HumanMessage(content=f"System Auditor Feedback: Your previous plan was rejected. {feedback}. Please provide a revised plan. If the tool is not available, just respond.")
-        msg.is_feedback = True
+        msg = HumanMessage(content=f"System Auditor Feedback: Your previous plan was rejected. {feedback}. Please provide a revised plan. If the tool is not available, just respond.", additional_kwargs={"is_feedback": True})
         return {
             "auditor_feedback": feedback,
             "revision_count": rev_count + 1,
