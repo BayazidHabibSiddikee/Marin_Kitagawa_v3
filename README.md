@@ -46,7 +46,7 @@ Deep structural analysis, contextual Q&A, and citation-accurate research summari
 <td width="50%">
 
 ### Chat Interface
-Real-time streaming responses with Markdown, KaTeX math rendering, and multi-modal input support.
+Real-time streaming responses with Markdown, KaTeX math rendering, and multi-modal input support. Features an integrated ML-driven VRM Director that predicts and orchestrates 3D avatar animations in sync with speech.
 
 <p align="center">
   <img src="images/chat.png" alt="Chat Interface" width="90%"/>
@@ -153,6 +153,9 @@ marin/
 ├── main.py                 # FastAPI entry point
 ├── langgraph_agent.py      # 4-node cognitive architecture
 ├── marin.py                # Core engine (security, preprocessing, streaming)
+├── sentinel_engine.py      # API Gateway, Admin API, and Ollama stream proxy
+├── director_engine.py      # VRM Director (ML gesture prediction & timing)
+├── train_marin_animation.py# ML training script for DistilRoBERTa gesture model
 ├── config.py               # Configuration (models, server, keys)
 ├── database.py             # SQLite (chat history, timers, trades)
 ├── proactive_engine.py     # Auto-initiated conversations
@@ -181,6 +184,7 @@ marin/
 |-------|-----------|
 | **Runtime** | Python 3.11, FastAPI, Uvicorn |
 | **AI Core** | LangGraph, Ollama, OpenRouter |
+| **ML Engine** | PyTorch, Transformers (DistilRoBERTa) |
 | **Vector DB** | FAISS (local), ChromaDB |
 | **3D Viewer** | Three.js r147, @pixiv/three-vrm v0.6 |
 | **Database** | SQLite (WAL mode) |

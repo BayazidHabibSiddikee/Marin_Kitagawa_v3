@@ -102,7 +102,7 @@ except (ImportError, OSError, json.JSONDecodeError) as e:
 # LLM replies use DEFAULT_MODEL (large model for quality responses)
 FAST_MODEL      = _settings.get("models", {}).get("fast", "qwen2.5:1.5b")
 DEFAULT_MODEL   = _settings.get("models", {}).get("default", "google/gemma-2-9b-it:free")
-STRATEGY_MODEL  = FAST_MODEL  # Strategist uses fast model for tool planning
+STRATEGY_MODEL  = "marin-tools"  # Custom fine-tuned tool caller model
 
 # PERSONA: Use the large default model for character responses
 PERSONA_MODEL   = DEFAULT_MODEL

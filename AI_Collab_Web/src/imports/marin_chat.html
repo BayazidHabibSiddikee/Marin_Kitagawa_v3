@@ -2693,8 +2693,8 @@
 
                     vrmModel = vrm;
                     vrmScene.add(vrm.scene);
-                    // Move the avatar to the sofa
-                    vrm.scene.position.set(1.0, 0, 2.3);
+                    // Move the avatar to the middle of the room
+                    vrm.scene.position.set(0, 0, 0);
                     vrm.scene.rotation.y = Math.PI;
                     vrm.scene.traverse((obj) => {
                         if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }

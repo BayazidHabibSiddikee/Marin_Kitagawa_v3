@@ -18,48 +18,118 @@ Frontend decodes it, then schedules each action using setTimeout.
 
 import base64
 import json
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 # ── Emotion → Animation + Expression mappings ──────────────────────────────
+# Animation names match the .bvh files in static/animations/
+# and the 44 labels in marin_gesture_chunks.json.
 
 _EMOTION_MAP = {
-    # happy family
-    "happy":      {"anim": "joy",         "expr": "happy"},
-    "excited":    {"anim": "excitement",  "expr": "happy"},
-    "joy":        {"anim": "joy2",        "expr": "happy"},
-    "laugh":      {"anim": "amusement",   "expr": "happy"},
-    "proud":      {"anim": "pride",       "expr": "happy"},
-    "love":       {"anim": "love",        "expr": "happy"},
+    # happy / positive
+    "happy":      {"anim": "gratitude",      "expr": "happy"},
+    "excited":    {"anim": "amusement2",     "expr": "happy"},
+    "joy":        {"anim": "gratitude",      "expr": "happy"},
+    "laugh":      {"anim": "amusement2",     "expr": "happy"},
+    "proud":      {"anim": "pride",          "expr": "happy"},
+    "love":       {"anim": "caring1",        "expr": "happy"},
     # neutral / thinking
-    "neutral":    {"anim": "neutral_idle", "expr": "neutral"},
-    "thinking":   {"anim": "curiosity",   "expr": "thinking"},
-    "curious":    {"anim": "curiosity2",  "expr": "thinking"},
-    "explaining": {"anim": "neutral2",    "expr": "neutral"},
-    "confident":  {"anim": "pride2",      "expr": "neutral"},
+    "neutral":    {"anim": "neutral_idle2",  "expr": "neutral"},
+    "thinking":   {"anim": "curiosity",      "expr": "thinking"},
+    "curious":    {"anim": "curiosity2",     "expr": "thinking"},
+    "explaining": {"anim": "neutral2",       "expr": "neutral"},
+    "confident":  {"anim": "pride2",         "expr": "neutral"},
     # surprise / realisation
-    "surprise":   {"anim": "surprise",    "expr": "surprised"},
-    "realization":{"anim": "realization", "expr": "surprised"},
-    "shock":      {"anim": "surprise2",   "expr": "surprised"},
+    "surprise":   {"anim": "surprise2",      "expr": "surprised"},
+    "realization":{"anim": "realization",    "expr": "surprised"},
+    "shock":      {"anim": "surprise2",      "expr": "surprised"},
     # sadness / empathy
-    "sad":        {"anim": "sadness",     "expr": "sad"},
-    "grief":      {"anim": "grief",       "expr": "sad"},
-    "remorse":    {"anim": "remorse",     "expr": "sad"},
+    "sad":        {"anim": "remorse",        "expr": "sad"},
+    "grief":      {"anim": "remorse2",       "expr": "sad"},
+    "remorse":    {"anim": "remorse",        "expr": "sad"},
     # anger / frustration
-    "angry":      {"anim": "anger",       "expr": "angry"},
-    "annoyed":    {"anim": "annoyance",   "expr": "angry"},
-    "disgust":    {"anim": "disgust",     "expr": "angry"},
+    "angry":      {"anim": "anger2",         "expr": "angry"},
+    "annoyed":    {"anim": "disaproval1",    "expr": "angry"},
+    "disgust":    {"anim": "disaproval1",    "expr": "angry"},
+    "disappoint": {"anim": "disappointment", "expr": "angry"},
     # admiration / caring
-    "admire":     {"anim": "admiration",  "expr": "happy"},
-    "caring":     {"anim": "caring",      "expr": "happy"},
-    "gratitude":  {"anim": "gratitude",   "expr": "happy"},
+    "admire":     {"anim": "admiration",     "expr": "happy"},
+    "caring":     {"anim": "caring1",        "expr": "happy"},
+    "gratitude":  {"anim": "gratitude",      "expr": "happy"},
     # other
-    "embarrassed":{"anim": "embarrassment","expr":"neutral"},
-    "nervous":    {"anim": "nervousness", "expr": "neutral"},
-    "fear":       {"anim": "fear",        "expr": "surprised"},
-    "dancing":    {"anim": "dance_1",     "expr": "happy"},
-    "greeting":   {"anim": "action_greeting","expr":"happy"},
+    "embarrassed":{"anim": "nervousness2",   "expr": "neutral"},
+    "nervous":    {"anim": "nervousness2",   "expr": "neutral"},
+    "fear":       {"anim": "fear",           "expr": "surprised"},
+    "confused":   {"anim": "confusion",      "expr": "thinking"},
+    "desire":     {"anim": "desire1",        "expr": "happy"},
+    "dancing":    {"anim": "dance_headdrop", "expr": "happy"},
+    "greeting":   {"anim": "neutral_idle2",  "expr": "happy"},
+    # physical / actions
+    "jump":       {"anim": "action_jump",    "expr": "happy"},
+    "run":        {"anim": "action_run",     "expr": "neutral"},
+    "pat":        {"anim": "action_pat",     "expr": "happy"},
+    "optimism":   {"anim": "optimism",       "expr": "happy"},
+    "relief":     {"anim": "relief1",        "expr": "neutral"},
+    "pride":      {"anim": "pride",          "expr": "happy"},
 }
+
+# ── ML Gesture Predictor (lazy-loaded) ─────────────────────────────────────
+# Uses the DistilRoBERTa classifier trained by train_marin_animation.py.
+# Falls back to keyword heuristics if the model is not yet present.
+
+_GesturePredictor = None  # module-level singleton
+
+
+class _LazyGesturePredictor:
+    """Thin wrapper around a HF sequence-classification model."""
+
+    def __init__(self, model_dir: str):
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification
+        import torch
+        self._tok   = AutoTokenizer.from_pretrained(model_dir)
+        self._model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+        self._model.eval()
+        with open(os.path.join(model_dir, "label_map.json")) as f:
+            lmap = json.load(f)
+        self._id2label: dict[int, str] = {int(k): v for k, v in lmap["id2label"].items()}
+        self._torch = torch
+
+    def predict(self, text: str) -> str:
+        """Return predicted animation filename (e.g. 'caring1.bvh')."""
+        enc = self._tok(text, return_tensors="pt", truncation=True, max_length=128)
+        with self._torch.no_grad():
+            logits = self._model(**enc).logits
+        pred_id = int(logits.argmax(dim=-1))
+        return self._id2label.get(pred_id, "neutral_idle2.bvh")
+
+
+def _get_gesture_predictor():
+    """Return the singleton predictor, loading it on first call."""
+    global _GesturePredictor
+    if _GesturePredictor is not None:
+        return _GesturePredictor
+    model_dir = Path(__file__).parent / "marin_animation_model"
+    if model_dir.exists() and (model_dir / "label_map.json").exists():
+        try:
+            _GesturePredictor = _LazyGesturePredictor(str(model_dir))
+            print("[director_engine] ML gesture model loaded.")
+        except Exception as e:
+            print(f"[director_engine] Could not load gesture model: {e}")
+    return _GesturePredictor
+
+
+def predict_animation_from_text(text: str) -> str | None:
+    """
+    Predict the best animation for a text chunk using the trained ML model.
+    Returns a bare animation name (no '.bvh'), or None if model unavailable.
+    """
+    predictor = _get_gesture_predictor()
+    if predictor is None:
+        return None
+    bvh = predictor.predict(text)
+    return bvh.replace(".bvh", "")
 
 # ── Sentence-level emotion detector ────────────────────────────────────────
 
@@ -160,10 +230,17 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
 
         script.append({"t": t_start, "type": "talk", "value": seg, "dur": dur})
 
-        # Only change pose on clear emotion (2+ keyword hits) — avoids twitchy VRM
-        if emotion != prev_emotion and emotion != "neutral" and score >= 2:
+        # ── Try ML gesture prediction first, fall back to keyword heuristic ──
+        ml_anim = predict_animation_from_text(seg)
+        if ml_anim:
+            # ML model gave us a direct BVH name — use it
+            script.append({"t": t_start, "type": "anim", "value": ml_anim, "dur": min(dur, 3.5)})
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
-            # Prefer subtle anims for mild emotions
+            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping.get("expr", "neutral"), "dur": min(dur, 2.5)})
+            prev_emotion = emotion
+        elif emotion != prev_emotion and emotion != "neutral" and score >= 2:
+            # Keyword heuristic fallback
+            mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
             anim = mapping["anim"]
             if emotion in ("thinking", "curious", "explaining"):
                 anim = "neutral_idle2" if emotion == "explaining" else "curiosity"

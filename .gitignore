@@ -77,3 +77,15 @@ storage/api_keys.txt
 *.db-shm
 *.db-wal
 storage/*.json
+
+# ── ML Models & Datasets (Local/Large) ───────────────────────────────────────
+marin_animation_model/
+marin_animation_weights.pt
+animation_model_output/
+*.jsonl
+marin_gesture_chunks.json
+marin_tool_caller_gguf/
+
+# ── Large Archives & Patches ─────────────────────────────────────────────────
+*.zip
+*.patch
