@@ -66,6 +66,18 @@ def listen_and_transcribe(timeout: int = 5) -> str:
     text = "".join(segment.text for segment in segments).strip()
     return text
 
+
+def transcribe_audio_bytes(audio_bytes: bytes) -> str:
+    """Transcribe an in-memory audio clip (webm/ogg/wav/mp3 — anything ffmpeg/PyAV
+    can decode). Used by the web UI's mic button, which uploads a recorded blob."""
+    if not audio_bytes:
+        return ""
+    model = get_stt_model()
+    # faster-whisper decodes the container itself via PyAV, so a raw BytesIO works
+    segments, _ = model.transcribe(io.BytesIO(audio_bytes), beam_size=1)
+    return "".join(segment.text for segment in segments).strip()
+
+
 if __name__ == "__main__":
     # Quick test if run directly
     print("Testing Speech-to-Text...")

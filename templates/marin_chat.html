@@ -757,6 +757,31 @@
         .send-btn:hover { background: linear-gradient(135deg, var(--teal), var(--teal-dim)); box-shadow: 0 0 16px var(--teal-glow); }
         .send-btn:disabled { opacity:.45; cursor:not-allowed; }
 
+        .mic-btn {
+            background: var(--ink3);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text-dim);
+            height: 42px;
+            width: 44px;
+            font-size: 1rem;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .mic-btn:hover { color: var(--teal); border-color: var(--teal-dim); }
+        .mic-btn.recording {
+            color: var(--coral);
+            border-color: var(--coral-dim);
+            background: rgba(224,123,106,.12);
+            animation: micPulse 1.1s infinite;
+        }
+        .mic-btn:disabled { opacity:.45; cursor:not-allowed; }
+        @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(224,123,106,.4)} 50%{box-shadow:0 0 0 5px rgba(224,123,106,0)} }
+
         .tools-row { display:flex; align-items:center; gap:8px; }
 
         .tool-btn {
@@ -900,7 +925,7 @@
             cursor: pointer;
             transition: background .2s;
         }
-        .provider-dot.on { background: var(--msuccess); box-shadow: 0 0 6px var(--msuccess); }
+        .provider-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
         .provider-name {
             font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
@@ -918,6 +943,7 @@
             gap: 10px;
             border-top: 1px solid var(--border);
         }
+        .provider-body.collapsed { display: none; }
         .provider-field-label {
             font-family: 'JetBrains Mono', monospace;
             font-size: .55rem;
@@ -1319,6 +1345,7 @@
         <div class="input-area">
             <div class="input-row">
                 <textarea id="msg-input" rows="1" placeholder="Ask anything..."></textarea>
+                <button class="mic-btn" id="mic-btn" onclick="toggleMic()" title="Hold to speak">🎤</button>
                 <button class="send-btn" id="send-btn" onclick="sendMessage()">send</button>
             </div>
             <div class="tools-row">
@@ -1477,6 +1504,8 @@
     let termVisible   = false;
     let currentWordLimit = 0;
     let pendingProactive = [];
+    // Session ID — unique per page-load; lets the backend separate conversation threads
+    const currentSessionId = 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
     let vrmVisible   = false;
     let vrmModel     = null;
@@ -1644,7 +1673,7 @@
                     <input type="checkbox" class="prov-model-cb" value="${escapeHtml(m.id)}" ${checked}>
                     <span class="m-name">${escapeHtml(m.name)}</span>
                     <span class="m-ctx">${m.ctx}</span>
-                    ${m.vision ? '<span style="font-size:.5rem;color:var(--gold);border:1px solid var(--gold-dim);padding:1px 3px;border-radius:2px;">VIS</span>' : ''}
+                    ${m.vision ? '<span style="font-size:.5rem;color:var(--gold);border:1px solid var(--gold);padding:1px 3px;border-radius:2px;">VIS</span>' : ''}
                 </label>`;
             }).join('');
         } else {
@@ -3590,9 +3619,12 @@
         function renderWithLatex(text) {
             if (!text) return '';
             
-            // Fix missing spaces between words (common in small models)
+            // Fix missing spaces between words (common in small models).
+            // '.' and ':' only split before an uppercase letter so decimals
+            // (3.14), URLs (example.com) and filenames (file.py) survive.
             text = text.replace(/([a-z,])([A-Z])/g, '$1 $2');
-            text = text.replace(/([,\.!?;:])([a-zA-Z])/g, '$1 $2');
+            text = text.replace(/([,!?;])([a-zA-Z])/g, '$1 $2');
+            text = text.replace(/([.:])([A-Z])/g, '$1 $2');
             
             // Stash display math $$...$$ and inline math $...$
             const latexBlocks = [];
@@ -3722,6 +3754,86 @@
         }
     }
 
+    // ── MIC / SPEECH-TO-TEXT ────────────────────────────────────────────────
+    // Click to start recording, click again to stop. The recorded blob is sent
+    // to /audio/transcribe (faster-whisper) and the result is dropped into the
+    // input box for review before sending.
+    let mediaRecorder = null;
+    let micChunks = [];
+    let isRecording = false;
+
+    async function toggleMic() {
+        if (isRecording) { stopMic(); return; }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Microphone not supported in this browser.');
+            return;
+        }
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            alert('Microphone access denied. Please allow microphone permission and try again.');
+            return;
+        }
+        micChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(t => t.stop());  // release the mic
+            const blob = new Blob(micChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            await transcribeBlob(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        const btn = document.getElementById('mic-btn');
+        btn.classList.add('recording');
+        btn.title = 'Click to stop recording';
+        btn.textContent = '⏹';
+    }
+
+    function stopMic() {
+        if (mediaRecorder && isRecording) {
+            isRecording = false;
+            const btn = document.getElementById('mic-btn');
+            btn.classList.remove('recording');
+            btn.textContent = '⋯';  // processing spinner
+            btn.title = 'Transcribing…';
+            btn.disabled = true;
+            mediaRecorder.stop();
+        }
+    }
+
+    async function transcribeBlob(blob) {
+        const btn = document.getElementById('mic-btn');
+        try {
+            const fd = new FormData();
+            fd.append('audio', blob, 'speech.webm');
+            const r = await fetch('/audio/transcribe', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const d = await r.json();
+            const text = (d.text || '').trim();
+            if (text) {
+                const inp = document.getElementById('msg-input');
+                inp.value = inp.value ? `${inp.value} ${text}` : text;
+                inp.focus();
+                inp.style.height = 'auto';
+                inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
+            } else {
+                // Give the user a brief visual cue that nothing was heard
+                btn.textContent = '—';
+                await new Promise(r => setTimeout(r, 800));
+            }
+        } catch (e) {
+            console.error('[STT] transcribe failed', e);
+            btn.textContent = '✗';
+            await new Promise(r => setTimeout(r, 800));
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🎤';
+            btn.title = 'Hold to speak';
+        }
+    }
+
     window.streamAbortController = null;
 
     async function sendMessage() {
@@ -3744,6 +3856,7 @@
         const fd = new FormData();
         fd.append('message', buildMessageWithMode(text));
         fd.append('agent', currentAgent);
+        fd.append('session_id', currentSessionId);
         if (attachedImage) { fd.append('image', attachedImage); attachedImage = null; document.getElementById('attach-preview').textContent = ''; }
 
         window.streamAbortController = new AbortController();
@@ -3861,6 +3974,8 @@
                 full += chunk;
                 // Clean all tags from full text
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
+                                      .replace(/__ANIM__\w+/g, '')
+                                      .replace(/__DANCE__/g, '')
                                       .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
                                       .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
 
@@ -3877,6 +3992,7 @@
                 // Final render with full markdown + LaTeX once complete
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                      .replace(/__ANIM__\w+/g, '')
+                                     .replace(/__DANCE__/g, '')
                                      .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
                                      .replace(/__YOUTUBE__[\w-]+/g, '')
                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')

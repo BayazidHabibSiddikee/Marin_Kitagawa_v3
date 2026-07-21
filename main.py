@@ -186,6 +186,22 @@ async def speak_audio(text: str):
     return StreamingResponse(io.BytesIO(wav_bytes), media_type="audio/wav")
 
 
+@app.post("/audio/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    """Speech-to-text for the web UI mic button. Accepts a recorded audio blob
+    (webm/ogg/wav) and returns the transcribed text via faster-whisper."""
+    data = await audio.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty audio upload")
+    try:
+        # Model load + transcription are blocking/CPU-bound — keep the event loop free
+        from utils.stt import transcribe_audio_bytes
+        text = await asyncio.to_thread(transcribe_audio_bytes, data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    return {"text": text}
+
+
 @app.get("/api/news/latest")
 async def get_latest_news_api():
     from database import get_latest_news

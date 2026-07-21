@@ -15,13 +15,18 @@ from utils.security import log_command
 RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
 
 def fix_spacing(text: str) -> str:
-    """Fix missing spaces between words from small models."""
+    """Fix missing spaces between words from small models.
+    '.' and ':' only split before an uppercase letter so decimals (3.14),
+    domains (example.com), filenames (file.py) and 'Label:value' survive.
+    """
     if not text:
         return text
     # 1. camelCase: wordWord -> word Word
     text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
     # 2. Punctuation: word,word -> word, word
-    text = re.sub(r'([,\.!?;:])([a-zA-Z])', r'\1 \2', text)
+    #    '.' and ':' only split before uppercase so decimals/URLs survive
+    text = re.sub(r'([,!?;])([a-zA-Z])', r'\1 \2', text)
+    text = re.sub(r'([.:])([A-Z])', r'\1 \2', text)
     # 3. Common glued words (aggressive for 0.5B models)
     glued = [
         (r'([iI])(don\'?t)', r'\1 \2'),

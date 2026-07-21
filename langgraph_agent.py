@@ -34,7 +34,7 @@ def log_agent(msg: str):
     try:
         # Use utf-8 to prevent encoding crashes
         with open(AGENT_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\\n")
+            f.write(f"[{ts}] {msg}\n")
         print(f"[AgentLog] {msg}")
     except Exception: pass
 
@@ -167,7 +167,7 @@ def terminal_tool(command: str) -> str:
     """Run a shell command on the system."""
     from utils.command_runner import run_command
     code, output = run_command(command)
-    return f"Exit Code: {code}\\nOutput: {output}"
+    return f"Exit Code: {code}\nOutput: {output}"
 
 @tool
 async def rag_search(query: str) -> str:
@@ -207,7 +207,7 @@ def file_tool(action: str, path: str, content: str = "") -> str:
         return f"Error: access denied — '{path}' is a protected file."
     try:
         if action == "list":
-            return "\\n".join([f.name for f in p.iterdir()]) if p.is_dir() else "Not a directory."
+            return "\n".join([f.name for f in p.iterdir()]) if p.is_dir() else "Not a directory."
         if action == "read":
             return p.read_text()[:2000]
         if action == "write":
@@ -275,7 +275,7 @@ def book_download_tool(query: str) -> str:
             results = search_open_library(query)
         if results:
             titles = [f"• {r.get('title', 'Unknown')} by {r.get('author', 'Unknown')}" for r in results[:5]]
-            return "Found books:\\n" + "\\n".join(titles)
+            return "Found books:\n" + "\n".join(titles)
         return "No books found for that query."
     except Exception as e:
         return f"Error: {e}"
