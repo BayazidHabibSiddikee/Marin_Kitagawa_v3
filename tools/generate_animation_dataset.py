@@ -2,7 +2,6 @@
 import json
 import os
 import sys
-import random
 import requests
 from pathlib import Path
 
@@ -35,17 +34,20 @@ def main():
         print(f"Error: {ANIMATIONS_DIR} not found.")
         return
 
-    # Extract all .bvh filenames
-    bvh_files = [f.name for f in ANIMATIONS_DIR.glob("*.bvh")]
+    # Extract all .bvh filenames — sorted so every batch sees the SAME full
+    # list. Random 10-file subsets made the training data inconsistent (the
+    # same text mapped to different animations across batches) and left most
+    # of the animation library unreachable by the trained model.
+    bvh_files = sorted(f.name for f in ANIMATIONS_DIR.glob("*.bvh"))
+    valid_anims = set(bvh_files)
     print(f"Found {len(bvh_files)} BVH animations.")
 
     with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
         for vibe_name, vibe_prompt in VIBE_MODIFIERS.items():
             print(f"\n--- Generating dataset for VIBE: {vibe_name} ---")
-            
-            # Select 10 random animations to feed to the LLM as options for this batch
-            available_anims = random.sample(bvh_files, min(10, len(bvh_files)))
-            
+
+            available_anims = bvh_files
+
             system_prompt = BASE_CHARACTER_EVIL.replace("{user}", "Limon") + vibe_prompt.replace("{user}", "Limon")
             
             batches = EXAMPLES_PER_VIBE // 5
@@ -89,9 +91,15 @@ RULES:
                 
                 try:
                     examples = json.loads(response_text)
+                    kept = 0
                     for ex in examples:
+                        seq = ex.get("sequence", [])
+                        # Drop examples referencing hallucinated animation names
+                        if not seq or any(s.get("animation") not in valid_anims for s in seq):
+                            continue
                         f.write(json.dumps(ex) + "\n")
-                    print(f"  + Added {len(examples)} examples.")
+                        kept += 1
+                    print(f"  + Added {kept}/{len(examples)} examples (rest had invalid animations).")
                 except json.JSONDecodeError:
                     print("  ! Failed to parse JSON from Ollama output. Skipping batch.")
                     print(f"Raw output: {response_text[:100]}...")

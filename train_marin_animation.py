@@ -5,6 +5,14 @@
 # DATASET STATS (as of results(1).zip merge):
 #   marin_animation_dataset.jsonl  → 430 examples (350 original + 80 synthetic)
 #   marin_gesture_chunks.json      → 1168 text/label pairs, 44 unique animations
+#
+# COVERAGE WARNING: static/animations/ holds 118 BVH files but the current
+# dataset only labels 44 of them, so the trained model can never predict the
+# other 74. tools/generate_animation_dataset.py now feeds the FULL sorted
+# animation list to the LLM (it used to sample 10 random files per batch) —
+# regenerate the dataset with it, re-chunk, and retrain to widen coverage.
+# At inference, director_engine._safe_anim() guards against labels for
+# animations that no longer exist on disk.
 
 !pip install -q transformers datasets evaluate accelerate torch scikit-learn
 

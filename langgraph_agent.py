@@ -44,7 +44,10 @@ def fix_spacing(text: str) -> str:
     # 1. camelCase: wordWord -> word Word
     text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
     # 2. Punctuation: word,word -> word, word
-    text = re.sub(r'([,.!?;:])([a-zA-Z])', r'\1 \2', text)
+    #    '.' and ':' only split before an uppercase letter so decimals (3.14),
+    #    domains (example.com), filenames (file.py) and 'Marin:hello' survive
+    text = re.sub(r'([,!?;])([a-zA-Z])', r'\1 \2', text)
+    text = re.sub(r'([.:])([A-Z])', r'\1 \2', text)
     # 3. Common glued words (aggressive for 0.5B models)
     glued = [
         (r'([iI])(don\'?t)', r'\1 \2'),
@@ -130,6 +133,8 @@ def timer_tool(duration: str) -> str:
         return f"Invalid duration: {duration}"
 
     timer_script = Path(__file__).parent / "tools" / "timer.py"
+    if not timer_script.exists():
+        return f"Timer script not found ({timer_script}) — cannot start the timer."
     subprocess.Popen(
         [sys.executable, str(timer_script), "--duration", str(seconds)],
         stdout=subprocess.DEVNULL,
@@ -183,11 +188,23 @@ async def learn_topic_tool(topic: str, user_id: str = "USR-MASTER", session_id: 
     except Exception as e:
         return f"Error: {e}"
 
+# file_tool is confined to the project directory — without this, a crafted
+# path like /etc/passwd or ../../../etc/shadow reads/writes arbitrary files.
+_FILE_TOOL_ROOT = Path(__file__).resolve().parent
+_FILE_TOOL_DENY_PARTS = {".git", ".env"}  # secrets / repo internals stay off-limits
+
 @tool
 def file_tool(action: str, path: str, content: str = "") -> str:
-    """Manage files (read, write, list). Actions: 'read', 'write', 'list'."""
+    """Manage files inside the Marin project directory (read, write, list). Actions: 'read', 'write', 'list'."""
     from pathlib import Path
-    p = Path(path).expanduser().resolve()
+    raw = Path(path).expanduser()
+    p = (raw if raw.is_absolute() else _FILE_TOOL_ROOT / raw).resolve()
+    try:
+        p.relative_to(_FILE_TOOL_ROOT)
+    except ValueError:
+        return f"Error: access denied — '{path}' is outside the project workspace."
+    if _FILE_TOOL_DENY_PARTS.intersection(p.relative_to(_FILE_TOOL_ROOT).parts):
+        return f"Error: access denied — '{path}' is a protected file."
     try:
         if action == "list":
             return "\\n".join([f.name for f in p.iterdir()]) if p.is_dir() else "Not a directory."
@@ -340,12 +357,12 @@ def alarm_tool(time: str = "08:00") -> str:
         return f"Error: {e}"
 
 @tool
-def business_analysis_tool(query: str) -> str:
+def business_analysis_tool(query: str, user_id: str = "USR-MASTER") -> str:
     """Analyze business/trading decisions — should I buy, sell, or hold?"""
     try:
         from tools.business_judge import BusinessJudge
         judge = BusinessJudge()
-        return judge.run_debate("GENERAL", query, "USR-MASTER")
+        return judge.run_debate("GENERAL", query, user_id)
     except Exception as e:
         return f"Error: {e}"
 
@@ -364,9 +381,10 @@ def binance_tool(action: str = "portfolio") -> str:
         return f"Error: {e}"
 
 @tool
-def youtube_search_tool(query: str) -> str:
+def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
     """Search YouTube for a video or music, classify its mood from the transcript,
-    and return a timed director animation sequence for Marin to perform."""
+    and return a timed director animation sequence for Marin to perform.
+    Set allow_dance=True only when the user explicitly asked to dance."""
     try:
         import yt_dlp
         ydl_opts = {
@@ -398,7 +416,7 @@ def youtube_search_tool(query: str) -> str:
 
         # ── Classify mood and build timed director script ──────────────────────
         from director_engine import make_video_director_script
-        director_tag, mood = make_video_director_script(video_id, transcript, title)
+        director_tag, mood = make_video_director_script(video_id, transcript, title, allow_dance=allow_dance)
 
         mood_line = {
             "sad":        "I found it... I'll feel every note with you 🥺",
@@ -480,10 +498,56 @@ SENSITIVE_TOOLS = {"terminal_tool", "file_tool", "binance_tool", "business_analy
 _SAFE_TERMINAL_RE = re.compile(r"^\s*(ls|pwd|whoami|date|cat|head|tail|df|du|free|uptime|uname|ps)(\s|$)")
 _SHELL_META_RE = re.compile(r"[;&|><`$]")
 
-_pending_plans: dict[str, tuple[list, float]] = {}  # "user_id:session_id" -> (plan, timestamp)
+# Pending confirmations are persisted to disk so they survive a server restart,
+# and guarded by a lock so concurrent requests can't clobber each other's entry.
+import threading
+
+_PENDING_PLANS_FILE = Path(__file__).resolve().parent / "storage" / "pending_plans.json"
+_pending_plans_lock = threading.Lock()
 _PENDING_PLAN_TTL = 300
+
+
+def _read_pending_plans() -> dict:
+    try:
+        with open(_PENDING_PLANS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_pending_plans(data: dict) -> None:
+    try:
+        _PENDING_PLANS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _PENDING_PLANS_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        tmp.replace(_PENDING_PLANS_FILE)
+    except Exception as e:
+        log_agent(f"Guard: could not persist pending plans: {e}")
+
+
+def set_pending_plan(key: str, plan: list) -> None:
+    with _pending_plans_lock:
+        data = _read_pending_plans()
+        data[key] = {"plan": plan, "ts": time.time()}
+        _write_pending_plans(data)
+
+
+def pop_pending_plan(key: str):
+    """Remove and return (plan, timestamp) for key, or None."""
+    with _pending_plans_lock:
+        data = _read_pending_plans()
+        entry = data.pop(key, None)
+        if entry is not None:
+            _write_pending_plans(data)
+            return entry.get("plan", []), entry.get("ts", 0.0)
+        return None
+
+
+# Deliberately narrow: casual acknowledgements like "ok", "sure" or "yeah"
+# must NOT fire a held sensitive plan — only an explicit go-ahead does.
 _CONFIRM_RE = re.compile(
-    r"^\s*(yes|yeah|yep|yup|sure|ok(ay)?|confirm(ed)?|do it|go ahead|proceed|run it|send it)\b[\s!.]*$",
+    r"^\s*(yes|confirm(ed)?|do it|go ahead|proceed|run it)\b[\s!.]*$",
     re.IGNORECASE,
 )
 
@@ -524,9 +588,45 @@ class AgentState(TypedDict):
     confirmed: bool
 
 # ── Nodes ────────────────────────────────────────────────────────────────────
+
+def _tool_catalog(names=None) -> str:
+    """Render 'name(arg, arg): description' lines so the LLM sees each tool's
+    parameters instead of having to guess them from the name alone."""
+    lines = []
+    for name in (names if names is not None else tools_by_name):
+        t = tools_by_name.get(name)
+        if t is None:
+            continue
+        try:
+            arg_sig = ", ".join(t.args.keys())
+        except Exception:
+            arg_sig = ""
+        desc = (t.description or "").split("\n")[0]
+        lines.append(f"- {name}({arg_sig}): {desc}")
+    return "\n".join(lines)
+
+
+def _dedupe_plan(plan: list) -> list:
+    """Drop hallucinated duplicate steps (same tool, same args)."""
+    seen = set()
+    out = []
+    for step in plan:
+        if not isinstance(step, dict) or step.get("action") == "respond":
+            out.append(step)
+            continue
+        key = (step.get("action"), json.dumps(step.get("args", {}), sort_keys=True, default=str))
+        if key in seen:
+            log_agent(f"Strategist: dropped duplicate step {key[0]}")
+            continue
+        seen.add(key)
+        out.append(step)
+    return out
+
+
 STRATEGIST_SYSTEM = """You are Marin's intelligent assistant. Your job is to decide which tool (if any) to call for the user's request.
 
-Available tools: {tools}
+Available tools (name(arguments): description):
+{tools}
 
 Instructions:
 - If the user wants information or an action a tool can handle, call that tool with correct arguments.
@@ -583,7 +683,8 @@ async def node_strategist(state: AgentState) -> dict:
             llm = get_llm(STRATEGY_MODEL)
         else:
             llm = get_llm(STRATEGY_MODEL, bind_tools=tools_to_bind)
-        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(tools=filtered_tools))
+        sys_msg = SystemMessage(content=STRATEGIST_SYSTEM.format(
+            tools=_tool_catalog(filtered_tools) or "(none — respond in plain text)"))
 
         # LangGraph may serialize messages to dicts — convert back to BaseMessage
         raw_msgs = list(state["messages"])
@@ -609,13 +710,26 @@ async def node_strategist(state: AgentState) -> dict:
                 for call in resp.tool_calls
             ]
         else:
-            # Fallback to JSON parsing if no tool calls
-            match = re.search(r'\[\s*\{.*\}\s*\]', resp.content, re.DOTALL)
-            plan = json.loads(match.group(0)) if match else [{"action": "respond", "args": {}, "rationale": resp.content}]
+            # Fallback to JSON parsing if no tool calls. Non-greedy match plus
+            # structural validation so an arbitrary JSON array in the reply
+            # (e.g. ["I", "will", "help"]) isn't mistaken for a plan.
+            plan = []
+            match = re.search(r'\[\s*\{.*?\}\s*\]', resp.content, re.DOTALL)
+            if match:
+                try:
+                    candidate = json.loads(match.group(0))
+                    if (isinstance(candidate, list) and candidate
+                            and all(isinstance(s, dict) and "action" in s for s in candidate)):
+                        plan = candidate
+                except json.JSONDecodeError:
+                    pass
+            if not plan:
+                plan = [{"action": "respond", "args": {}, "rationale": resp.content}]
     except Exception as e:
         log_agent(f"Strategist LLM Error: {e}")
         plan = [{"action": "respond", "args": {}, "rationale": f"LLM execution failed: {e}"}]
 
+    plan = _dedupe_plan(plan)
     log_agent(f"Strategist (LLM): {plan}")
     return {"plan": plan}
 
@@ -645,9 +759,15 @@ async def node_executor(state: AgentState) -> dict:
 
         for attempt in range(_MAX_RETRIES):
             try:
-                # Inject context for tools that need user/session scope
-                if action in ("learn_topic_tool", "rag_search", "file_tool"):
+                # Inject user/session scope — but only into tools whose
+                # signature actually accepts those parameters
+                try:
+                    accepted = set(tools_by_name[action].args)
+                except Exception:
+                    accepted = set()
+                if "user_id" in accepted and "user_id" not in args:
                     args["user_id"] = state.get("user_id", "USR-MASTER")
+                if "session_id" in accepted and "session_id" not in args:
                     args["session_id"] = state.get("session_id", "default")
 
                 res = await asyncio.wait_for(
@@ -813,6 +933,18 @@ def _validate_plan(plan) -> str:
         if unknown:
             return (f"Step {i}: unknown argument(s) {sorted(unknown)} for '{action}'. "
                     f"Valid arguments: {sorted(valid_keys)}.")
+        # Required arguments must be present, or the step fails at execution
+        try:
+            schema_cls = tools_by_name[action].args_schema
+            schema_fn = getattr(schema_cls, "model_json_schema", None) or schema_cls.schema
+            required = set(schema_fn().get("required", []))
+        except Exception:
+            required = set()
+        # user_id/session_id are injected by the executor — don't demand them here
+        missing = required - set(args) - {"user_id", "session_id"}
+        if missing:
+            return (f"Step {i}: missing required argument(s) {sorted(missing)} for '{action}'. "
+                    f"Required arguments: {sorted(required)}.")
     return ""
 
 async def node_auditor(state: AgentState) -> dict:
@@ -834,8 +966,11 @@ async def node_auditor(state: AgentState) -> dict:
                           "rationale": "I couldn't find the right tool for that — could you rephrase what you need?"}],
             }
         msg = HumanMessage(
-            content=(f"System Auditor Feedback: Your previous plan was rejected. {reason} "
-                     "Provide a revised plan using only the available tools, or just respond in plain text."),
+            content=(f"System Auditor Feedback: Your previous plan was rejected. {reason}\n"
+                     "Here are the available tools and their exact arguments:\n"
+                     f"{_tool_catalog()}\n"
+                     "Provide a revised plan that fixes the problem above using only these tools "
+                     "and argument names, or just respond in plain text."),
             additional_kwargs={"is_feedback": True},
         )
         return {"auditor_feedback": f"REJECT: {reason}", "revision_count": rev_count + 1, "messages": [msg]}
@@ -845,7 +980,7 @@ async def node_auditor(state: AgentState) -> dict:
         guarded = [s for s in plan if step_needs_confirmation(s)]
         if guarded:
             key = f"{state.get('user_id', 'USR-MASTER')}:{state.get('session_id', 'default')}"
-            _pending_plans[key] = (plan, time.time())
+            set_pending_plan(key, plan)
             summary = "; ".join(describe_step(s) for s in guarded)
             log_agent(f"Auditor: plan held for confirmation — {summary}")
             outputs = dict(state.get("tool_outputs", {}))
@@ -867,7 +1002,17 @@ def route_auditor(state: AgentState):
 
 # ── Graph Logic ──────────────────────────────────────────────────────────────
 def route_after_executor(state: AgentState):
-    if "__final_response__" in state.get("tool_outputs", {}) or len([k for k in state.get("tool_outputs", {}) if k.startswith("step_")]) >= len(state.get("plan", [])):
+    outputs = state.get("tool_outputs", {})
+    plan = state.get("plan", [])
+    completed = len([k for k in outputs if k.startswith("step_")])
+    if "__final_response__" in outputs:
+        # a 'respond' step ends the plan — surface any tool steps it cut off
+        skipped = [s.get("action") for s in plan[completed:]
+                   if isinstance(s, dict) and s.get("action") != "respond"]
+        if skipped:
+            log_agent(f"Executor: 'respond' ended plan early — skipped steps: {skipped}")
+        return "persona"
+    if completed >= len(plan):
         return "persona"
     return "executor"
 
@@ -913,7 +1058,7 @@ async def run_background_tools(message: str, history: list, user_id: str, role: 
     key = f"{user_id}:{session_id}"
     confirmed_plan: list = []
     confirmed = False
-    pending = _pending_plans.pop(key, None)
+    pending = pop_pending_plan(key)
     if pending:
         held_plan, ts = pending
         if time.time() - ts > _PENDING_PLAN_TTL:
@@ -966,8 +1111,8 @@ async def get_pending_message(user_id: str) -> str:
         del _pending_messages[user_id]
     return msg
 
-async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral"):
-    await run_background_tools(message, history or [], user_id, role, user_vibe)
+async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral", session_id: str = "default"):
+    await run_background_tools(message, history or [], user_id, role, user_vibe, session_id=session_id)
     yield "Thinking..."
 
 if __name__ == "__main__":

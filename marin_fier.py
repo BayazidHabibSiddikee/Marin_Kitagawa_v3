@@ -24,7 +24,9 @@ _WEATHER_PAT = re.compile(r'\b(weather|temp|humidity|rain|sun)\b')
 _MAP_PAT     = re.compile(r'\b(map|location|places|find|pin)\b')
 _MATH_PAT    = re.compile(r'\b(plot|draw|graph|math|equation|calculate)\b')
 _BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|finance|market|stock market|market trends)\b')
-_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course|stock market|market analysis|financial trends)\b')
+# Finance terms (stock market, market analysis, ...) deliberately excluded —
+# they belong to _BUSINESS_PAT; "learn about the stock market" still matches via "learn"
+_STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
 _BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
 _YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play)\b')
@@ -55,7 +57,9 @@ def _regex_stage(text: str) -> dict | None:
         query = re.sub(r'\b(dance|dancing|twerk|boogie|groove|let\'?s|start|marin|please|can you|with me)\b', '', lower).strip()
         query = re.sub(r'\s+', ' ', query).strip()
         query = (query + " music") if query else "upbeat dance music"
-        return {"intent": "youtube_search_tool", "params": {"query": query}, "confidence": 1.0, "is_dance": True}
+        # allow_dance flows through the plan args into youtube_search_tool →
+        # make_video_director_script, which appends __DANCE__ for danceable moods
+        return {"intent": "youtube_search_tool", "params": {"query": query, "allow_dance": True}, "confidence": 1.0, "is_dance": True}
 
     # YouTube / Video — only when NOT a dance request
     if _YOUTUBE_PAT.search(lower):

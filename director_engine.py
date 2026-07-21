@@ -51,8 +51,8 @@ _EMOTION_MAP = {
     "remorse":    {"anim": "remorse",        "expr": "sad"},
     # anger / frustration
     "angry":      {"anim": "anger2",         "expr": "angry"},
-    "annoyed":    {"anim": "disaproval1",    "expr": "angry"},
-    "disgust":    {"anim": "disaproval1",    "expr": "angry"},
+    "annoyed":    {"anim": "disapproval",    "expr": "angry"},
+    "disgust":    {"anim": "disapproval",    "expr": "angry"},
     "disappoint": {"anim": "disappointment", "expr": "angry"},
     # admiration / caring
     "admire":     {"anim": "admiration",     "expr": "happy"},
@@ -75,15 +75,78 @@ _EMOTION_MAP = {
     "pride":      {"anim": "pride",          "expr": "happy"},
 }
 
-# ── ML Gesture Predictor (lazy-loaded) ─────────────────────────────────────
-# Uses the DistilRoBERTa classifier trained by train_marin_animation.py.
-# Falls back to keyword heuristics if the model is not yet present.
+# ── Animation name validation ───────────────────────────────────────────────
+# Every anim name emitted in a director script must correspond to a real
+# .bvh file, otherwise the frontend silently plays nothing. Guard against
+# typos in the maps and stale labels from the ML model.
+
+_ANIMATIONS_DIR = Path(__file__).parent / "static" / "animations"
+
+
+def _load_valid_animations() -> set:
+    try:
+        return {p.stem for p in _ANIMATIONS_DIR.glob("*.bvh")}
+    except Exception:
+        return set()
+
+
+_VALID_ANIMATIONS = _load_valid_animations()
+
+
+def _safe_anim(name: str, fallback: str = "neutral_idle2") -> str:
+    """Return `name` if its .bvh exists, else `fallback`."""
+    if not _VALID_ANIMATIONS:  # dir missing/unreadable — can't verify
+        return name
+    return name if name in _VALID_ANIMATIONS else fallback
+
+# ── ML Gesture Predictor ─────────────────────────────────────
+# Priority order:
+#   1. marin_sklearn_gesture.pkl  — TF-IDF + LogReg, ~50% F1, loads in <1s, no GPU
+#   2. marin_animation_model/     — HF transformer, slower, kept as fallback
+#   3. Keyword heuristics (built into build_director_script)
 
 _GesturePredictor = None  # module-level singleton
 
 
+class _SklearnGesturePredictor:
+    """Fast sklearn TF-IDF + LogisticRegression gesture classifier (~50% F1).
+    Loaded from marin_sklearn_gesture.pkl produced by the Kaggle notebook."""
+
+    # Animations that are unlikely to be contextually appropriate for chat
+    # (physical/combat/idle-only) — suppress these to avoid jarring predictions
+    _SUPPRESS = frozenset({
+        "hitarea_groin.bvh", "hitarea_foot.bvh",
+        "action_laydown.bvh", "exercise_jogging.bvh", "exercise_crunches.bvh",
+        "kneel_idle.bvh", "kneel_idle2.bvh",
+        "laying_idle.bvh", "laying_idle2.bvh",
+        "sit_idle4.bvh",
+    })
+
+    def __init__(self, pkl_path: str):
+        import pickle
+        with open(pkl_path, "rb") as f:
+            obj = pickle.load(f)
+        self._vec      = obj["vectorizer"]
+        self._clf      = obj["classifier"]
+        # Keys may be int or str depending on how the pkl was saved
+        raw = obj["id2label"]
+        self._id2label: dict[int, str] = {int(k): v for k, v in raw.items()}
+
+    def predict(self, text: str) -> str:
+        """Return predicted animation filename, suppressing implausible rare classes."""
+        import numpy as np
+        X = self._vec.transform([text])
+        proba = self._clf.predict_proba(X)[0]
+        # Walk from highest to lowest confidence, pick first non-suppressed class
+        for idx in np.argsort(proba)[::-1]:
+            label = self._id2label.get(int(idx), "neutral_idle2.bvh")
+            if label not in self._SUPPRESS:
+                return label
+        return "neutral_idle2.bvh"
+
+
 class _LazyGesturePredictor:
-    """Thin wrapper around a HF sequence-classification model."""
+    """HF sequence-classification model — heavier fallback if sklearn pkl absent."""
 
     def __init__(self, model_dir: str):
         from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -106,17 +169,31 @@ class _LazyGesturePredictor:
 
 
 def _get_gesture_predictor():
-    """Return the singleton predictor, loading it on first call."""
+    """Return the singleton predictor, loading it on first call.
+    Prefers the lightweight sklearn pickle; falls back to the HF transformer."""
     global _GesturePredictor
     if _GesturePredictor is not None:
         return _GesturePredictor
+
+    # ── 1. Try fast sklearn pkl first ────────────────────────────────────────
+    pkl_path = Path(__file__).parent / "marin_sklearn_gesture.pkl"
+    if pkl_path.exists():
+        try:
+            _GesturePredictor = _SklearnGesturePredictor(str(pkl_path))
+            print("[director_engine] Sklearn gesture model loaded (TF-IDF+LogReg).")
+            return _GesturePredictor
+        except Exception as e:
+            print(f"[director_engine] Could not load sklearn gesture model: {e}")
+
+    # ── 2. Fall back to HF transformer ───────────────────────────────────────
     model_dir = Path(__file__).parent / "marin_animation_model"
     if model_dir.exists() and (model_dir / "label_map.json").exists():
         try:
             _GesturePredictor = _LazyGesturePredictor(str(model_dir))
-            print("[director_engine] ML gesture model loaded.")
+            print("[director_engine] HF gesture model loaded (transformer).")
         except Exception as e:
-            print(f"[director_engine] Could not load gesture model: {e}")
+            print(f"[director_engine] Could not load HF gesture model: {e}")
+
     return _GesturePredictor
 
 
@@ -129,7 +206,8 @@ def predict_animation_from_text(text: str) -> str | None:
     if predictor is None:
         return None
     bvh = predictor.predict(text)
-    return bvh.replace(".bvh", "")
+    return _safe_anim(bvh.replace(".bvh", ""))
+
 
 # ── Sentence-level emotion detector ────────────────────────────────────────
 
@@ -149,13 +227,33 @@ _EMOTION_KEYWORDS = {
     "love":       ["love", "adore", "treasure", "sweetheart", "my dear", "❤️", "💖", "💗", "💓"],
 }
 
+_NEGATORS = {
+    "not", "no", "never", "hardly", "barely", "without", "stop",
+    "don't", "dont", "doesn't", "doesnt", "didn't", "didnt",
+    "isn't", "isnt", "aren't", "arent", "wasn't", "wasnt", "weren't", "werent",
+    "can't", "cant", "cannot", "couldn't", "couldnt",
+    "won't", "wont", "wouldn't", "wouldnt", "shouldn't", "shouldnt", "ain't", "aint",
+}
+
+
+def _is_negated(lower: str, kw_pos: int) -> bool:
+    """True if a negator appears within the 3 words preceding the keyword,
+    so "I'm not happy" doesn't trigger the happy gesture."""
+    preceding = re.findall(r"[a-z']+", lower[:kw_pos])
+    return any(w in _NEGATORS for w in preceding[-3:])
+
+
 def _detect_sentence_emotion(sentence: str) -> tuple[str, int]:
     lower = sentence.lower()
     scores: dict[str, int] = {}
     for emotion, keywords in _EMOTION_KEYWORDS.items():
         for kw in keywords:
-            if kw in lower:
-                scores[emotion] = scores.get(emotion, 0) + 1
+            pos = lower.find(kw)
+            if pos == -1:
+                continue
+            if _is_negated(lower, pos):
+                continue
+            scores[emotion] = scores.get(emotion, 0) + 1
     if not scores:
         return "neutral", 0
     best = max(scores, key=lambda k: scores[k])
@@ -166,7 +264,8 @@ def _detect_sentence_emotion(sentence: str) -> tuple[str, int]:
 
 def _split_into_segments(text: str) -> list[str]:
     """Split response into natural speech segments (sentences / phrases)."""
-    # Clean markdown
+    # Clean markdown — fenced code blocks aren't spoken, drop them entirely
+    text = re.sub(r'```.*?```', ' ', text, flags=re.DOTALL)
     text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
     text = re.sub(r'_{1,2}(.+?)_{1,2}', r'\1', text)
     text = re.sub(r'`[^`]+`', '', text)
@@ -174,19 +273,25 @@ def _split_into_segments(text: str) -> list[str]:
     text = re.sub(r'\n{2,}', '\n', text)
     text = text.strip()
 
-    # Split on sentence endings, keeping delimiter
-    raw = re.split(r'(?<=[.!?])\s+', text)
     segments = []
-    for s in raw:
-        s = s.strip()
-        if not s:
+    # Split on newlines first so list items / short lines become their own
+    # segments instead of being mushed into the neighbouring sentence
+    for line in text.split('\n'):
+        line = re.sub(r'^\s*(?:[-*+•]|\d+[.)])\s+', '', line).strip()  # strip list markers
+        if not line:
             continue
-        # If a segment is very long, split on comma/semicolon
-        if len(s) > 120:
-            sub = re.split(r'(?<=[,;])\s+', s)
-            segments.extend([x.strip() for x in sub if x.strip()])
-        else:
-            segments.append(s)
+        # Split on sentence endings, keeping delimiter
+        raw = re.split(r'(?<=[.!?])\s+', line)
+        for s in raw:
+            s = s.strip()
+            if not s:
+                continue
+            # If a segment is very long, split on comma/semicolon
+            if len(s) > 120:
+                sub = re.split(r'(?<=[,;])\s+', s)
+                segments.extend([x.strip() for x in sub if x.strip()])
+            else:
+                segments.append(s)
     return segments
 
 
@@ -217,7 +322,11 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
 
     # Subtle open — neutral idle, light expression (human default pose)
     base = _EMOTION_MAP.get(base_emotion, _EMOTION_MAP["neutral"])
-    open_anim = base["anim"] if base_emotion not in ("neutral", "explaining") else "neutral_idle"
+    if base_emotion in ("neutral", "explaining"):
+        # calm emotions open with the plain idle pose rather than a gesture
+        open_anim = "neutral_idle"
+    else:
+        open_anim = _safe_anim(base["anim"])
     script.append({"t": 0.0, "type": "anim", "value": open_anim, "dur": 2.0})
     script.append({"t": 0.0, "type": "expr", "value": base.get("expr", "neutral"), "dur": 1.5})
 
@@ -238,13 +347,14 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
             script.append({"t": t_start + 0.1, "type": "expr", "value": mapping.get("expr", "neutral"), "dur": min(dur, 2.5)})
             prev_emotion = emotion
-        elif emotion != prev_emotion and emotion != "neutral" and score >= 2:
-            # Keyword heuristic fallback
+        elif emotion != prev_emotion and emotion != "neutral" and score >= 1:
+            # Keyword heuristic fallback — a single non-negated keyword hit is
+            # enough; requiring 2+ left most short sentences with no gesture
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
             anim = mapping["anim"]
             if emotion in ("thinking", "curious", "explaining"):
                 anim = "neutral_idle2" if emotion == "explaining" else "curiosity"
-            script.append({"t": t_start, "type": "anim", "value": anim, "dur": min(dur, 3.0)})
+            script.append({"t": t_start, "type": "anim", "value": _safe_anim(anim), "dur": min(dur, 3.0)})
             script.append({"t": t_start + 0.1, "type": "expr", "value": mapping["expr"], "dur": min(dur, 2.5)})
             prev_emotion = emotion
 
