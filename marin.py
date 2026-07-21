@@ -101,8 +101,29 @@ async def main(prompt: str, image_path: str = None, user: dict = None, session_i
 if __name__ == "__main__":
     # CLI mode
     async def run_cli():
-        prompt = input(">> ")
-        async for chunk in main(prompt):
-            print(chunk, end="", flush=True)
-        print()
+        print("Marin CLI started. Type your message, or press ENTER on an empty prompt to speak.")
+        while True:
+            try:
+                prompt = input("\n>> ")
+                
+                # STT trigger: pressing enter without typing
+                if not prompt.strip():
+                    try:
+                        from utils.stt import listen_and_transcribe
+                        prompt = listen_and_transcribe()
+                        if not prompt:
+                            continue
+                        print(f"[Voice]: {prompt}")
+                    except ImportError:
+                        print("[Error] STT module not found. Did you install dependencies?")
+                        continue
+
+                if prompt.lower() in ("exit", "quit"):
+                    break
+                    
+                async for chunk in main(prompt):
+                    print(chunk, end="", flush=True)
+                print()
+            except (KeyboardInterrupt, EOFError):
+                break
     asyncio.run(run_cli())
