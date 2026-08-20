@@ -3,232 +3,247 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marin OS — Command Center</title>
+    <title>Marin — Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --ink:        #13100e;
+            --ink2:       #1c1814;
+            --ink3:       #221e19;
+            --surface:    #2a2520;
+            --border:     #3a342c;
+            --border-hi:  #52473c;
+            --teal:       #4db8a4;
+            --teal-dim:   #2d8a78;
+            --teal-glow:  rgba(77,184,164,.18);
+            --teal-soft:  rgba(77,184,164,.08);
+            --coral:      #e07b6a;
+            --gold:       #c9965a;
+            --gold-soft:  rgba(201,150,90,.12);
+            --success:    #5db882;
+            --danger:     #e07b6a;
+            --text:       #e8ddd0;
+            --text-dim:   #8a7d72;
+            --text-muted: #4a4038;
+            --radius:     10px;
+            --radius-sm:  6px;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: 'JetBrains Mono', 'Fira Code', monospace;
-            background: #0a0a0f;
-            color: #e0e0e0;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--ink);
+            color: var(--text);
             min-height: 100vh;
         }
-        .header {
-            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
-            padding: 20px 30px;
-            border-bottom: 2px solid #e94560;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+
+        /* grain overlay */
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+            pointer-events: none; z-index: 900; opacity: .6;
         }
-        .header h1 {
-            color: #e94560;
-            font-size: 28px;
-            letter-spacing: 5px;
-            text-transform: uppercase;
+
+        /* ── NAV ── */
+        nav {
+            background: var(--ink2);
+            border-bottom: 1px solid var(--border);
+            padding: 0 28px;
+            height: 54px;
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 200;
         }
-        .header .subtitle {
-            color: #666;
-            font-size: 11px;
-            letter-spacing: 2px;
+        nav::after {
+            content: '';
+            position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, var(--teal-dim), transparent);
         }
+        .nav-brand {
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.05rem; color: var(--teal);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .nav-brand .hs {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .6rem;
+            background: linear-gradient(135deg, var(--teal), var(--teal-dim));
+            color: #fff; padding: 2px 8px; border-radius: 2px; letter-spacing: .05em;
+        }
+        .nav-links { display: flex; gap: 6px; align-items: center; }
+        .nav-links a {
+            color: var(--text-dim); text-decoration: none; font-size: .82rem;
+            padding: 6px 12px; border-radius: var(--radius-sm); transition: all .2s;
+        }
+        .nav-links a:hover { color: var(--text); background: var(--ink3); }
+        .nav-links a.active { color: var(--teal); background: var(--teal-soft); }
         .status-badge {
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem; padding: 3px 10px; border-radius: 20px;
+            letter-spacing: .06em; text-transform: uppercase;
         }
-        .status-online { background: #0f3460; color: #00ff88; border: 1px solid #00ff88; }
-        .status-offline { background: #3d0000; color: #ff4444; border: 1px solid #ff4444; }
+        .status-online  { background: rgba(77,184,164,.12); color: var(--teal);  border: 1px solid rgba(77,184,164,.3); }
+        .status-offline { background: rgba(224,123,106,.08); color: var(--danger); border: 1px solid rgba(224,123,106,.25); }
+
+        main { padding: 24px 30px; }
 
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            padding: 20px 30px;
+            gap: 14px;
         }
+
         .panel {
-            background: #111118;
-            border: 1px solid #222;
-            border-radius: 6px;
+            background: var(--ink2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
             overflow: hidden;
+            transition: border-color .2s;
         }
+        .panel:hover { border-color: var(--border-hi); }
+
         .panel-header {
-            background: #1a1a2e;
+            background: var(--ink3);
             padding: 10px 16px;
-            border-bottom: 1px solid #333;
-            font-size: 12px;
-            color: #e94560;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border-bottom: 1px solid var(--border);
+            font-size: .7rem; font-family: 'JetBrains Mono', monospace;
+            color: var(--teal); letter-spacing: .1em; text-transform: uppercase;
+            display: flex; justify-content: space-between; align-items: center;
         }
+
         .panel-body {
             padding: 14px;
-            font-size: 12px;
+            font-size: .82rem;
             line-height: 1.6;
             max-height: 300px;
             overflow-y: auto;
         }
 
         .terminal {
-            background: #0d0d0d;
-            border: 1px solid #222;
-            border-radius: 4px;
+            background: var(--ink);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
             padding: 10px;
-            font-family: monospace;
-            font-size: 12px;
-            color: #00ff88;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .75rem;
+            color: var(--teal);
             height: 180px;
             overflow-y: auto;
         }
-        .terminal-input {
-            display: flex;
-            margin-top: 8px;
-        }
+
+        .terminal-input { display: flex; margin-top: 8px; gap: 6px; }
         .terminal-input input {
-            flex: 1;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #00ff88;
-            padding: 8px 12px;
-            font-family: monospace;
-            font-size: 12px;
-            border-radius: 4px 0 0 4px;
+            flex: 1; background: var(--ink); border: 1px solid var(--border);
+            color: var(--text); padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace; font-size: .78rem;
+            border-radius: var(--radius-sm); outline: none;
+            transition: border-color .15s;
         }
+        .terminal-input input:focus { border-color: var(--teal); }
         .terminal-input button {
-            background: #e94560;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            cursor: pointer;
-            border-radius: 0 4px 4px 0;
-            font-weight: bold;
-            font-size: 12px;
+            background: var(--teal); color: var(--ink);
+            border: none; padding: 8px 16px; cursor: pointer;
+            border-radius: var(--radius-sm); font-weight: 500; font-size: .78rem;
+            font-family: 'DM Sans', sans-serif;
         }
+        .terminal-input button:hover { background: var(--teal-dim); }
 
         .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            border-bottom: 1px solid #1a1a1a;
+            display: flex; justify-content: space-between;
+            padding: 6px 0; border-bottom: 1px solid var(--border);
         }
-        .stat-label { color: #666; }
-        .stat-value { color: #00ff88; font-weight: bold; }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: var(--text-muted); font-size: .78rem; }
+        .stat-value { color: var(--teal); font-size: .78rem; font-family: 'JetBrains Mono', monospace; }
 
         .drop-zone {
-            border: 2px dashed #333;
-            border-radius: 6px;
-            padding: 30px;
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-sm);
+            padding: 24px;
             text-align: center;
-            color: #555;
+            color: var(--text-muted);
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            font-size: .82rem;
         }
         .drop-zone:hover, .drop-zone.dragover {
-            border-color: #e94560;
-            color: #e94560;
-            background: rgba(233, 69, 96, 0.03);
+            border-color: var(--teal);
+            color: var(--teal);
+            background: var(--teal-soft);
         }
 
         .full-width { grid-column: 1 / -1; }
 
         .btn {
-            padding: 6px 14px;
-            border: 1px solid #333;
-            background: #1a1a2e;
-            color: #e0e0e0;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 11px;
-            letter-spacing: 1px;
-            transition: all 0.2s;
+            padding: 5px 12px; border: 1px solid var(--border);
+            background: var(--ink3); color: var(--text-dim);
+            cursor: pointer; border-radius: var(--radius-sm);
+            font-size: .75rem; font-family: 'DM Sans', sans-serif;
+            transition: all 0.15s;
         }
-        .btn:hover { border-color: #e94560; color: #e94560; }
-        .btn-danger { border-color: #ff4444; color: #ff4444; }
+        .btn:hover { border-color: var(--border-hi); color: var(--text); background: var(--surface); }
+        .btn-danger { border-color: rgba(224,123,106,.3); color: var(--danger); }
+        .btn-danger:hover { background: rgba(224,123,106,.08); }
 
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], textarea {
             width: 100%;
             padding: 8px 12px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            color: #e0e0e0;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 12px;
+            background: var(--ink);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: var(--radius-sm);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .78rem;
             margin-top: 4px;
+            outline: none;
+            transition: border-color .15s;
         }
-        input:focus { outline: none; border-color: #e94560; }
+        input:focus, textarea:focus { border-color: var(--teal); }
+        input::placeholder { color: var(--text-muted); }
 
-        label { color: #666; font-size: 11px; letter-spacing: 1px; }
+        label { color: var(--text-muted); font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; }
 
-        .config-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
+        .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
         .settings-editor {
-            background: #0d0d0d;
-            border: 1px solid #222;
-            border-radius: 4px;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 11px;
-            color: #00ff88;
-            width: 100%;
-            min-height: 200px;
-            resize: vertical;
+            width: 100%; min-height: 200px; resize: vertical;
+            font-family: 'JetBrains Mono', monospace; font-size: .75rem;
+            color: var(--teal-dim);
         }
 
-        .msg { padding: 6px 10px; border-radius: 4px; margin-top: 8px; font-size: 11px; }
-        .msg-ok { background: #0a2a0a; color: #00ff88; border: 1px solid #00ff8833; }
-        .msg-err { background: #2a0a0a; color: #ff4444; border: 1px solid #ff444433; }
+        .msg { padding: 6px 10px; border-radius: var(--radius-sm); margin-top: 8px; font-size: .75rem; }
+        .msg-ok  { background: rgba(93,184,130,.08);  color: var(--success); border: 1px solid rgba(93,184,130,.2); }
+        .msg-err { background: rgba(224,123,106,.08); color: var(--danger);  border: 1px solid rgba(224,123,106,.2); }
 
-        .ownership-banner {
-            background: linear-gradient(90deg, #1a0a0a, #0a0a1a, #1a0a0a);
-            border: 1px solid #e94560;
-            border-radius: 6px;
-            padding: 16px 20px;
-            margin: 20px 30px 0;
-            text-align: center;
-        }
-        .ownership-banner h2 {
-            color: #e94560;
-            font-size: 16px;
-            letter-spacing: 4px;
-            margin-bottom: 6px;
-        }
-        .ownership-banner p {
-            color: #666;
-            font-size: 11px;
-            letter-spacing: 2px;
+        @media (max-width: 700px) {
+            .grid { grid-template-columns: 1fr; }
+            .full-width { grid-column: 1; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div>
-            <h1>MARIN OS</h1>
-            <div class="subtitle">Command Center v3.0</div>
-            <a href="/sentinel" style="color:#e94560;font-size:11px;text-decoration:none;margin-top:8px;display:inline-block;border:1px solid #e94560;padding:2px 6px;border-radius:4px;">[ SENTINEL PROXY ]</a>
+    <nav>
+        <div class="nav-brand">
+            Marin <span class="hs">HS-02</span>
         </div>
-        <span id="status-badge" class="status-badge status-offline">CHECKING...</span>
-    </div>
+        <div class="nav-links">
+            <a href="/chat">Chat</a>
+            <a href="/">Home</a>
+            <a href="/sentinel">Sentinel</a>
+            <a href="/command" class="active">Command</a>
+            <span id="status-badge" class="status-badge status-offline">offline</span>
+        </div>
+    </nav>
 
-    <div class="ownership-banner">
-        <h2>I OWN THIS SYSTEM</h2>
-        <p>Full root access. No restrictions. Every command, every file, every decision — mine.</p>
-    </div>
-
+    <main>
+    <main>
     <div class="grid">
         <!-- System -->
         <div class="panel">
             <div class="panel-header">
-                <span>SYSTEM</span>
+                <span>System</span>
                 <button class="btn" onclick="refreshSystem()">Refresh</button>
             </div>
             <div class="panel-body" id="system-info">Loading...</div>
@@ -237,7 +252,7 @@
         <!-- Services -->
         <div class="panel">
             <div class="panel-header">
-                <span>SERVICES</span>
+                <span>Services</span>
                 <button class="btn" onclick="refreshServices()">Refresh</button>
             </div>
             <div class="panel-body" id="services-info">Loading...</div>
@@ -246,12 +261,12 @@
         <!-- Terminal -->
         <div class="panel full-width">
             <div class="panel-header">
-                <span>TERMINAL</span>
+                <span>Terminal</span>
                 <button class="btn btn-danger" onclick="clearTerminal()">Clear</button>
             </div>
             <div class="panel-body">
                 <div class="terminal" id="terminal">
-                    <div style="color:#666">Marin OS Terminal — I run this system.</div>
+                    <div style="color:var(--text-muted)">Marin OS Terminal ready.</div>
                 </div>
                 <div class="terminal-input">
                     <input type="text" id="cmd-input" placeholder="$ " onkeypress="if(event.key==='Enter')execCmd()">
@@ -278,7 +293,7 @@
         <!-- Health -->
         <div class="panel">
             <div class="panel-header">
-                <span>HEALTH</span>
+                <span>Health</span>
                 <button class="btn" onclick="refreshHealth()">Refresh</button>
             </div>
             <div class="panel-body" id="health-log">Loading...</div>
@@ -286,11 +301,11 @@
 
         <!-- Telegram -->
         <div class="panel">
-            <div class="panel-header"><span>TELEGRAM</span></div>
+            <div class="panel-header"><span>Telegram</span></div>
             <div class="panel-body">
-                <label>BOT TOKEN</label>
+                <label>Bot Token</label>
                 <input type="password" id="tg-token" placeholder="123456:ABC-DEF...">
-                <label style="margin-top:8px;display:block">CHAT ID</label>
+                <label style="margin-top:8px;display:block">Chat ID</label>
                 <input type="text" id="tg-chat" placeholder="8058658801">
                 <button class="btn" onclick="saveTelegram()" style="margin-top:10px">Save Telegram</button>
                 <div id="tg-msg"></div>
@@ -299,11 +314,11 @@
 
         <!-- Email -->
         <div class="panel">
-            <div class="panel-header"><span>EMAIL (Gmail)</span></div>
+            <div class="panel-header"><span>Email (Gmail)</span></div>
             <div class="panel-body">
-                <label>GMAIL ADDRESS</label>
+                <label>Gmail Address</label>
                 <input type="text" id="email-addr" placeholder="you@gmail.com">
-                <label style="margin-top:8px;display:block">APP PASSWORD</label>
+                <label style="margin-top:8px;display:block">App Password</label>
                 <input type="password" id="email-pass" placeholder="xxxx-xxxx-xxxx-xxxx">
                 <button class="btn" onclick="saveEmail()" style="margin-top:10px">Save Email</button>
                 <div id="email-msg"></div>
@@ -312,7 +327,7 @@
 
         <!-- API Keys -->
         <div class="panel">
-            <div class="panel-header"><span>API KEYS</span></div>
+            <div class="panel-header"><span>API Keys</span></div>
             <div class="panel-body">
                 <div class="config-grid">
                     <div>
@@ -340,7 +355,7 @@
         <!-- Settings.json Editor -->
         <div class="panel full-width">
             <div class="panel-header">
-                <span>SETTINGS.JSON</span>
+                <span>settings.json</span>
                 <div>
                     <button class="btn" onclick="loadSettings()">Load</button>
                     <button class="btn" onclick="saveSettings()">Save</button>
@@ -352,6 +367,7 @@
             </div>
         </div>
     </div>
+    </main>
 
     <script>
         const API = '';
@@ -362,7 +378,7 @@
                 const d = await r.json();
                 const b = document.getElementById('status-badge');
                 b.className = d.status === 'alive' ? 'status-badge status-online' : 'status-badge status-offline';
-                b.textContent = d.status === 'alive' ? 'ONLINE' : 'OFFLINE';
+                b.textContent = d.status === 'alive' ? 'online' : 'offline';
             } catch(e) {
                 document.getElementById('status-badge').className = 'status-badge status-offline';
                 document.getElementById('status-badge').textContent = 'OFFLINE';
@@ -402,7 +418,7 @@
             const cmd = input.value.trim();
             if (!cmd) return;
             const term = document.getElementById('terminal');
-            term.innerHTML += `<div style="color:#e94560">$ ${cmd}</div>`;
+            term.innerHTML += `<div style="color:var(--teal)">$ ${cmd}</div>`;
             input.value = '';
             try {
                 const r = await fetch(API + '/execute', {

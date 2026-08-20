@@ -133,6 +133,11 @@ async def set_voice_setting(request: Request):
     print(f"[VOICE] Manual Override: {'ON' if marin.VOICE_ENABLED else 'OFF'}")
     return {"status": "success", "voice_enabled": marin.VOICE_ENABLED}
 
+@app.get("/api/tts/status")
+async def tts_status():
+    from utils.tts import is_tts_available
+    return {"available": is_tts_available(), "engine": "piper", "voice": "en_US-amy-medium"}
+
 @app.get("/settings/rag")
 async def get_rag_setting():
     import marin
@@ -176,14 +181,39 @@ async def stop_audio():
     return {"status": "stopped"}
 
 @app.get("/audio/speak")
-async def speak_audio(text: str):
+async def speak_audio(text: str, lipsync: bool = True):
+    """
+    Generate speech audio from text using Piper TTS.
+
+    Response (when lipsync=true, default):
+      JSON { wav: "<base64>", lipsync: [ {t, open}, … ] }
+
+    Response (when lipsync=false, legacy):
+      audio/wav binary stream
+
+    The lipsync array contains per-frame mouth-open keyframes derived from
+    the actual WAV amplitude envelope (20 ms resolution), so the VRM avatar's
+    lips move in precise sync with the audio.
+    """
+    import base64
     import io
 
-    from utils.tts import generate_wav
-    wav_bytes = await generate_wav(text)
-    if not wav_bytes:
-        raise HTTPException(status_code=500, detail="Failed to generate audio")
-    return StreamingResponse(io.BytesIO(wav_bytes), media_type="audio/wav")
+    from utils.tts import generate_wav_with_lipsync, generate_wav
+
+    if lipsync:
+        wav_bytes, schedule = await generate_wav_with_lipsync(text)
+        if not wav_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate audio")
+        return JSONResponse({
+            "wav":     base64.b64encode(wav_bytes).decode("ascii"),
+            "lipsync": schedule,
+            "duration": round(schedule[-1]["t"] if schedule else 0, 2),
+        })
+    else:
+        wav_bytes = await generate_wav(text)
+        if not wav_bytes:
+            raise HTTPException(status_code=500, detail="Failed to generate audio")
+        return StreamingResponse(io.BytesIO(wav_bytes), media_type="audio/wav")
 
 
 @app.post("/audio/transcribe")
@@ -209,18 +239,212 @@ async def get_latest_news_api():
     return JSONResponse(news)
 
 @app.get("/api/logs")
-async def get_logs():
-    return JSONResponse([])
+async def get_logs(file: str = "main.err.log", lines: int = 200):
+    """Stream last N lines of a log file."""
+    import pathlib
+    logs_dir = pathlib.Path(__file__).parent / "logs"
+    # Safety: only allow files inside the logs directory
+    target = (logs_dir / file).resolve()
+    if not str(target).startswith(str(logs_dir.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not target.exists():
+        return JSONResponse({"lines": [], "file": file, "error": "File not found"})
+    try:
+        with open(target, "rb") as f:
+            # Efficient tail: read last chunk
+            f.seek(0, 2)
+            size = f.tell()
+            chunk = min(size, lines * 120)
+            f.seek(max(0, size - chunk))
+            raw = f.read().decode("utf-8", errors="replace")
+        all_lines = raw.splitlines()
+        return JSONResponse({"lines": all_lines[-lines:], "file": file, "total": len(all_lines)})
+    except Exception as e:
+        return JSONResponse({"lines": [], "file": file, "error": str(e)})
+
+@app.get("/api/logs/files")
+async def list_log_files():
+    """List available log files."""
+    import pathlib
+    logs_dir = pathlib.Path(__file__).parent / "logs"
+    files = []
+    for f in sorted(logs_dir.glob("*.log")):
+        stat = f.stat()
+        files.append({"name": f.name, "size": stat.st_size, "mtime": stat.st_mtime})
+    return JSONResponse({"files": files})
+
+@app.get("/api/rag/status")
+async def get_rag_status():
+    """Return RAG server status, RAM usage, and whether it's running."""
+    import subprocess, psutil
+    running = False
+    ram_mb  = 0
+    pid     = None
+    for proc in psutil.process_iter(["pid", "name", "cmdline", "memory_info"]):
+        try:
+            cmdline = " ".join(proc.info.get("cmdline") or [])
+            if "rag_server" in cmdline and "python" in cmdline.lower():
+                running = True
+                pid     = proc.info["pid"]
+                ram_mb  = proc.info["memory_info"].rss // (1024 * 1024)
+                break
+        except Exception:
+            pass
+    # Total system RAM for % calculation
+    total_ram_mb = psutil.virtual_memory().total // (1024 * 1024)
+    ram_pct      = round(ram_mb / total_ram_mb * 100, 1) if total_ram_mb > 0 else 0
+    return JSONResponse({
+        "running": running, "pid": pid,
+        "ram_mb": ram_mb, "ram_pct": ram_pct, "total_ram_mb": total_ram_mb
+    })
+
+@app.post("/api/rag/start")
+async def start_rag_server():
+    """Start the RAG server process."""
+    import subprocess, pathlib, os
+    # Check if already running
+    status = await get_rag_status()
+    data   = status.body  # JSONResponse stores body as bytes
+    import json
+    d = json.loads(data)
+    if d["running"]:
+        return JSONResponse({"status": "already_running", **d})
+    # Try supervisorctl first
+    venv = pathlib.Path.home() / "marin_venv" / "bin" / "python3"
+    if not venv.exists():
+        venv = pathlib.Path(sys.executable)
+    rag_script = pathlib.Path(__file__).parent / "rag_server.py"
+    env = os.environ.copy()
+    proc = subprocess.Popen(
+        [str(venv), str(rag_script), "--port", "5080"],
+        cwd=str(pathlib.Path(__file__).parent),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+    import asyncio
+    await asyncio.sleep(2)
+    status2 = await get_rag_status()
+    return status2
+
+@app.post("/api/rag/stop")
+async def stop_rag_server():
+    """Stop the RAG server process."""
+    import signal
+    status = await get_rag_status()
+    import json
+    d = json.loads(status.body)
+    if not d["running"] or not d["pid"]:
+        return JSONResponse({"status": "not_running"})
+    try:
+        import os
+        os.kill(d["pid"], signal.SIGTERM)
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)})
+    import asyncio
+    await asyncio.sleep(1)
+    return JSONResponse({"status": "stopped", "running": False, "ram_mb": 0, "ram_pct": 0})
+
+@app.get("/api/tools")
+async def get_tools_list():
+    """Return list of all available tools and their count."""
+    try:
+        from langgraph_agent import ALL_TOOLS, BUSINESS_TOOLS
+        tools = [{"name": t.name, "description": (t.description or "")[:100]} for t in ALL_TOOLS + BUSINESS_TOOLS]
+        return JSONResponse({"count": len(tools), "tools": tools})
+    except Exception as e:
+        return JSONResponse({"count": 0, "tools": [], "error": str(e)})
 
 @app.get("/memory/status")
-async def get_memory_status(request: Request, agent: str = "marin"):
+async def get_memory_status(request: Request, agent: str = "marin", session_id: str = "main"):
     user = request.state.user
-    history = database.get_history(agent, limit=20, user_id=user["user_id"])
+    history = database.get_history(agent, limit=50, user_id=user["user_id"], session_id=session_id)
     return JSONResponse({"messages": history, "tokens": len(history)})
 
 @app.post("/memory/clear")
-async def clear_memory():
+async def clear_memory(request: Request, agent: str = "marin", session_id: str = "main"):
+    user = request.state.user
+    database.clear_history(agent, user_id=user["user_id"], session_id=session_id)
     return JSONResponse({"status": "cleared"})
+
+@app.get("/api/history")
+async def get_chat_history(request: Request, agent: str = "marin", session_id: str = "main", limit: int = 50):
+    """Return chat history for a session. Used by the chat UI on page load."""
+    user = request.state.user
+    history = database.get_history(agent, limit=limit, user_id=user["user_id"], session_id=session_id)
+    return JSONResponse({"messages": history, "session_id": session_id})
+
+@app.get("/api/chat/history")
+async def get_chat_history_compat(request: Request, agent: str = "marin", session_id: str = "main", limit: int = 50):
+    """Compatibility alias for /api/history used by the library page."""
+    user = request.state.user
+    history = database.get_history(agent, limit=limit, user_id=user["user_id"], session_id=session_id)
+    return JSONResponse({"messages": history, "session_id": session_id})
+
+@app.get("/api/memory")
+async def get_memories(request: Request, category: str = "", q: str = ""):
+    """Return all stored user memories, optionally filtered by category or search query."""
+    user = request.state.user
+    uid  = user["user_id"]
+    if q:
+        rows = database.memory_search(query=q, user_id=uid)
+    else:
+        rows = database.memory_list(user_id=uid, category=category or None, limit=100)
+    return JSONResponse({"memories": rows, "count": len(rows)})
+
+@app.post("/api/memory")
+async def save_memory(request: Request):
+    """Save or update a memory entry."""
+    user = request.state.user
+    data = await request.json()
+    ok = database.memory_save(
+        key=data.get("key", ""),
+        value=data.get("value", ""),
+        category=data.get("category", "general"),
+        user_id=user["user_id"],
+        source="user",
+    )
+    return JSONResponse({"status": "ok" if ok else "error"})
+
+@app.delete("/api/memory")
+async def delete_memory(request: Request, key: str):
+    """Delete a memory entry by key."""
+    user = request.state.user
+    ok = database.memory_delete(key=key, user_id=user["user_id"])
+    return JSONResponse({"status": "ok" if ok else "not_found"})
+
+# ── Communication Credentials (no extra token — owner-only middleware handles auth) ──
+
+@app.get("/telegram")
+async def get_telegram_cfg():
+    return JSONResponse({
+        "bot_token": database.get_user_key("USR-MASTER", "TELEGRAM_BOT_TOKEN") or "",
+        "chat_id":   database.get_user_key("USR-MASTER", "TELEGRAM_CHAT_ID")   or "",
+    })
+
+@app.post("/telegram")
+async def set_telegram_cfg(request: Request):
+    data = await request.json()
+    if data.get("bot_token"):
+        database.save_user_key("USR-MASTER", "TELEGRAM_BOT_TOKEN", data["bot_token"])
+    if data.get("chat_id"):
+        database.save_user_key("USR-MASTER", "TELEGRAM_CHAT_ID", data["chat_id"])
+    return JSONResponse({"status": "ok"})
+
+@app.get("/email")
+async def get_email_cfg():
+    return JSONResponse({
+        "gmail_address":  database.get_user_key("USR-MASTER", "GMAIL_ADDRESS")      or "",
+        "gmail_password": database.get_user_key("USR-MASTER", "GMAIL_APP_PASSWORD") or "",
+    })
+
+@app.post("/email")
+async def set_email_cfg(request: Request):
+    data = await request.json()
+    if data.get("gmail_address"):
+        database.save_user_key("USR-MASTER", "GMAIL_ADDRESS",      data["gmail_address"])
+    if data.get("gmail_password"):
+        database.save_user_key("USR-MASTER", "GMAIL_APP_PASSWORD", data["gmail_password"])
+    return JSONResponse({"status": "ok"})
 
 @app.get("/timer/stats")
 async def get_timer_stats_api(request: Request):
@@ -307,7 +531,7 @@ async def call_tool_api(name: str, request: Request):
         raise HTTPException(500, str(e))
 
 @app.get("/api/todos")
-async def list_todos_api(status: str = None, category: str = None):
+async def list_todos_api(status: str | None = None, category: str | None = None):
     from tools.habit_store import list_tasks
     return JSONResponse(list_tasks(status, category))
 
@@ -428,6 +652,14 @@ async def command_center_page(request: Request):
 async def todo_page(request: Request):
     return templates.TemplateResponse(request=request, name="todo.html")
 
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    return templates.TemplateResponse(request=request, name="logs.html")
+
+@app.get("/flowmap", response_class=HTMLResponse)
+async def flowmap_page(request: Request):
+    return templates.TemplateResponse(request=request, name="flowmap.html")
+
 @app.get("/api/vault/list/{agent}")
 async def vault_list_api(agent: str):
     from tools.vault_manager import manage_vault
@@ -531,6 +763,8 @@ async def list_documents():
 
 @app.post("/api/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
+    if not file.filename:
+        return {"error": "Filename is required"}
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in (".pdf", ".docx", ".txt", ".md"):
         return {"error": "Unsupported file type. Use PDF, DOCX, TXT, or MD."}
@@ -702,6 +936,8 @@ async def get_settings():
 
 @app.post("/api/settings/avatar")
 async def upload_avatar(avatar: UploadFile = File(...)):
+    if not avatar.filename:
+        return {"error": "Filename is required"}
     ext = os.path.splitext(avatar.filename)[1].lower()
     if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
         return {"error": "Unsupported image type"}

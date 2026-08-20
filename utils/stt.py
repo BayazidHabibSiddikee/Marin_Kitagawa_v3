@@ -1,6 +1,6 @@
 import io
-import os
 import wave
+
 import numpy as np
 import speech_recognition as sr
 from faster_whisper import WhisperModel
@@ -35,7 +35,7 @@ def listen_and_transcribe(timeout: int = 5) -> str:
     with sr.Microphone() as source:
         print("\n[STT] Adjusting for ambient noise... (1s)")
         recognizer.adjust_for_ambient_noise(source, duration=1)
-        
+
         print("\n🎤 [STT] Listening... (Speak now)")
         try:
             # timeout: max time to wait for speech to START
@@ -46,23 +46,22 @@ def listen_and_transcribe(timeout: int = 5) -> str:
             return ""
 
     print("[STT] Processing audio...")
-    
+
     # Get raw WAV data from the recognizer
     wav_bytes = audio_data.get_wav_data(convert_rate=16000, convert_width=2)
-    
+
     # Convert WAV bytes to a float32 numpy array normalized between -1 and 1
     # Faster-whisper expects a 1D numpy array of 16kHz float32
-    with io.BytesIO(wav_bytes) as wav_io:
-        with wave.open(wav_io, 'rb') as wav_file:
-            frames = wav_file.readframes(wav_file.getnframes())
-            audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    with io.BytesIO(wav_bytes) as wav_io, wave.open(wav_io, 'rb') as wav_file:
+        frames = wav_file.readframes(wav_file.getnframes())
+        audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
     # Load model
     model = get_stt_model()
-    
+
     # Transcribe
     segments, info = model.transcribe(audio_np, beam_size=1)
-    
+
     text = "".join(segment.text for segment in segments).strip()
     return text
 

@@ -2,9 +2,8 @@
 import json
 import os
 import sys
-import time
+
 import requests
-from pathlib import Path
 
 # Add parent directory to path so we can import langgraph_agent
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,12 +41,12 @@ def generate_tool_schema(tool):
             "required": []
         }
     }
-    
+
     if hasattr(tool, "args_schema") and tool.args_schema:
         raw_schema = tool.args_schema.schema()
         schema["parameters"]["properties"] = raw_schema.get("properties", {})
         schema["parameters"]["required"] = raw_schema.get("required", [])
-    
+
     return schema
 
 def ask_ollama(prompt: str) -> str:
@@ -68,17 +67,17 @@ def ask_ollama(prompt: str) -> str:
 
 def main():
     print(f"Discovered {len(ALL_TOOLS)} tools.")
-    
+
     with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
         for tool in ALL_TOOLS:
             print(f"\n--- Generating dataset for tool: {tool.name} ---")
             schema = generate_tool_schema(tool)
             schema_json = json.dumps(schema, indent=2)
-            
+
             # Since generating 200 at once might overflow context or cause repetition,
             # we do it in batches of 20
             batches = EXAMPLES_PER_TOOL // 20
-            
+
             for batch in range(batches):
                 print(f"Batch {batch+1}/{batches}...")
                 prompt = f"""You are generating a synthetic training dataset for an AI agent's tool-calling model.
@@ -101,10 +100,10 @@ Output format MUST be exactly a JSON array of objects:
 Output NOTHING ELSE except the raw JSON array.
 """
                 response_text = ask_ollama(prompt)
-                
+
                 # Cleanup markdown formatting if present
                 response_text = response_text.replace("```json", "").replace("```", "").strip()
-                
+
                 try:
                     examples = json.loads(response_text)
                     for ex in examples:

@@ -45,7 +45,7 @@ def _check_confirmation(cid: str, approved: bool) -> bool:
 
 # ── MAIN ENTRY POINT ────────────────────────────────────────────────────
 
-async def main(prompt: str, image_path: str = None, user: dict = None, session_id: str = "default"):
+async def main(prompt: str, image_path: str | None = None, user: dict | None = None, session_id: str = "default"):
     """
     Main entry point for Marin Tools.
     Unified flow: Security -> Preprocess -> Orchestrate -> Deliver.
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         while True:
             try:
                 prompt = input("\n>> ")
-                
+
                 # STT trigger: pressing enter without typing
                 if not prompt.strip():
                     try:
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
                 if prompt.lower() in ("exit", "quit"):
                     break
-                    
+
                 async for chunk in main(prompt):
                     print(chunk, end="", flush=True)
                 print()

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SwordFish · Architecture Map</title>
+<style>
+:root {
+  --bg: #0a0c0f; --bg2: #0f1218; --bg3: #141920;
+  --border: #1e2530; --teal: #00d4aa; --teal-dim: #00d4aa33;
+  --gold: #f0b429; --danger: #e55; --success: #2ecc71; --violet: #a855f7;
+  --text: #d0dce8; --text-dim: #8899aa; --text-muted: #556677;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-mono); overflow: hidden; height: 100vh; }
+
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 42px;
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: var(--bg2); border-bottom: 1px solid var(--border); z-index: 100;
+}
+.topbar-title { font-size: .78rem; color: var(--teal); letter-spacing: .08em; flex: 1; }
+.tb-btn {
+  font-size: .65rem; color: var(--text-dim); border: 1px solid var(--border);
+  background: none; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+}
+.tb-btn:hover { color: var(--teal); border-color: var(--teal-dim); }
+.hint { font-size: .62rem; color: var(--text-muted); }
+
+/* Canvas */
+#canvas-wrap { position: fixed; top: 42px; left: 0; right: 0; bottom: 0; cursor: grab; }
+#canvas-wrap.dragging { cursor: grabbing; }
+svg#graph { width: 100%; height: 100%; }
+
+/* Node styles */
+.node-group { cursor: pointer; }
+.node-rect {
+  rx: 6; ry: 6;
+  stroke-width: 1.5;
+  transition: filter .2s;
+}
+.node-group:hover .node-rect { filter: brightness(1.4); }
+.node-group.selected .node-rect { stroke-width: 2.5; filter: brightness(1.6); }
+.node-label { font-family: var(--font-mono); font-size: 11px; pointer-events: none; dominant-baseline: middle; text-anchor: middle; }
+.node-sub   { font-family: var(--font-mono); font-size: 8.5px; pointer-events: none; dominant-baseline: middle; text-anchor: middle; fill: #556677; }
+
+/* Edge */
+.edge { fill: none; stroke-width: 1.2; opacity: .55; marker-end: url(#arrow); }
+.edge:hover { opacity: 1; stroke-width: 2; }
+
+/* Info panel */
+#info-panel {
+  position: fixed; bottom: 20px; right: 20px; width: 260px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; display: none; z-index: 200;
+}
+#info-title { font-size: .75rem; color: var(--teal); margin-bottom: 6px; }
+#info-desc  { font-size: .65rem; color: var(--text-dim); line-height: 1.55; }
+#info-close { position: absolute; top: 8px; right: 10px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .9rem; }
+
+/* Legend */
+#legend {
+  position: fixed; bottom: 20px; left: 20px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; font-size: .62rem; color: var(--text-dim); z-index: 200;
+}
+.leg-item { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.leg-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/" class="tb-btn">← back</a>
+  <span class="topbar-title">⬡ SWORDFISH ARCHITECTURE MAP</span>
+  <span class="hint">scroll to zoom · drag to pan · click node for details</span>
+  <button class="tb-btn" onclick="resetView()">reset view</button>
+</div>
+
+<div id="canvas-wrap">
+<svg id="graph" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#2a3a4a"/>
+    </marker>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g id="zoom-group">
+    <g id="edges-layer"></g>
+    <g id="nodes-layer"></g>
+  </g>
+</svg>
+</div>
+
+<div id="info-panel">
+  <button id="info-close" onclick="closeInfo()">✕</button>
+  <div id="info-title"></div>
+  <div id="info-desc"></div>
+</div>
+
+<div id="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:#00d4aa"></div>Core Engine</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#f0b429"></div>AI / LLM</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#a855f7"></div>Tools</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#4fc3f7"></div>Frontend</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#2ecc71"></div>Storage</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#e55"></div>Security</div>
+</div>
+
+<script>
+// ── GRAPH DATA ─────────────────────────────────────────────────────────────
+const NODES = [
+  // Core Engine
+  { id:'main',          x:500,  y:300,  label:'main.py',        sub:'FastAPI entry',         color:'#00d4aa', cat:'core',
+    desc:'FastAPI application entry point. Handles all HTTP routes, middleware, startup/shutdown events, and mounts all sub-apps. Orchestrates every service.' },
+  { id:'langgraph',     x:500,  y:160,  label:'langgraph_agent',sub:'4-node cycle',          color:'#00d4aa', cat:'core',
+    desc:'LangGraph 4-node cognitive architecture: Strategist → Executor → Auditor → Persona. Handles tool calling, verification, and response synthesis.' },
+  { id:'marin_fier',    x:700,  y:160,  label:'marin_fier',     sub:'Intent classifier',     color:'#00d4aa', cat:'core',
+    desc:'Regex + ML intent classifier. Routes messages to the correct tool or LLM path before LangGraph processes them. ~95% accuracy on tool intents.' },
+  { id:'marin_py',      x:300,  y:160,  label:'marin.py',       sub:'Core engine',           color:'#00d4aa', cat:'core',
+    desc:'Core orchestration engine. Manages RAG_ENABLED flag, WORD_LIMIT, preprocessing pipeline, and streaming to the frontend.' },
+  { id:'sentinel',      x:500,  y:450,  label:'sentinel_engine',sub:'API gateway',           color:'#e55',    cat:'security',
+    desc:'API Gateway and admin interface. Handles Ollama stream proxying, rate limiting, and the sentinel guard for guest users.' },
+  { id:'proactive',     x:700,  y:300,  label:'proactive_engine',sub:'Auto-initiated',       color:'#00d4aa', cat:'core',
+    desc:'Autonomous conversation initiator. Checks timers, news, and scheduled events to proactively start conversations with the user.' },
+  { id:'director',      x:300,  y:300,  label:'director_engine',sub:'VRM gestures',          color:'#4fc3f7', cat:'frontend',
+    desc:'ML-powered VRM Director. Uses DistilRoBERTa to predict gesture sequences and timing, then passes action scripts to the frontend animation engine.' },
+
+  // AI / LLM
+  { id:'llm_mgr',       x:500,  y:60,   label:'llm_manager',    sub:'Model router',          color:'#f0b429', cat:'ai',
+    desc:'LLM routing manager. Selects between local Ollama models and OpenRouter cloud models based on task complexity and availability. Handles streaming.' },
+  { id:'rag_server',    x:200,  y:460,  label:'rag_server',     sub:'Vector search :5080',   color:'#f0b429', cat:'ai',
+    desc:'Standalone RAG server on port 5080. FAISS + ChromaDB vector store. Indexes PDF documents and code files. Started on-demand to save RAM.' },
+  { id:'agent_logic',   x:300,  y:60,   label:'agent_logic',    sub:'RAG + streaming',       color:'#f0b429', cat:'ai',
+    desc:'Core agent logic utilities: RAG context injection, memory context loading, streaming helpers, and persona assembly with user memory.' },
+
+  // Tools
+  { id:'tools',         x:800,  y:160,  label:'tools/ (23)',    sub:'All tool modules',      color:'#a855f7', cat:'tools',
+    desc:'23 tool modules: telegram, email, weather, crypto, stock, news, PDF analyzer, YouTube, math plots, alarms, habit tracker, memory, terminal, file ops, and more.' },
+  { id:'memory_tool',   x:800,  y:300,  label:'memory_tool',    sub:'User memory store',     color:'#a855f7', cat:'tools',
+    desc:'Persistent user memory. Marin stores facts about the user in 10 categories (identity, goals, projects, skills, schedule, etc.) and injects them into every prompt.' },
+  { id:'telegram_tool', x:800,  y:440,  label:'telegram_tool',  sub:'Notifications',         color:'#a855f7', cat:'tools',
+    desc:'Sends Telegram messages to the owner. Reads credentials from the encrypted DB vault. Called when Marin detects a "notify me on Telegram" intent.' },
+
+  // Frontend
+  { id:'chat_ui',       x:100,  y:300,  label:'marin_chat.html',sub:'Main UI :5069',         color:'#4fc3f7', cat:'frontend',
+    desc:'218KB single-page application. Chat interface with VRM 3D avatar, KaTeX math rendering, markdown, voice (Piper TTS), lipsync, YouTube projector, and all settings.' },
+  { id:'library',       x:100,  y:160,  label:'library.html',   sub:'Study engine',          color:'#4fc3f7', cat:'frontend',
+    desc:'Study and document management hub. PDF upload, FAISS indexing, quiz generation, YouTube search, playground widget builder, and translation.' },
+  { id:'command_center',x:100,  y:450,  label:'command_center', sub:'Admin UI',              color:'#4fc3f7', cat:'frontend',
+    desc:'Command Center admin interface. Controls Telegram/email credentials, server management, agent switching, and system diagnostics.' },
+  { id:'moduleflow',    x:700,  y:450,  label:'moduleflow',     sub:'Brain topology :5070',  color:'#4fc3f7', cat:'frontend',
+    desc:'Interactive module dependency visualizer on port 5070. Shows the live dependency graph of all Python modules in the project.' },
+
+  // Storage
+  { id:'database',      x:300,  y:450,  label:'database.py',    sub:'SQLite WAL',            color:'#2ecc71', cat:'storage',
+    desc:'SQLite database layer (WAL mode). Tables: chat_history, app_state, user_memory, user_keys (encrypted), timers, trades. Thread-safe connection pooling.' },
+  { id:'vault',         x:200,  y:300,  label:'vault.py',       sub:'Encrypted secrets',     color:'#2ecc71', cat:'storage',
+    desc:'Per-user encrypted vault. Stores API keys and secrets using AES encryption. Keys never written to .env or disk in plaintext.' },
+  { id:'faiss',         x:100,  y:60,   label:'FAISS index',    sub:'Vector embeddings',     color:'#2ecc71', cat:'storage',
+    desc:'FAISS vector index files stored in storage/faiss_db/. Contains embeddings for all uploaded documents. Rebuilt on RAG server start.' },
+
+  // Security
+  { id:'privilege',     x:700,  y:60,   label:'privilege_mgr',  sub:'RBAC',                  color:'#e55',    cat:'security',
+    desc:'Role-Based Access Control. Defines Owner (Bayazid/USR-MASTER), Trusted Users, and Guests. Enforces tool access restrictions and rate limits.' },
+  { id:'safety',        x:800,  y:60,   label:'safety.py',      sub:'Command guard',         color:'#e55',    cat:'security',
+    desc:'Command safety layer. Validates shell commands before execution, blocks dangerous patterns, and enforces the Docker sandbox requirement.' },
+];
+
+const EDGES = [
+  ['main','langgraph'], ['main','marin_py'], ['main','sentinel'], ['main','database'],
+  ['main','chat_ui'], ['main','library'], ['main','command_center'],
+  ['main','rag_server'], ['main','proactive'], ['main','moduleflow'],
+  ['langgraph','llm_mgr'], ['langgraph','tools'], ['langgraph','marin_fier'],
+  ['langgraph','memory_tool'], ['langgraph','telegram_tool'],
+  ['marin_fier','langgraph'], ['marin_py','agent_logic'],
+  ['agent_logic','rag_server'], ['agent_logic','database'],
+  ['llm_mgr','langgraph'],
+  ['director','chat_ui'],
+  ['tools','database'], ['tools','vault'],
+  ['memory_tool','database'], ['telegram_tool','vault'],
+  ['database','faiss'], ['vault','database'],
+  ['privilege','main'], ['safety','langgraph'],
+  ['rag_server','faiss'],
+  ['chat_ui','main'], ['library','main'], ['command_center','main'],
+];
+
+// ── RENDER ─────────────────────────────────────────────────────────────────
+const svg        = document.getElementById('graph');
+const zoomGroup  = document.getElementById('zoom-group');
+const edgesLayer = document.getElementById('edges-layer');
+const nodesLayer = document.getElementById('nodes-layer');
+
+let scale = 1, tx = 0, ty = 0;
+let dragging = false, dragStart = null;
+
+function renderGraph() {
+  edgesLayer.innerHTML = '';
+  nodesLayer.innerHTML = '';
+
+  // Draw edges
+  EDGES.forEach(([from, to]) => {
+    const a = NODES.find(n => n.id === from);
+    const b = NODES.find(n => n.id === to);
+    if (!a || !b) return;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    // Cubic bezier
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const cx1 = a.x + dx * 0.45, cy1 = a.y;
+    const cx2 = b.x - dx * 0.45, cy2 = b.y;
+    path.setAttribute('d', `M${a.x},${a.y} C${cx1},${cy1} ${cx2},${cy2} ${b.x},${b.y}`);
+    path.setAttribute('class','edge');
+    path.setAttribute('stroke', a.color + '88');
+    edgesLayer.appendChild(path);
+  });
+
+  // Draw nodes
+  const W = 130, H = 44;
+  NODES.forEach(n => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','node-group');
+    g.setAttribute('transform',`translate(${n.x - W/2},${n.y - H/2})`);
+
+    // Background rect
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('class','node-rect');
+    rect.setAttribute('width', W); rect.setAttribute('height', H);
+    rect.setAttribute('fill', n.color + '18');
+    rect.setAttribute('stroke', n.color + 'aa');
+    g.appendChild(rect);
+
+    // Label
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('class','node-label');
+    lbl.setAttribute('x', W/2); lbl.setAttribute('y', H/2 - 6);
+    lbl.setAttribute('fill', n.color);
+    lbl.textContent = n.label;
+    g.appendChild(lbl);
+
+    // Sub-label
+    const sub = document.createElementNS('http://www.w3.org/2000/svg','text');
+    sub.setAttribute('class','node-sub');
+    sub.setAttribute('x', W/2); sub.setAttribute('y', H/2 + 9);
+    sub.textContent = n.sub;
+    g.appendChild(sub);
+
+    g.addEventListener('click', () => showInfo(n));
+    nodesLayer.appendChild(g);
+  });
+}
+
+function showInfo(n) {
+  document.querySelectorAll('.node-group').forEach(g => g.classList.remove('selected'));
+  // Find and select the clicked group
+  document.querySelectorAll('.node-group').forEach(g => {
+    const lbl = g.querySelector('.node-label');
+    if (lbl && lbl.textContent === n.label) g.classList.add('selected');
+  });
+  document.getElementById('info-title').textContent = n.label + ' · ' + n.sub;
+  document.getElementById('info-title').style.color = n.color;
+  document.getElementById('info-desc').textContent  = n.desc;
+  document.getElementById('info-panel').style.display = 'block';
+}
+
+function closeInfo() {
+  document.getElementById('info-panel').style.display = 'none';
+  document.querySelectorAll('.node-group').forEach(g => g.classList.remove('selected'));
+}
+
+// ── PAN & ZOOM ─────────────────────────────────────────────────────────────
+function applyTransform() {
+  zoomGroup.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+}
+
+const wrap = document.getElementById('canvas-wrap');
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.91;
+  const rect   = svg.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  tx = mx - (mx - tx) * factor;
+  ty = my - (my - ty) * factor;
+  scale *= factor;
+  scale  = Math.min(3, Math.max(0.25, scale));
+  applyTransform();
+}, { passive: false });
+
+wrap.addEventListener('mousedown', e => {
+  if (e.target.closest('.node-group')) return;
+  dragging = true; dragStart = { x: e.clientX - tx, y: e.clientY - ty };
+  wrap.classList.add('dragging');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx = e.clientX - dragStart.x; ty = e.clientY - dragStart.y;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging = false; wrap.classList.remove('dragging'); });
+
+// Touch support
+wrap.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    dragging = true;
+    dragStart = { x: e.touches[0].clientX - tx, y: e.touches[0].clientY - ty };
+  }
+});
+wrap.addEventListener('touchmove', e => {
+  if (!dragging || e.touches.length !== 1) return;
+  tx = e.touches[0].clientX - dragStart.x;
+  ty = e.touches[0].clientY - dragStart.y;
+  applyTransform();
+});
+wrap.addEventListener('touchend', () => { dragging = false; });
+
+function resetView() {
+  const rect = svg.getBoundingClientRect();
+  scale = 0.9; tx = rect.width * 0.05; ty = rect.height * 0.08;
+  applyTransform();
+}
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+renderGraph();
+setTimeout(resetView, 100);
+</script>
+</body>
+</html>

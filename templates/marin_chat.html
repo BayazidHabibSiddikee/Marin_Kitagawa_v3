@@ -1115,15 +1115,23 @@
     <div class="topbar-right">
         <a href="/library" class="tb-btn" style="text-decoration:none">library</a>
         <button class="tb-btn" onclick="openSettings()">settings</button>
-        <button class="btn-top" onclick="toggleNightMode()">NIGHT MODE</button>
+        <button id="tools-btn" onclick="toggleToolsPanel()" class="tb-btn"><span id="tools-label">tools: …</span></button>
         <button id="vrm-toggle-btn" onclick="toggleVRM()"         class="tb-btn"><span id="vrm-label">avatar</span></button>
         <button id="stop-speech-btn" onclick="stopSpeech()" class="tb-btn" style="display:none; color:var(--danger); border-color:var(--danger)">✕ stop</button>
-        <button id="voice-btn"      onclick="toggleVoice()"       class="tb-btn"><span id="voice-label">voice</span></button>
-        <button id="rag-btn"        onclick="toggleRag()"         class="tb-btn"><span id="rag-label">rag</span></button>
-        <button id="term-btn"       onclick="toggleTermPanel()"   class="tb-btn"><span id="term-label">log</span></button>
+        <button id="voice-btn"      onclick="toggleVoice()"       class="tb-btn" title="Toggle TTS voice output"><span id="voice-label">voice: off</span></button>
+        <button id="rag-btn"        onclick="toggleRag()"         class="tb-btn"><span id="rag-label">rag: off</span></button>
         <div class="status-pip" title="Operational"></div>
     </div>
 </header>
+
+<!-- ── TOOLS PANEL ──────────────────────────────────────────────────────── -->
+<div id="tools-panel" style="display:none;position:fixed;top:48px;right:0;width:280px;background:var(--ink2);border:1px solid var(--border);border-top:none;border-right:none;z-index:500;max-height:60vh;overflow-y:auto;border-radius:0 0 0 var(--radius);">
+  <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:.65rem;color:var(--text-muted);letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center;">
+    <span id="tools-panel-count">TOOLS</span>
+    <button onclick="toggleToolsPanel()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;">✕</button>
+  </div>
+  <div id="tools-panel-list" style="padding:6px 0;"></div>
+</div>
 
 <!-- INTEL TICKER -->
 <div class="intel-bar">
@@ -1155,6 +1163,8 @@
         <a href="/chat"                      class="sidebar-btn active" style="text-decoration:none"><span class="icon">◈</span> Chat</a>
         <a href="/profile"                   class="sidebar-btn" style="text-decoration:none"><span class="icon">◉</span> Profile</a>
         <a href="/sentinel"                  class="sidebar-btn" style="text-decoration:none"><span class="icon">🛡️</span> Sentinel</a>
+        <a href="/flowmap"  target="_blank"  class="sidebar-btn" style="text-decoration:none"><span class="icon">⬡</span> Architecture</a>
+        <a href="/logs"     target="_blank"  class="sidebar-btn" style="text-decoration:none"><span class="icon">🗂</span> Log Viewer</a>
 
         <div class="sidebar-section">Modes</div>
         <button class="sidebar-btn active" onclick="setMode('chat')"  id="btn-chat"><span class="icon">◈</span> Chat</button>
@@ -1402,6 +1412,8 @@
         <!-- Tab bar -->
         <div id="settings-tabs" style="display:flex;gap:0;flex-shrink:0;margin-bottom:12px;border-bottom:1px solid var(--border);">
             <button class="stab active" onclick="switchSettingsTab('general')" id="stab-general">General</button>
+            <button class="stab" onclick="switchSettingsTab('themes')" id="stab-themes">Themes</button>
+            <button class="stab" onclick="switchSettingsTab('memory')" id="stab-memory">Memory</button>
             <button class="stab" onclick="switchSettingsTab('providers')" id="stab-providers">Providers</button>
             <button class="stab" onclick="switchSettingsTab('models')" id="stab-models">Models</button>
             <button class="stab" onclick="switchSettingsTab('danger')" id="stab-danger" style="margin-left:auto;color:var(--danger);">⚠ Uninstall</button>
@@ -1432,16 +1444,72 @@
             <label class="set-label">HUGGINGFACE TOKEN
                 <input id="set-hf-token" type="password" placeholder="(optional, speeds up RAG)">
             </label>
+
+            <!-- ── Communications ── -->
+            <div style="font-size:.65rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.06em;margin-top:6px;padding-top:10px;border-top:1px solid var(--border);">COMMUNICATIONS</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <label class="set-label">TELEGRAM BOT TOKEN
+                    <input id="set-tg-token" type="password" placeholder="123456:ABC-DEF...">
+                </label>
+                <label class="set-label">TELEGRAM CHAT ID
+                    <input id="set-tg-chat" type="text" placeholder="8058658801">
+                </label>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <label class="set-label">GMAIL ADDRESS
+                    <input id="set-gmail-addr" type="text" placeholder="you@gmail.com">
+                </label>
+                <label class="set-label">GMAIL APP PASSWORD
+                    <input id="set-gmail-pass" type="password" placeholder="xxxx xxxx xxxx xxxx">
+                </label>
+            </div>
+            <div style="font-size:.65rem;color:var(--text-muted);margin-top:-4px;">Use a Gmail App Password — not your account password. Generate one at myaccount.google.com → Security → App Passwords.</div>
+        </div>
+
+        <!-- ─── THEMES TAB ─── -->
+        <div id="stab-content-themes" class="stab-content" style="flex:1;overflow-y:auto;flex-direction:column;gap:12px;padding-right:4px;">
+            <div style="font-size:.65rem;color:var(--text-muted);letter-spacing:.06em;margin-bottom:4px;">COLOR THEMES</div>
+            <div id="theme-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
+            <div style="font-size:.62rem;color:var(--text-muted);margin-top:4px;">Click a theme to apply it instantly. Your choice is saved locally.</div>
+        </div>
+
+        <!-- ─── MEMORY TAB ─── -->
+        <div id="stab-content-memory" class="stab-content" style="flex:1;overflow-y:auto;flex-direction:column;gap:8px;padding-right:4px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                <span style="font-size:.65rem;color:var(--text-muted);letter-spacing:.06em;flex:1;">MARIN'S MEMORY OF YOU</span>
+                <button onclick="addMemoryEntry()" style="font-size:.62rem;background:none;border:1px solid var(--teal-dim);color:var(--teal);padding:3px 8px;border-radius:var(--radius-sm);cursor:pointer;">+ add</button>
+                <button onclick="loadMemoryTab()" style="font-size:.62rem;background:none;border:1px solid var(--border);color:var(--text-muted);padding:3px 8px;border-radius:var(--radius-sm);cursor:pointer;">↺ refresh</button>
+            </div>
+            <input id="mem-search" type="text" placeholder="search memories…" oninput="filterMemory()" style="font-family:var(--font-mono);font-size:.7rem;background:var(--ink3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius-sm);outline:none;width:100%;">
+            <div id="memory-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+            <!-- Add form (hidden by default) -->
+            <div id="mem-add-form" style="display:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-top:4px;display:none;flex-direction:column;gap:6px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                    <input id="mem-new-key"   placeholder="key (e.g. wake_time)" style="font-family:var(--font-mono);font-size:.7rem;background:var(--ink3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius-sm);outline:none;">
+                    <select id="mem-new-cat" style="font-family:var(--font-mono);font-size:.7rem;background:var(--ink3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius-sm);outline:none;">
+                        <option>general</option><option>identity</option><option>goals</option>
+                        <option>projects</option><option>skills</option><option>schedule</option>
+                        <option>health</option><option>preferences</option><option>context</option><option>rules</option>
+                    </select>
+                </div>
+                <input id="mem-new-val" placeholder="value" style="font-family:var(--font-mono);font-size:.7rem;background:var(--ink3);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--radius-sm);outline:none;">
+                <div style="display:flex;gap:6px;">
+                    <button onclick="saveNewMemory()" style="flex:1;font-size:.68rem;background:var(--teal);color:#000;border:none;padding:5px;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-mono);">Save</button>
+                    <button onclick="document.getElementById('mem-add-form').style.display='none'" style="flex:1;font-size:.68rem;background:none;border:1px solid var(--border);color:var(--text-muted);padding:5px;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-mono);">Cancel</button>
+                </div>
+            </div>
         </div>
 
         <!-- ─── PROVIDERS TAB ─── -->
-        <div id="stab-content-providers" class="stab-content" style="display:none;flex:1;overflow-y:auto;display:none;flex-direction:column;gap:10px;padding-right:4px;">
+        <div id="stab-content-providers" class="stab-content" style="flex:1;overflow-y:auto;flex-direction:column;gap:10px;padding-right:4px;">
             <div id="providers-list" style="display:flex;flex-direction:column;gap:8px;"></div>
             <button onclick="addProvider()" class="set-dashed-btn" style="margin-top:4px;">+ Add Provider</button>
         </div>
 
         <!-- ─── MODELS TAB ─── -->
-        <div id="stab-content-models" class="stab-content" style="display:none;flex:1;overflow-y:auto;display:none;flex-direction:column;gap:10px;padding-right:4px;">
+        <div id="stab-content-models" class="stab-content" style="flex:1;overflow-y:auto;flex-direction:column;gap:10px;padding-right:4px;">
             <div style="font-size:.7rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px;">DEEP MODE FALLBACK CHAIN</div>
             <div style="font-size:.65rem;color:var(--text-muted);margin-bottom:8px;">When depth is set to "deep", Marin tries these models in order.</div>
             <div id="deep-models-list" style="display:flex;flex-direction:column;gap:4px;"></div>
@@ -1449,7 +1517,7 @@
         </div>
 
         <!-- ─── DANGER TAB ─── -->
-        <div id="stab-content-danger" class="stab-content" style="display:none;flex:1;overflow-y:auto;display:none;flex-direction:column;gap:14px;padding-right:4px;">
+        <div id="stab-content-danger" class="stab-content" style="flex:1;overflow-y:auto;flex-direction:column;gap:14px;padding-right:4px;">
             <div style="font-size:.75rem;color:var(--danger);font-family:'JetBrains Mono',monospace;border:1px solid var(--danger);border-radius:var(--radius-sm);padding:10px;">⚠ These actions are irreversible.</div>
 
             <div class="danger-card">
@@ -1505,7 +1573,7 @@
     let currentWordLimit = 0;
     let pendingProactive = [];
     // Session ID — unique per page-load; lets the backend separate conversation threads
-    const currentSessionId = 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const currentSessionId = 'main';  // fixed session — history persists across page loads
 
     let vrmVisible   = false;
     let vrmModel     = null;
@@ -1523,6 +1591,7 @@
     let audioContext = null;
     let audioAnalyser = null;
     let audioSource = null;
+    let pendingDirectorScript = null;  // shared between sendMessage and playVoiceAudio
 
     // ── Settings ──────────────────────────────────────────────────
     const FREE_MODELS = [
@@ -1606,6 +1675,17 @@
     let _providers = [];  // live state
     let _deepModels = []; // live state
     let _pendingAvatar = null; // pending avatar file for settings save
+
+    // ── Utility ───────────────────────────────────────────────
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
 
     // ── Avatar preview ──────────────────────────────────────────
     function previewUserAvatar(e) {
@@ -1987,9 +2067,18 @@
         document.getElementById('settings-modal').classList.add('open');
         document.getElementById('settings-msg').textContent = '';
         switchSettingsTab('general');
+        initThemeGrid();
+        loadMemoryTab();
         try {
-            const res = await fetch('/api/settings?_=' + Date.now());
-            const data = await res.json();
+            const [res, tgRes, emailRes] = await Promise.all([
+                fetch('/api/settings?_=' + Date.now()),
+                fetch('/telegram'),
+                fetch('/email'),
+            ]);
+            const data      = await res.json();
+            const tgData    = await tgRes.json();
+            const emailData = await emailRes.json();
+
             document.getElementById('set-name').value = data.user_name || '';
             document.getElementById('set-location').value = data.location || '';
             if (data.user_avatar) {
@@ -2000,6 +2089,12 @@
             document.getElementById('set-image-model').value = data.image_model || '';
             document.getElementById('set-vision-model').value = data.vision_model || '';
             document.getElementById('set-hf-token').value = data.hf_token || '';
+
+            // Communications
+            document.getElementById('set-tg-token').value  = tgData.bot_token   || '';
+            document.getElementById('set-tg-chat').value   = tgData.chat_id     || '';
+            document.getElementById('set-gmail-addr').value = emailData.gmail_address  || '';
+            document.getElementById('set-gmail-pass').value = emailData.gmail_password || '';
 
             // Providers
             _providers = Array.isArray(data.providers) && data.providers.length > 0
@@ -2045,11 +2140,35 @@
         }
 
         try {
-            const res = await fetch('/api/settings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            // Save main settings + communications credentials in parallel
+            const tgToken  = document.getElementById('set-tg-token').value.trim();
+            const tgChat   = document.getElementById('set-tg-chat').value.trim();
+            const gmailAddr = document.getElementById('set-gmail-addr').value.trim();
+            const gmailPass = document.getElementById('set-gmail-pass').value.trim();
+
+            const saves = [
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }),
+            ];
+            if (tgToken || tgChat) {
+                saves.push(fetch('/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_token: tgToken, chat_id: tgChat })
+                }));
+            }
+            if (gmailAddr || gmailPass) {
+                saves.push(fetch('/email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gmail_address: gmailAddr, gmail_password: gmailPass })
+                }));
+            }
+
+            const [res] = await Promise.all(saves);
             const data = await res.json();
             if (data.status === 'success') {
                 msg.textContent = 'Saved!';
@@ -2726,7 +2845,7 @@
         // Bedside lamp glow (already added above with bslLight)
         // TV screen glow (colour matches CSS3D TV)
         const tvGlow = new THREE.PointLight(0x2244aa, 0.4, 3.5);
-        tvGlow.position.set(0, 1.5, -D/2+0.5);
+        tvGlow.position.set(0, 0.82, -D/2+0.5);
         vrmScene.add(tvGlow);
         // Couch area warm bounce
         const couchFill = new THREE.PointLight(0xffaa66, 0.25, 3);
@@ -2735,11 +2854,20 @@
 
 
         // ── TV MOUNT on back wall ──────────────────────────────────────────────
-        // Outer bezel only — no meshes in front of screen area
+        // TV stand (low furniture piece on the floor)
+        const tvStand = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.55), matDarkWood);
+        tvStand.position.set(0, 0.06, -D/2 + 0.28);
+        vrmScene.add(tvStand);
+        // Stand legs
+        [[-0.9, 0.1], [0.9, 0.1]].forEach(([sx, sz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.45), matMetal);
+            leg.position.set(sx, 0.025, -D/2 + 0.28);
+            vrmScene.add(leg);
+        });
+        // TV bezel sitting on stand
         const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(2.14, 1.28, 0.055), matTVMount);
-        tvFrame.position.set(0, 1.7, -D/2 + 0.025);
+        tvFrame.position.set(0, 0.82, -D/2 + 0.025);
         vrmScene.add(tvFrame);
-        // NO bracket — it shows through the CSS3D layer
 
         // ── PROJECTOR SCREEN — CSS3DObject (lives inside TV bezel) ───────────
         const projDiv = document.createElement('div');
@@ -2780,7 +2908,7 @@
         projectorObject = new THREE.CSS3DObject(projDiv);
         projectorObject.scale.set(0.00148, 0.00148, 0.00148);
         // Push CSS3D slightly forward of bezel so nothing clips in front of it
-        projectorObject.position.set(0, 1.65, -D/2 + 0.06);
+        projectorObject.position.set(0, 0.82, -D/2 + 0.06);
         projectorObject.rotation.y = 0;
         vrmScene.add(projectorObject);
 
@@ -2794,7 +2922,7 @@
             blending: THREE.NoBlending,
         });
         const holeMesh = new THREE.Mesh(holeGeo, holeMat);
-        holeMesh.position.set(0, 1.65, -D/2 + 0.065);
+        holeMesh.position.set(0, 0.82, -D/2 + 0.065);
         holeMesh.renderOrder = 999;
         vrmScene.add(holeMesh);
 
@@ -2969,28 +3097,74 @@
                         (typeof _directorTalkActive !== 'undefined' && _directorTalkActive)
                     )) {
                         let mouthOpen = 0;
-                        if (typeof audioAnalyser !== 'undefined' && audioAnalyser) {
-                            // ── Audio-driven lipsync (TTS mode) ──────────────────────
+
+                        if (window._lipSyncSchedule && window._lipSyncStartTime !== undefined && audioContext) {
+                            // ── Schedule-driven lipsync (TTS mode with pre-computed timing) ──
+                            // Each entry: { t: float, open: float } — time in seconds from audio start
+                            const elapsed = audioContext.currentTime - window._lipSyncStartTime;
+                            const sched = window._lipSyncSchedule;
+                            // Binary search for current keyframe
+                            let lo = 0, hi = sched.length - 1;
+                            while (lo < hi - 1) {
+                                const mid = (lo + hi) >> 1;
+                                if (sched[mid].t <= elapsed) lo = mid; else hi = mid;
+                            }
+                            const kfA = sched[lo];
+                            const kfB = sched[Math.min(lo + 1, sched.length - 1)];
+                            // Lerp between keyframes
+                            const span = kfB.t - kfA.t;
+                            const alpha = span > 0 ? Math.min(1, (elapsed - kfA.t) / span) : 1;
+                            const raw = kfA.open + (kfB.open - kfA.open) * alpha;
+                            // Blend with real FFT amplitude for micro-variations
+                            let fftAmp = 0;
+                            if (audioAnalyser) {
+                                const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                                audioAnalyser.getByteFrequencyData(dataArray);
+                                const binStart = Math.floor(300 / (audioContext.sampleRate / audioAnalyser.fftSize));
+                                const binEnd   = Math.min(dataArray.length, Math.floor(3000 / (audioContext.sampleRate / audioAnalyser.fftSize)));
+                                let sum = 0, cnt = 0;
+                                for (let i = binStart; i < binEnd; i++) { sum += dataArray[i]; cnt++; }
+                                fftAmp = Math.min(1.0, (cnt > 0 ? sum / cnt : 0) / 90.0);
+                            }
+                            // 70% schedule timing, 30% live FFT for naturalness
+                            const target = Math.max(0, Math.min(1, raw * 0.7 + fftAmp * 0.3));
+                            mouthOpen = (window._prevMouthOpen || 0) * 0.35 + target * 0.65;
+
+                        } else if (typeof audioAnalyser !== 'undefined' && audioAnalyser) {
+                            // ── Fallback: pure FFT lipsync (no schedule available) ──────────
                             const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
                             audioAnalyser.getByteFrequencyData(dataArray);
                             let sum = 0;
-                            // Focus on speech-frequency bands (roughly 300–3000 Hz)
                             const binStart = Math.floor(300 / (audioContext.sampleRate / audioAnalyser.fftSize));
                             const binEnd   = Math.min(dataArray.length, Math.floor(3000 / (audioContext.sampleRate / audioAnalyser.fftSize)));
                             let count = 0;
                             for (let i = binStart; i < binEnd; i++) { sum += dataArray[i]; count++; }
                             const avg = count > 0 ? sum / count : 0;
-                            // Smooth the value to avoid jitter
                             const target = Math.min(1.0, avg / 80.0);
                             mouthOpen = (window._prevMouthOpen || 0) * 0.4 + target * 0.6;
+
                         } else {
-                            // ── Text-chunk-based lipsync (no TTS) ────────────────────
-                            // Simulate syllable rhythm: modulate between open/closed at ~4 Hz
-                            const now = performance.now() / 1000;
-                            const syllableRate = 4.2;   // syllables/sec (avg speech)
-                            const phase = (now * syllableRate) % 1.0;
-                            // Envelope: smooth sine wave clipped to [0, 1]
-                            mouthOpen = Math.max(0, Math.sin(phase * Math.PI * 2) * 0.55 + 0.1);
+                            // ── Text-chunk-based lipsync (no TTS) ───────────────────────────
+                            // Use word-timed schedule if available (set when talking starts)
+                            if (window._textLipSyncSchedule && window._textLipSyncStart !== undefined) {
+                                const elapsed = (performance.now() / 1000) - window._textLipSyncStart;
+                                const sched = window._textLipSyncSchedule;
+                                let lo = 0;
+                                for (let i = 0; i < sched.length - 1; i++) {
+                                    if (sched[i].t <= elapsed) lo = i;
+                                }
+                                const kfA = sched[lo];
+                                const kfB = sched[Math.min(lo + 1, sched.length - 1)];
+                                const span = kfB.t - kfA.t;
+                                const alpha = span > 0 ? Math.min(1, (elapsed - kfA.t) / span) : 1;
+                                const raw = kfA.open + (kfB.open - kfA.open) * alpha;
+                                mouthOpen = (window._prevMouthOpen || 0) * 0.4 + Math.max(0, raw) * 0.6;
+                            } else {
+                                const now = performance.now() / 1000;
+                                const syllableRate = 4.2;
+                                const phase = (now * syllableRate) % 1.0;
+                                mouthOpen = Math.max(0, Math.sin(phase * Math.PI * 2) * 0.55 + 0.1);
+                            }
                         }
                         window._prevMouthOpen = mouthOpen;
                         vrmModel.expressionManager.setValue('aa', mouthOpen);
@@ -3280,8 +3454,21 @@
         showProjector(val, 'stream');
     }
 
-    function showProjector(url, type='stream') {
-        if (!projectorObject) return;
+    function showProjector(url, type='stream', _retries) {
+        _retries = (_retries || 0);
+        // If VRM isn't open yet, open it first then retry (max 8 attempts = ~6.4s)
+        if (!projectorObject) {
+            if (_retries >= 8) { console.warn('[showProjector] VRM failed to initialize after retries'); return; }
+            if (_retries === 0) {
+                // Only open VRM on the very first attempt
+                const vrmContainer = document.getElementById('vrm-container');
+                if (vrmContainer && vrmContainer.style.display === 'none') {
+                    toggleVRM();
+                }
+            }
+            setTimeout(() => showProjector(url, type, _retries + 1), 800);
+            return;
+        }
 
         const standby  = document.getElementById('vrm-projector-standby');
         const tvIframe = document.getElementById('vrm-tv-iframe');
@@ -3713,44 +3900,128 @@
         sendMessage();
     }
 
+    // ── LIPSYNC SCHEDULE BUILDER ────────────────────────────────────────────
+    // Converts text into a time-keyframed mouth-open schedule matched to a
+    // given audio duration (seconds). Returns an array of {t, open} objects.
+    // When audioDuration is null, uses a generic 150ms-per-syllable estimate.
+    function buildLipSyncSchedule(text, audioDuration) {
+        // 1. Crude syllable counter — count vowel clusters per word
+        function countSyllables(word) {
+            word = word.toLowerCase().replace(/[^a-z]/g, '');
+            if (!word.length) return 0;
+            const matches = word.match(/[aeiouy]+/g);
+            let n = matches ? matches.length : 1;
+            // Final silent-e rule
+            if (word.length > 2 && word.endsWith('e') && !/[aeiouy]e/.test(word.slice(-2))) n = Math.max(1, n - 1);
+            return Math.max(1, n);
+        }
+
+        // 2. Split into words, compute per-word syllable counts and vowel classes
+        //    Vowel class decides max mouth opening: 'a/o' → wide, 'e/i/u' → narrow
+        function vowelClass(word) {
+            const w = word.toLowerCase();
+            const first = (w.match(/[aeiouy]/) || ['a'])[0];
+            if ('ao'.includes(first)) return 0.75;    // wide open
+            if ('eiuy'.includes(first)) return 0.45;  // narrow
+            return 0.55;                               // default
+        }
+
+        const words = text.replace(/[^\w\s']/g, ' ').split(/\s+/).filter(Boolean);
+        if (!words.length) return [{ t: 0, open: 0 }];
+
+        // 3. Map each syllable to a slot
+        const syllables = [];
+        for (const word of words) {
+            const n = countSyllables(word);
+            const maxOpen = vowelClass(word);
+            for (let s = 0; s < n; s++) {
+                syllables.push({ maxOpen, isFirst: s === 0 });
+            }
+        }
+
+        const totalSyllables = syllables.length;
+        // 4. Determine actual per-syllable duration
+        const secPerSyllable = audioDuration
+            ? (audioDuration / totalSyllables)
+            : 0.15;  // fallback: ~150ms/syllable (normal speech)
+
+        // 5. Build keyframes: open on onset, peak at 30%, close at 80%, rest at 100%
+        const kf = [{ t: 0, open: 0.05 }];  // slight parted-lips at start
+        let t = 0;
+        for (const syl of syllables) {
+            const d = secPerSyllable;
+            kf.push({ t: t,           open: syl.isFirst ? 0.08 : 0.04 }); // brief close between words
+            kf.push({ t: t + d * 0.1, open: syl.maxOpen });               // peak open at onset
+            kf.push({ t: t + d * 0.5, open: syl.maxOpen * 0.65 });        // sustained
+            kf.push({ t: t + d * 0.85, open: 0.05 });                     // closing
+            t += d;
+        }
+        kf.push({ t: t,          open: 0.03 });
+        kf.push({ t: t + 0.08,   open: 0 });  // fully closed after last syllable
+
+        return kf;
+    }
+
     async function playVoiceAudio(text) {
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             audioAnalyser = audioContext.createAnalyser();
             audioAnalyser.fftSize = 256;
         }
-        
+
         if (audioContext.state === 'suspended') {
             await audioContext.resume();
         }
-        
+
         try {
-            const response = await fetch(`/audio/speak?text=${encodeURIComponent(text)}`);
+            // ── Fetch WAV + amplitude-based lipsync schedule from server ──────
+            const response = await fetch(`/audio/speak?text=${encodeURIComponent(text)}&lipsync=true`);
             if (!response.ok) throw new Error("Audio fetch failed");
-            
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            
+
+            const data = await response.json();
+            // Decode base64 WAV
+            const wavBinary = atob(data.wav);
+            const wavBytes  = new Uint8Array(wavBinary.length);
+            for (let i = 0; i < wavBinary.length; i++) wavBytes[i] = wavBinary.charCodeAt(i);
+            const audioBuffer = await audioContext.decodeAudioData(wavBytes.buffer);
+
+            // ── Lipsync schedule: real amplitude keyframes from server ─────────
+            // Each entry: { t: seconds, open: 0–1 }
+            window._lipSyncSchedule  = data.lipsync || [];
+            window._lipSyncStartTime = null;  // set just before audioSource.start()
+
             if (audioSource) {
-                audioSource.stop();
-                audioSource.disconnect();
+                try { audioSource.stop(); audioSource.disconnect(); } catch(_) {}
             }
-            
+
             audioSource = audioContext.createBufferSource();
             audioSource.buffer = audioBuffer;
-            
             audioSource.connect(audioAnalyser);
             audioAnalyser.connect(audioContext.destination);
-            
+
             audioSource.onended = () => {
+                window._lipSyncSchedule  = null;
+                window._lipSyncStartTime = undefined;
                 toggleTalking(false);
             };
-            
+
             toggleTalking(true);
+            // Set start time THEN start — so the schedule offset is accurate
+            window._lipSyncStartTime = audioContext.currentTime;
             audioSource.start();
+
+            // Fire director animations aligned with speech start
+            if (typeof pendingDirectorScript !== 'undefined' && pendingDirectorScript) {
+                playDirectorScript(pendingDirectorScript);
+                pendingDirectorScript = null;
+            }
         } catch (err) {
             console.error("Failed to play audio:", err);
             toggleTalking(false);
+            if (typeof pendingDirectorScript !== 'undefined' && pendingDirectorScript) {
+                playDirectorScript(pendingDirectorScript);
+                pendingDirectorScript = null;
+            }
         }
     }
 
@@ -3872,12 +4143,27 @@
             const dec    = new TextDecoder();
             let   full   = '';
             let   shouldSpeak = false;
+            let   chunkBuffer = '';   // accumulates partial tags across reads
+            pendingDirectorScript = null;
             typingBubble.innerHTML = '';
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
-                let chunk = dec.decode(value);
+                if (value) chunkBuffer += dec.decode(value, { stream: !done });
+                if (done && !chunkBuffer.trim()) break;
+
+                // Hold back buffer if a tag might be split across reads
+                let chunk = chunkBuffer;
+                const hasOpenTag = !done && (
+                    (chunk.includes('__DIRECTOR__') && !chunk.match(/__DIRECTOR__[A-Za-z0-9+/=]{20,}/)) ||
+                    (chunk.includes('__ANIM__')     && !chunk.match(/__ANIM__\w+/)) ||
+                    (chunk.includes('__VIBE__')     && !chunk.match(/__VIBE__\w+/)) ||
+                    (chunk.includes('__YOUTUBE__')  && !chunk.match(/__YOUTUBE__[\w-]+/))
+                );
+                if (hasOpenTag) continue;
+                chunkBuffer = '';  // consumed
+
+                if (done) break;  // processed last buffer, now exit
 
                 // Handle Animation and Projector Tags
                 if (chunk.includes('__ANIM__')) {
@@ -3956,8 +4242,12 @@
                     if (dirMatch) {
                         try {
                             const decoded = atob(dirMatch[1]);
-                            const script = JSON.parse(decoded);
-                            playDirectorScript(script);
+                            pendingDirectorScript = JSON.parse(decoded);
+                            // If voice is off, play immediately; otherwise wait for audio start
+                            if (!shouldSpeak) {
+                                playDirectorScript(pendingDirectorScript);
+                                pendingDirectorScript = null;
+                            }
                         } catch(e) { console.warn('[Director] Parse error:', e); }
                         chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+/=]+/, '');
                     }
@@ -3965,8 +4255,8 @@
 
                 if (!chunk.trim()) continue;
 
-                // Start talking when text arrives only if voice is disabled
-                if (!shouldSpeak && !document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
+                // Always start talking animation when text arrives (voice or not)
+                if (!document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
                     toggleThinking(false);
                     toggleTalking(true);
                 }
@@ -3977,10 +4267,20 @@
                                       .replace(/__ANIM__\w+/g, '')
                                       .replace(/__DANCE__/g, '')
                                       .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
+                                      .replace(/__YOUTUBE__[\w-]+/g, '')
+                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
+                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
+                                      .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
+                                      .replace('__PROJECTOR_OFF__','')
                                       .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
 
-                // During streaming: plain text only
-                typingBubble.textContent = cleanText;
+                // During streaming: throttled partial render (markdown + KaTeX every ~250ms)
+                const _now = Date.now();
+                if (!window._lastStreamRender || _now - window._lastStreamRender > 250) {
+                    window._lastStreamRender = _now;
+                    try { typingBubble.innerHTML = renderWithLatex(cleanText); }
+                    catch { typingBubble.textContent = cleanText; }
+                }
 
                 detectMoodFromChunk(cleanText);
                 // Live Director: pick animation from each new chunk as it arrives
@@ -4008,7 +4308,17 @@
                 if (shouldSpeak) {
                     playVoiceAudio(cleanText);
                 } else {
-                    toggleTalking(false);
+                    // Text-only mode: build a syllable-timed schedule from the full text
+                    // so the mouth mimics word rhythm for the duration of the response read time
+                    const readDuration = Math.max(1.5, cleanText.split(/\s+/).length / 2.5); // ~2.5 words/sec
+                    window._textLipSyncSchedule = buildLipSyncSchedule(cleanText, readDuration);
+                    window._textLipSyncStart    = performance.now() / 1000;
+                    // Auto-clear schedule and stop talking after estimated read time
+                    setTimeout(() => {
+                        window._textLipSyncSchedule = null;
+                        window._textLipSyncStart    = undefined;
+                        toggleTalking(false);
+                    }, readDuration * 1000 + 200);
                 }
             }
         } catch(e) {
@@ -4023,7 +4333,8 @@
         document.getElementById('send-btn').disabled = false;
         document.getElementById('stop-speech-btn').style.display = 'none';
         toggleThinking(false);
-        toggleTalking(false);
+        // Only stop talking if voice is not about to take over
+        if (!shouldSpeak) toggleTalking(false);
         while (pendingProactive.length > 0) deliverProactive(pendingProactive.shift());
     }
 
@@ -4042,6 +4353,13 @@
         if (window.streamAbortController) {
             window.streamAbortController.abort();
         }
+
+        // Clear lipsync schedules
+        window._lipSyncSchedule      = null;
+        window._lipSyncStartTime     = undefined;
+        window._textLipSyncSchedule  = null;
+        window._textLipSyncStart     = undefined;
+        window._prevMouthOpen        = 0;
         
         toggleTalking(false);
         document.getElementById('stop-speech-btn').style.display = 'none';
@@ -4093,22 +4411,40 @@
     }
 
     // ── VOICE ──────────────────────────────────────────────────────────────
+    let _ttsAvailable = false;
+
     async function loadVoice() {
         try {
+            // Check TTS engine availability first
+            const ttsR = await fetch('/api/tts/status');
+            const ttsD = await ttsR.json();
+            _ttsAvailable = ttsD.available;
+
             const r = await fetch('/settings/voice');
             const d = await r.json();
             voiceOn = d.voice_enabled;
             updateVoiceLabel();
-        } catch(e){}
+        } catch(e){ updateVoiceLabel(); }
     }
     function updateVoiceLabel() {
         const btn = document.getElementById('voice-btn');
         const lbl = document.getElementById('voice-label');
+        if (!_ttsAvailable) {
+            lbl.textContent = 'voice: n/a';
+            btn.style.color = 'var(--text-muted)';
+            btn.style.borderColor = 'var(--border)';
+            btn.title = 'TTS unavailable — Piper not found';
+            btn.style.opacity = '0.5';
+            return;
+        }
+        btn.style.opacity = '';
+        btn.title = 'Toggle TTS voice output (Piper · Amy)';
         lbl.textContent = voiceOn ? 'voice: on' : 'voice: off';
         btn.style.color = voiceOn ? 'var(--teal)' : '';
         btn.style.borderColor = voiceOn ? 'var(--teal-dim)' : '';
     }
     async function toggleVoice() {
+        if (!_ttsAvailable) return;  // disabled if TTS not available
         voiceOn = !voiceOn;
         const lbl = document.getElementById('voice-label');
         lbl.textContent = 'voice: ...';
@@ -4122,32 +4458,52 @@
     }
 
     // ── RAG ────────────────────────────────────────────────────────────────
+    // RAG is OFF by default to save RAM. Clicking toggles the rag_server process.
+    let _ragPolling = null;
+
     async function loadRag() {
         try {
-            const r = await fetch('/settings/rag');
+            const r = await fetch('/api/rag/status');
             const d = await r.json();
-            ragEnabled = d.rag_enabled;
-            updateRagLabel(d.rag_enabled);
-        } catch(e){}
+            updateRagLabel(d);
+        } catch(e){ updateRagLabel({running: false}); }
     }
-    function updateRagLabel(enabled) {
+
+    function updateRagLabel(d) {
         const btn = document.getElementById('rag-btn');
         const lbl = document.getElementById('rag-label');
-        lbl.textContent = enabled ? 'rag: on' : 'rag: off';
-        btn.style.color = enabled ? 'var(--success)' : '';
-        btn.style.borderColor = enabled ? 'var(--success)' : '';
+        if (d.running) {
+            const pct = d.ram_pct > 0 ? ` ${d.ram_pct}%` : '';
+            lbl.textContent = `rag: on${pct}`;
+            btn.style.color = 'var(--success)';
+            btn.style.borderColor = 'var(--success)';
+        } else {
+            lbl.textContent = 'rag: off';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }
     }
+
     async function toggleRag() {
-        ragEnabled = !ragEnabled;
         const lbl = document.getElementById('rag-label');
-        lbl.textContent = 'rag: ...';
+        const current = lbl.textContent.startsWith('rag: on');
+        lbl.textContent = current ? 'rag: stopping…' : 'rag: starting…';
         try {
-            const fd = new FormData(); fd.append('enabled', ragEnabled?'1':'0');
-            const r = await fetch('/settings/rag', {method:'POST',body:fd});
+            const endpoint = current ? '/api/rag/stop' : '/api/rag/start';
+            const r = await fetch(endpoint, { method: 'POST' });
             const d = await r.json();
-            ragEnabled = d.rag_enabled;
-            updateRagLabel(d.rag_enabled);
-        } catch(e){ updateRagLabel(false); }
+            updateRagLabel(d);
+            // Poll for a few seconds so the RAM% updates as it loads
+            if (!current) {
+                let polls = 0;
+                _ragPolling = setInterval(async () => {
+                    const s = await fetch('/api/rag/status');
+                    const sd = await s.json();
+                    updateRagLabel(sd);
+                    if (++polls >= 8) { clearInterval(_ragPolling); _ragPolling = null; }
+                }, 1500);
+            }
+        } catch(e) { loadRag(); }
     }
 
     // ── WORD LIMIT ─────────────────────────────────────────────────────────
@@ -4217,14 +4573,13 @@
     // ── HISTORY ────────────────────────────────────────────────────────────
     async function loadRecentHistory() {
         try {
-            const res  = await fetch(`/memory/status?agent=${currentAgent}`);
+            const res  = await fetch(`/api/history?agent=${currentAgent}&session_id=${currentSessionId}&limit=50`);
             const data = await res.json();
             const msgs = document.getElementById('messages');
 
             const messages = (data.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
-            const recent   = messages.slice(-20);
-            const firstUser = recent.findIndex(m => m.role === 'user');
-            const clean    = firstUser > 0 ? recent.slice(firstUser) : recent;
+            const firstUser = messages.findIndex(m => m.role === 'user');
+            const clean    = firstUser > 0 ? messages.slice(firstUser) : messages;
 
             if (clean.length === 0) {
                 msgs.innerHTML = `<div class="msg ai">
@@ -4242,7 +4597,15 @@
                     const idx = content.lastIndexOf(marker);
                     if (idx !== -1) content = content.substring(idx + marker.length).trim();
                 } else {
-                    content = content.replace(/__VIBE__\w+/g,'').replace(/__STRUCTURED__[\s\S]*/g,'').trim();
+                    content = content
+                        .replace(/__VIBE__\w+/g, '')
+                        .replace(/__DIRECTOR__[A-Za-z0-9+/=]*/g, '')
+                        .replace(/__ANIM__\w+/g, '')
+                        .replace(/__DANCE__/g, '')
+                        .replace(/__YOUTUBE__[\w-]+/g, '')
+                        .replace(/__TALK_ON__|__TALK_OFF__/g, '')
+                        .replace(/__STRUCTURED__[\s\S]*/g, '')
+                        .trim();
                 }
                 if (content) appendMessage(msg.role === 'assistant' ? 'ai' : 'user', content);
             });
@@ -4251,8 +4614,7 @@
 
     async function memory_clear() {
         if (!confirm('Clear all conversation history?')) return;
-        const fd = new FormData(); fd.append('agent', currentAgent);
-        await fetch('/memory/clear', {method:'POST',body:fd});
+        await fetch(`/memory/clear?agent=${currentAgent}&session_id=${currentSessionId}`, {method:'POST'});
         document.getElementById('messages').innerHTML = '';
     }
 
@@ -4385,6 +4747,328 @@
     }
 
     // ── INIT ───────────────────────────────────────────────────────────────
+    // ── COLOR THEMES ─────────────────────────────────────────────────────────
+        // Each theme overrides ALL the CSS variables that :root defines.
+        // Structure: { name, accent, backgrounds[ink,ink2,ink3,surface], border, text[text,dim,muted], derived }
+        const COLOR_THEMES = [
+          {
+            name: 'Marin Default',
+            vars: {
+              '--ink':'#13100e','--ink2':'#1c1814','--ink3':'#221e19','--surface':'#2a2520',
+              '--border':'#3a342c','--border-hi':'#52473c',
+              '--teal':'#4db8a4','--teal-dim':'#2d8a78','--teal-glow':'rgba(77,184,164,.18)','--teal-soft':'rgba(77,184,164,.08)',
+              '--coral':'#e07b6a','--coral-dim':'#a85244',
+              '--text':'#e8ddd0','--text-dim':'#8a7d72','--text-muted':'#4a4038',
+              '--gold':'#c9965a','--gold-soft':'rgba(201,150,90,.12)',
+              '--success':'#5db882','--danger':'#e07b6a',
+            }
+          },
+          {
+            name: 'Night Mode',
+            vars: {
+              '--ink':'#000000','--ink2':'#080808','--ink3':'#111111','--surface':'#161616',
+              '--border':'#222222','--border-hi':'#333333',
+              '--teal':'#3aa692','--teal-dim':'#257a69','--teal-glow':'rgba(58,166,146,.18)','--teal-soft':'rgba(58,166,146,.08)',
+              '--coral':'#e07b6a','--coral-dim':'#a85244',
+              '--text':'#e0e0e0','--text-dim':'#a0a0a0','--text-muted':'#666666',
+              '--gold':'#c9965a','--gold-soft':'rgba(201,150,90,.12)',
+              '--success':'#5db882','--danger':'#e55',
+            }
+          },
+          {
+            name: 'Cyberpunk',
+            vars: {
+              '--ink':'#060008','--ink2':'#0d000f','--ink3':'#130016','--surface':'#1a0020',
+              '--border':'#3a1050','--border-hi':'#5a1a70',
+              '--teal':'#ff00ff','--teal-dim':'#aa00aa','--teal-glow':'rgba(255,0,255,.2)','--teal-soft':'rgba(255,0,255,.08)',
+              '--coral':'#00ffff','--coral-dim':'#009999',
+              '--text':'#f0d0ff','--text-dim':'#a060c0','--text-muted':'#503060',
+              '--gold':'#ffdd00','--gold-soft':'rgba(255,221,0,.12)',
+              '--success':'#00ff88','--danger':'#ff3366',
+            }
+          },
+          {
+            name: 'Solar Amber',
+            vars: {
+              '--ink':'#0e0900','--ink2':'#150d00','--ink3':'#1c1200','--surface':'#241800',
+              '--border':'#3d2a00','--border-hi':'#5c3f00',
+              '--teal':'#f0b429','--teal-dim':'#c08a10','--teal-glow':'rgba(240,180,41,.2)','--teal-soft':'rgba(240,180,41,.08)',
+              '--coral':'#ff6b35','--coral-dim':'#cc4510',
+              '--text':'#fff0c0','--text-dim':'#a07830','--text-muted':'#604518',
+              '--gold':'#ffdd44','--gold-soft':'rgba(255,221,68,.12)',
+              '--success':'#88cc44','--danger':'#ff4422',
+            }
+          },
+          {
+            name: 'Crimson',
+            vars: {
+              '--ink':'#0e0505','--ink2':'#160808','--ink3':'#1e0b0b','--surface':'#280f0f',
+              '--border':'#4a1515','--border-hi':'#6a2020',
+              '--teal':'#ff4444','--teal-dim':'#cc2222','--teal-glow':'rgba(255,68,68,.2)','--teal-soft':'rgba(255,68,68,.08)',
+              '--coral':'#ff8866','--coral-dim':'#cc5533',
+              '--text':'#ffe0e0','--text-dim':'#aa6666','--text-muted':'#663333',
+              '--gold':'#ffaa44','--gold-soft':'rgba(255,170,68,.12)',
+              '--success':'#66cc66','--danger':'#ff2222',
+            }
+          },
+          {
+            name: 'Ice Blue',
+            vars: {
+              '--ink':'#050810','--ink2':'#080d18','--ink3':'#0c1220','--surface':'#101828',
+              '--border':'#1a2a40','--border-hi':'#2a3a55',
+              '--teal':'#4fc3f7','--teal-dim':'#2a9acc','--teal-glow':'rgba(79,195,247,.2)','--teal-soft':'rgba(79,195,247,.08)',
+              '--coral':'#80cbc4','--coral-dim':'#4a9990',
+              '--text':'#d0f0ff','--text-dim':'#7aaabb','--text-muted':'#3a5566',
+              '--gold':'#80d8ff','--gold-soft':'rgba(128,216,255,.12)',
+              '--success':'#4caf88','--danger':'#ef5350',
+            }
+          },
+          {
+            name: 'Emerald',
+            vars: {
+              '--ink':'#050e07','--ink2':'#08150b','--ink3':'#0c1c0f','--surface':'#102514',
+              '--border':'#1a3d20','--border-hi':'#2a5530',
+              '--teal':'#2ecc71','--teal-dim':'#1a9950','--teal-glow':'rgba(46,204,113,.2)','--teal-soft':'rgba(46,204,113,.08)',
+              '--coral':'#f39c12','--coral-dim':'#c07d00',
+              '--text':'#d0ffdf','--text-dim':'#70aa80','--text-muted':'#355540',
+              '--gold':'#f1c40f','--gold-soft':'rgba(241,196,15,.12)',
+              '--success':'#2ecc71','--danger':'#e74c3c',
+            }
+          },
+          {
+            name: 'Violet',
+            vars: {
+              '--ink':'#08050e','--ink2':'#0e0818','--ink3':'#140c22','--surface':'#1a1030',
+              '--border':'#2e1a50','--border-hi':'#4a2a70',
+              '--teal':'#a855f7','--teal-dim':'#7a30cc','--teal-glow':'rgba(168,85,247,.2)','--teal-soft':'rgba(168,85,247,.08)',
+              '--coral':'#f472b6','--coral-dim':'#c03080',
+              '--text':'#f0e0ff','--text-dim':'#9070bb','--text-muted':'#503870',
+              '--gold':'#fbbf24','--gold-soft':'rgba(251,191,36,.12)',
+              '--success':'#34d399','--danger':'#f87171',
+            }
+          },
+          {
+            name: 'Rose Gold',
+            vars: {
+              '--ink':'#0e0608','--ink2':'#180a0e','--ink3':'#200e14','--surface':'#28121a',
+              '--border':'#4a1e2a','--border-hi':'#6a2c3e',
+              '--teal':'#f43f5e','--teal-dim':'#cc1a38','--teal-glow':'rgba(244,63,94,.2)','--teal-soft':'rgba(244,63,94,.08)',
+              '--coral':'#fb923c','--coral-dim':'#d06020',
+              '--text':'#ffe0ea','--text-dim':'#bb7080','--text-muted':'#663344',
+              '--gold':'#fcd34d','--gold-soft':'rgba(252,211,77,.12)',
+              '--success':'#34d399','--danger':'#ff1744',
+            }
+          },
+          {
+            name: 'Mono',
+            vars: {
+              '--ink':'#080808','--ink2':'#101010','--ink3':'#181818','--surface':'#222222',
+              '--border':'#333333','--border-hi':'#444444',
+              '--teal':'#c8d8e8','--teal-dim':'#8899aa','--teal-glow':'rgba(200,216,232,.15)','--teal-soft':'rgba(200,216,232,.06)',
+              '--coral':'#aabbcc','--coral-dim':'#778899',
+              '--text':'#eeeeee','--text-dim':'#999999','--text-muted':'#555555',
+              '--gold':'#bbbbbb','--gold-soft':'rgba(187,187,187,.12)',
+              '--success':'#aaccaa','--danger':'#cc8888',
+            }
+          },
+        ];
+
+    function initThemeGrid() {
+        const grid = document.getElementById('theme-grid');
+        if (!grid) return;
+        const saved = localStorage.getItem('marinTheme') || 'Marin Default';
+        grid.innerHTML = COLOR_THEMES.map(t => `
+            <div onclick="applyTheme('${t.name}')" id="theme-card-${t.name.replace(/\s/g,'_')}" style="
+                cursor:pointer;
+                border:2px solid ${saved===t.name ? t.vars['--teal'] : t.vars['--border']};
+                border-radius:var(--radius-sm);padding:8px;text-align:center;
+                background:${t.vars['--ink2']};transition:border-color .2s,transform .15s;">
+              <div style="width:100%;height:16px;border-radius:3px;margin-bottom:4px;
+                background:linear-gradient(90deg,${t.vars['--teal']},${t.vars['--teal-dim']});"></div>
+              <div style="width:100%;height:6px;border-radius:2px;margin-bottom:5px;
+                background:${t.vars['--surface']};border:1px solid ${t.vars['--border']};"></div>
+              <span style="font-size:.58rem;color:${saved===t.name ? t.vars['--teal'] : t.vars['--text-dim']};
+                font-family:var(--font-mono);letter-spacing:.04em;">${t.name}</span>
+            </div>`).join('');
+    }
+
+    function applyTheme(name) {
+        const theme = COLOR_THEMES.find(t => t.name === name);
+        if (!theme) return;
+        const root = document.documentElement;
+        // Apply every variable in the theme
+        Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+        localStorage.setItem('marinTheme', name);
+        // Refresh card borders so selected card is highlighted
+        COLOR_THEMES.forEach(t => {
+            const card = document.getElementById('theme-card-' + t.name.replace(/\s/g,'_'));
+            if (card) {
+                card.style.borderColor = t.name === name ? theme.vars['--teal'] : t.vars['--border'];
+                card.querySelector('span').style.color = t.name === name ? theme.vars['--teal'] : t.vars['--text-dim'];
+            }
+        });
+    }
+
+    function restoreSavedTheme() {
+        const saved = localStorage.getItem('marinTheme');
+        if (saved && saved !== 'Marin Default') applyTheme(saved);
+    }
+
+    // ── MEMORY TAB ───────────────────────────────────────────────────────────
+    let _allMemories = [];
+
+    async function loadMemoryTab() {
+        const list = document.getElementById('memory-list');
+        if (!list) return;
+        list.innerHTML = '<div style="font-size:.68rem;color:var(--text-muted);padding:8px;">Loading…</div>';
+        try {
+            const r = await fetch('/api/memory');
+            const d = await r.json();
+            _allMemories = d.memories || [];
+            renderMemoryList(_allMemories);
+        } catch(e) {
+            list.innerHTML = '<div style="font-size:.68rem;color:var(--danger);padding:8px;">Failed to load memories.</div>';
+        }
+    }
+
+    function renderMemoryList(rows) {
+        const list = document.getElementById('memory-list');
+        if (!list) return;
+        if (!rows.length) {
+            list.innerHTML = '<div style="font-size:.68rem;color:var(--text-muted);padding:8px;">No memories yet. Chat with Marin and she\'ll remember things automatically.</div>';
+            return;
+        }
+        // Group by category
+        const groups = {};
+        rows.forEach(r => { (groups[r.category] = groups[r.category]||[]).push(r); });
+        list.innerHTML = Object.entries(groups).map(([cat, items]) => `
+            <div style="margin-bottom:6px;">
+              <div style="font-size:.6rem;color:var(--text-muted);letter-spacing:.06em;padding:3px 6px;background:var(--ink3);border-radius:3px;margin-bottom:3px;">${cat.toUpperCase()}</div>
+              ${items.map(m => `
+                <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 6px;border-bottom:1px solid var(--border);">
+                  <div style="flex:1;min-width:0;">
+                    <span style="font-size:.68rem;color:var(--teal);font-family:var(--font-mono);">${m.key}</span>
+                    <span style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">${m.value}</span>
+                  </div>
+                  <button onclick="deleteMemoryEntry('${m.key.replace(/'/g,"\\'")}',this)" title="forget" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.75rem;flex-shrink:0;padding:0 3px;">✕</button>
+                </div>`).join('')}
+            </div>`).join('');
+    }
+
+    function filterMemory() {
+        const q = (document.getElementById('mem-search')||{}).value||'';
+        if (!q.trim()) { renderMemoryList(_allMemories); return; }
+        const low = q.toLowerCase();
+        renderMemoryList(_allMemories.filter(m =>
+            m.key.toLowerCase().includes(low) || m.value.toLowerCase().includes(low) || m.category.toLowerCase().includes(low)
+        ));
+    }
+
+    function addMemoryEntry() {
+        const form = document.getElementById('mem-add-form');
+        if (form) form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    async function saveNewMemory() {
+        const key = (document.getElementById('mem-new-key')||{}).value||'';
+        const val = (document.getElementById('mem-new-val')||{}).value||'';
+        const cat = (document.getElementById('mem-new-cat')||{}).value||'general';
+        if (!key || !val) return;
+        await fetch('/api/memory', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key,value:val,category:cat}) });
+        document.getElementById('mem-add-form').style.display = 'none';
+        document.getElementById('mem-new-key').value = '';
+        document.getElementById('mem-new-val').value = '';
+        loadMemoryTab();
+    }
+
+    async function deleteMemoryEntry(key, btn) {
+        btn.textContent = '…';
+        await fetch(`/api/memory?key=${encodeURIComponent(key)}`, {method:'DELETE'});
+        loadMemoryTab();
+    }
+
+    // ── TOOLS PANEL ─────────────────────────────────────────────────────────
+    let _toolsPanelOpen = false;
+    let _toolsData = [];
+
+    async function loadTools() {
+        try {
+            const r = await fetch('/api/tools');
+            const d = await r.json();
+            _toolsData = d.tools || [];
+            const btn = document.getElementById('tools-btn');
+            const lbl = document.getElementById('tools-label');
+            if (lbl) lbl.textContent = `tools: ${d.count || _toolsData.length}`;
+            renderToolsList();
+        } catch(e) {}
+    }
+
+    function renderToolsList() {
+        const list = document.getElementById('tools-panel-list');
+        const count = document.getElementById('tools-panel-count');
+        if (!list) return;
+        if (count) count.textContent = `${_toolsData.length} TOOLS`;
+
+        // Group tools by domain
+        const domainMap = {
+            'timer_tool': 'Productivity', 'alarm_tool': 'Productivity',
+            'weather_tool': 'Productivity', 'map_tool': 'Productivity',
+            'habit_tool': 'Productivity',
+            'terminal_tool': 'System', 'file_tool': 'System',
+            'batch_convert_tool': 'System',
+            'rag_search': 'Research', 'resource_tool': 'Research',
+            'pdf_analyze_tool': 'Research',
+            'crypto_tool': 'Finance', 'stock_tool': 'Finance',
+            'binance_tool': 'Finance', 'business_analysis_tool': 'Finance',
+            'youtube_search_tool': 'Media', 'youtube_transcript_tool': 'Media',
+            'news_tool': 'Media',
+            'telegram_tool': 'Communication', 'email_tool': 'Communication',
+            'memory_tool': 'Memory',
+            'learn_topic_tool': 'Study', 'book_download_tool': 'Study',
+            'math_plot_tool': 'Maths',
+            'playground_tool': 'Creative', 'opencode_tool': 'Creative',
+        };
+        const grouped = {};
+        _toolsData.forEach(t => {
+            const cat = domainMap[t.name] || 'Other';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(t);
+        });
+
+        const catOrder = ['Productivity','System','Research','Finance','Media','Communication','Memory','Study','Maths','Creative','Other'];
+        let html = '';
+        catOrder.forEach(cat => {
+            if (!grouped[cat]) return;
+            html += `<div style="padding:5px 12px 3px;font-size:.58rem;color:var(--teal);letter-spacing:.1em;font-family:var(--font-mono);opacity:.7;text-transform:uppercase;">${cat}</div>`;
+            grouped[cat].forEach(t => {
+                html += `<div style="padding:4px 12px 4px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:1px;">
+                  <span style="font-size:.66rem;color:var(--text);font-family:var(--font-mono);">${t.name.replace('_tool','').replace(/_/g,' ')}</span>
+                  <span style="font-size:.6rem;color:var(--text-muted);line-height:1.3;">${(t.description||'').split('.')[0]}</span>
+                </div>`;
+            });
+        });
+        list.innerHTML = html;
+    }
+
+    function toggleToolsPanel() {
+        _toolsPanelOpen = !_toolsPanelOpen;
+        const panel = document.getElementById('tools-panel');
+        const btn   = document.getElementById('tools-btn');
+        if (panel) panel.style.display = _toolsPanelOpen ? 'block' : 'none';
+        if (btn)   btn.style.borderColor = _toolsPanelOpen ? 'var(--teal)' : '';
+    }
+
+    // Close tools panel when clicking outside
+    document.addEventListener('click', e => {
+        const panel = document.getElementById('tools-panel');
+        const btn   = document.getElementById('tools-btn');
+        if (_toolsPanelOpen && panel && !panel.contains(e.target) && btn && !btn.contains(e.target)) {
+            _toolsPanelOpen = false;
+            panel.style.display = 'none';
+            btn.style.borderColor = '';
+        }
+    });
+
     window.onload = () => {
         try {
             fetchTodayTotal();
@@ -4392,11 +5076,13 @@
             loadVoice();
             loadWordLimit();
             loadRag();
+            loadTools();
+            restoreSavedTheme();
             fetchIntelligence();
             setInterval(fetchIntelligence, 300000);
             initAgent();
             startPolling();
-            initLayout(); // Initialize layout positioning
+            initLayout();
 
             // ── BVH preload: warm the cache for the most-used animations ──
             // Runs after a short delay so the VRM model finishes loading first.

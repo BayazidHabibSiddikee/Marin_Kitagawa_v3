@@ -70,7 +70,7 @@ class SecureVault:
         # Set restrictive permissions
         os.chmod(VAULT_FILE, 0o600)
 
-    def get(self, key: str, default: str = None) -> str | None:
+    def get(self, key: str, default: str | None = None) -> str | None:
         """Get a secret value by key."""
         return self._data.get(key, default)
 
@@ -126,7 +126,7 @@ def get_vault() -> SecureVault:
 
 
 # Convenience functions
-def vault_get(key: str, default: str = None) -> str | None:
+def vault_get(key: str, default: str | None = None) -> str | None:
     return get_vault().get(key, default)
 
 def vault_set(key: str, value: str):

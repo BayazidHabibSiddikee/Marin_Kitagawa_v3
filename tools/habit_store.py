@@ -107,7 +107,7 @@ def complete_task(task_id: int) -> str:
     return f"Task #{task_id} not found."
 
 
-def list_tasks(status: str = None, category: str = None) -> list:
+def list_tasks(status: str | None = None, category: str | None = None) -> list:
     db = _get_db()
     query = "SELECT t.*, c.name as category FROM todos t LEFT JOIN categories c ON t.category_id = c.id WHERE 1=1"
     params = []

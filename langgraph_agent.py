@@ -103,12 +103,13 @@ def strip_tool_schemas(text: str) -> str:
 
     return text.strip()
 
-def get_llm(model_name: str, bind_tools: list = None):
+def get_llm(model_name: str, bind_tools: list | None = None):
     """Factory to create the right LLM instance based on model name."""
     import inspect
 
     from sentinel_engine import get_langchain_model
-    caller_line = inspect.currentframe().f_back.f_lineno
+    _frame = inspect.currentframe()
+    caller_line = _frame.f_back.f_lineno if _frame and _frame.f_back else 0
     log_agent(f"Creating LLM: {model_name} @ Native Sentinel (Line: {caller_line})")
 
     return get_langchain_model(model_name, bind_tools=bind_tools)
@@ -391,7 +392,9 @@ def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
             'quiet': True,
             'default_search': 'ytsearch1',
             'noplaylist': True,
-            'format': 'best[ext=webm]/best[ext=mp4]/best'
+            'format': 'best[ext=webm]/best[ext=mp4]/best',
+            # Use nodejs as the JS runtime — avoids the deno-not-found warning
+            'js_runtimes': ['nodejs:/usr/sbin/node'],
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
@@ -471,6 +474,68 @@ def habit_tool(action: str = "list", task_args: str = "") -> str:
     except Exception as e:
         return f"Error: {e}"
 
+@tool
+def memory_tool(action: str, key: str = "", value: str = "",
+                category: str = "general", query: str = "") -> str:
+    """Manage persistent memory about the user.
+    Actions:
+      remember — save a fact (requires key + value, optional category).
+                 Categories: identity, goals, projects, skills, schedule,
+                             health, preferences, context, rules, general
+      recall   — search memories by keyword (requires query)
+      forget   — delete a memory by key (requires key)
+      list     — show all stored memories
+    Use this whenever the user shares something important about themselves,
+    their goals, preferences, routines, or gives you an explicit instruction
+    to remember something."""
+    try:
+        from tools.memory_tool import run
+        return run(action=action, key=key, value=value,
+                   category=category, query=query, user_id="USR-MASTER")
+    except Exception as e:
+        return f"Memory error: {e}"
+
+@tool
+def telegram_tool(message: str) -> str:
+    """Send a Telegram message to the owner. Use when the user asks to send a Telegram or notify via Telegram."""
+    try:
+        from tools.telegram_tool import send
+        result = send(message)
+        if result["ok"]:
+            return f"Telegram message sent: \"{message[:80]}{'...' if len(message) > 80 else ''}\""
+        return f"Telegram failed: {result['detail']}"
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def email_tool(to: str, subject: str, body: str) -> str:
+    """Send an email via Gmail. Use when the user asks to send an email or mail something to someone."""
+    try:
+        from tools.email_tool import send_email
+        result = send_email(to=to, subject=subject, body=body)
+        if result["ok"]:
+            return f"Email sent to {to} — subject: \"{subject}\""
+        return f"Email failed: {result['detail']}"
+    except Exception as e:
+        return f"Error: {e}"
+
+@tool
+def opencode_tool(task: str, working_dir: str = "") -> str:
+    """Delegate a coding or file-editing task to the opencode AI CLI agent (uses MiMo free model).
+    Use this for small, well-scoped programming tasks: writing a function,
+    fixing a bug in a specific file, generating a script, or creating a new file.
+    The task should be a clear natural-language description.
+    Examples:
+      - 'write a Python function to parse a CSV and return column averages'
+      - 'fix the syntax error in /tmp/test.py'
+      - 'create a Flask hello world app at /tmp/demo.py'
+    Returns the output from opencode including any code it generated."""
+    try:
+        from tools.opencode_tool import run
+        return run(task=task, working_dir=working_dir, model="opencode/mimo-v2.5-free")
+    except Exception as e:
+        return f"opencode error: {e}"
+
 # ── Core Tools (General Use) ─────────────────────────────────────────────────
 CORE_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
@@ -479,7 +544,10 @@ CORE_TOOLS = [
     pdf_analyze_tool, batch_convert_tool, book_download_tool,
     math_plot_tool, alarm_tool,
     youtube_search_tool, youtube_transcript_tool,
-    playground_tool, resource_tool, habit_tool
+    playground_tool, resource_tool, habit_tool,
+    telegram_tool, email_tool,
+    memory_tool,
+    opencode_tool,
 ]
 
 # ── Business/Trading Tools (Loaded Separately) ────────────────────────
@@ -487,8 +555,8 @@ BUSINESS_TOOLS = [
     business_analysis_tool, binance_tool
 ]
 
-# Default: use CORE_TOOLS only (follow Custom Instruction §3)
-ALL_TOOLS = CORE_TOOLS
+# All tools: CORE_TOOLS + BUSINESS_TOOLS (26 total)
+ALL_TOOLS = CORE_TOOLS + BUSINESS_TOOLS
 tools_by_name = {t.name: t for t in ALL_TOOLS}
 
 # ── Sensitive-tool guard ─────────────────────────────────────────────────────
@@ -651,7 +719,12 @@ async def node_strategist(state: AgentState) -> dict:
             break
     if not user_msg:
         last = state["messages"][-1]
-        user_msg = last.content if hasattr(last, 'content') else last.get("content", str(last))
+        # BaseMessage objects have .content; plain dicts have .get()
+        if hasattr(last, "content"):
+            raw = last.content
+            user_msg = raw if isinstance(raw, str) else str(raw)
+        else:
+            user_msg = str(last.get("content", last)) if isinstance(last, dict) else str(last)
 
     # 1. Regex Priority
     from marin_fier import classify
@@ -859,7 +932,7 @@ async def persona_node(state: AgentState) -> dict:
 
     llm = get_llm(PERSONA_MODEL)
     import database as _db
-    user_name = _db.get_state("USER_NAME") or "Limon"
+    user_name = _db.get_state("USER_NAME") or "Bayazid"
     sys_prompt = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
 
     instruction = (
@@ -881,6 +954,8 @@ async def persona_node(state: AgentState) -> dict:
     # ── Post-process ─────────────────────────────────────────────────────
     final_text = strip_tool_schemas(final_text)
     final_text = fix_spacing(final_text)
+    # Strip stray == markers the LLM sometimes copies from old prompt dividers
+    final_text = final_text.replace("==", "")
 
     # If the LLM refused, use the raw content instead
     if any(p in final_text.lower() for p in ["i cannot", "i can't", "i'm sorry", "i don't have"]):
@@ -1111,7 +1186,7 @@ async def get_pending_message(user_id: str) -> str:
         del _pending_messages[user_id]
     return msg
 
-async def stream_chat_with_marin(message: str, history: list = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral", session_id: str = "default"):
+async def stream_chat_with_marin(message: str, history: list | None = None, context: str = "", user_id: str = "USR-00000000", role: str = "guest", user_vibe: str = "neutral", session_id: str = "default"):
     await run_background_tools(message, history or [], user_id, role, user_vibe, session_id=session_id)
     yield "Thinking..."
 

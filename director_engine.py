@@ -149,8 +149,8 @@ class _LazyGesturePredictor:
     """HF sequence-classification model — heavier fallback if sklearn pkl absent."""
 
     def __init__(self, model_dir: str):
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification
         import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
         self._tok   = AutoTokenizer.from_pretrained(model_dir)
         self._model = AutoModelForSequenceClassification.from_pretrained(model_dir)
         self._model.eval()
@@ -361,8 +361,8 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
         cursor = t_start + dur + (0.15 if i < len(segments) - 1 else 0)
 
     # Return-to-idle at end
-    script.append({"t": cursor + 0.5, "type": "anim",  "value": "neutral_idle", "dur": 99.0})
-    script.append({"t": cursor + 0.5, "type": "expr",  "value": "neutral",      "dur": 99.0})
+    script.append({"t": cursor + 0.5, "type": "anim",  "value": "neutral_idle", "dur": 10.0})
+    script.append({"t": cursor + 0.5, "type": "expr",  "value": "neutral",      "dur": 10.0})
 
     # Sort by time
     script.sort(key=lambda a: a["t"])

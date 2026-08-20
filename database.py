@@ -19,17 +19,33 @@ _local = threading.local()
 T = TypeVar("T")
 
 
-def get_db_connection():
-    """Return a thread-local SQLite connection (reused per thread)."""
+def _open_connection():
+    """Open a fresh SQLite connection and store it in thread-local storage."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    _local.conn = conn
+    return conn
+
+
+def get_db_connection():
+    """Return a thread-local SQLite connection (reused per thread).
+
+    When the existing connection has been closed (e.g. by a prior 'with conn:'
+    context-manager usage that calls conn.close()), transparently re-opens it
+    so callers never receive a dead connection.
+    """
     conn = getattr(_local, "conn", None)
     if conn is None:
-        conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        _local.conn = conn
-    return conn
+        return _open_connection()
+    # Probe: if the connection was closed, sqlite3 raises ProgrammingError
+    try:
+        conn.execute("SELECT 1")
+        return conn
+    except sqlite3.ProgrammingError:
+        return _open_connection()
 
 
 def _db_op(fn: Callable[..., T], default: T = None) -> T:
@@ -155,6 +171,24 @@ def init_db():
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT 'USR-MASTER',
+                category TEXT NOT NULL DEFAULT 'general',
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                source TEXT DEFAULT 'marin',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, key)
+            )
+        ''')
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_memory_lookup "
+            "ON user_memory(user_id, category)"
+        )
+
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_chat_history_lookup "
             "ON chat_history(agent, user_id, session_id, id)"
@@ -214,7 +248,7 @@ def delete_old_news(days: int = 14) -> int:
 
 # ── USER API ─────────────────────────────────────────────────────────────────
 
-def create_user(username: str, role: str = "guest", display_name: str = None) -> dict:
+def create_user(username: str, role: str = "guest", display_name: str | None = None) -> dict:
     def _create():
         user_id = f"USR-{secrets.token_hex(4).upper()}"
         if username in ("developer", "admin"):
@@ -337,7 +371,7 @@ def delete_user_key(user_id: str, provider: str):
 
 # ── Trades ───────────────────────────────────────────────────────────────────
 
-def save_trade(user_id: str, symbol: str, side: str, amount: float, price: float, status: str, order_id: str = None):
+def save_trade(user_id: str, symbol: str, side: str, amount: float, price: float, status: str, order_id: str | None = None):
     def _save():
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -508,3 +542,91 @@ def clear_all_state() -> None:
             conn.execute("DELETE FROM app_state")
             conn.commit()
     _db_op(_clear)
+
+
+# ── User Memory API ──────────────────────────────────────────────────────────
+
+def memory_save(key: str, value: str, category: str = "general",
+                user_id: str = "USR-MASTER", source: str = "marin") -> bool:
+    """Save or update a memory entry. key is unique per user."""
+    def _save():
+        with get_db_connection() as conn:
+            conn.execute(
+                """INSERT INTO user_memory (user_id, category, key, value, source, updated_at)
+                   VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(user_id, key)
+                   DO UPDATE SET value=excluded.value, category=excluded.category,
+                                 source=excluded.source, updated_at=CURRENT_TIMESTAMP""",
+                (user_id, category, key, value, source),
+            )
+            conn.commit()
+        return True
+    return _db_op(_save, default=False)
+
+
+def memory_search(query: str, user_id: str = "USR-MASTER", limit: int = 10) -> list[dict]:
+    """Fuzzy keyword search across keys and values."""
+    def _search():
+        terms = [t.strip() for t in query.lower().split() if len(t.strip()) > 2]
+        if not terms:
+            return memory_list(user_id=user_id, limit=limit)
+        with get_db_connection() as conn:
+            # Build a LIKE clause for each term against key OR value
+            clauses = " OR ".join(
+                f"(LOWER(key) LIKE ? OR LOWER(value) LIKE ? OR LOWER(category) LIKE ?)"
+                for _ in terms
+            )
+            params = []
+            for t in terms:
+                params += [f"%{t}%", f"%{t}%", f"%{t}%"]
+            params.append(user_id)
+            rows = conn.execute(
+                f"SELECT id, category, key, value, source, created_at, updated_at "
+                f"FROM user_memory WHERE ({clauses}) AND user_id = ? "
+                f"ORDER BY updated_at DESC LIMIT {limit}",
+                params,
+            ).fetchall()
+            return [dict(r) for r in rows]
+    return _db_op(_search, default=[])
+
+
+def memory_list(user_id: str = "USR-MASTER", category: str | None = None,
+                limit: int = 50) -> list[dict]:
+    """List all memories, optionally filtered by category."""
+    def _list():
+        with get_db_connection() as conn:
+            if category:
+                rows = conn.execute(
+                    "SELECT id, category, key, value, source, created_at, updated_at "
+                    "FROM user_memory WHERE user_id=? AND category=? ORDER BY updated_at DESC LIMIT ?",
+                    (user_id, category, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, category, key, value, source, created_at, updated_at "
+                    "FROM user_memory WHERE user_id=? ORDER BY updated_at DESC LIMIT ?",
+                    (user_id, limit),
+                ).fetchall()
+            return [dict(r) for r in rows]
+    return _db_op(_list, default=[])
+
+
+def memory_delete(key: str, user_id: str = "USR-MASTER") -> bool:
+    """Delete a memory entry by key."""
+    def _del():
+        with get_db_connection() as conn:
+            cur = conn.execute(
+                "DELETE FROM user_memory WHERE user_id=? AND key=?", (user_id, key)
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    return _db_op(_del, default=False)
+
+
+def memory_get_context(user_id: str = "USR-MASTER", limit: int = 30) -> str:
+    """Return a compact text block of all memories for system prompt injection."""
+    rows = memory_list(user_id=user_id, limit=limit)
+    if not rows:
+        return ""
+    lines = [f"[{r['category']}] {r['key']}: {r['value']}" for r in rows]
+    return "## What I know about you\n" + "\n".join(lines)

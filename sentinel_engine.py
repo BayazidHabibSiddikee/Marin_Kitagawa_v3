@@ -114,7 +114,7 @@ sentinel_app = FastAPI(title="Marin Sentinel Proxy")
 
 # ── Shared HTTP Client ──────────────────────────────────────────────────────────
 # Using a single AsyncClient pool dramatically speeds up proxying by reusing connections
-_http_client: httpx.AsyncClient = None
+_http_client: httpx.AsyncClient | None = None
 
 @sentinel_app.on_event("startup")
 async def startup_event():
@@ -259,26 +259,38 @@ async def chat_completions(request: Request):
     raise HTTPException(status_code=503, detail="All providers failed. Check sentinel.log for details.")
 
 # ── Native Module Interfaces (No HTTP Loopback) ────────────────────────────────
-def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
-    """Native LangChain factory. Returns a model with built-in key fallbacks."""
+def get_langchain_model(model_name: str, bind_tools: list | None = None, **kwargs):
+    """Native LangChain factory. Uses llm_manager for provider/key selection,
+    falls back to the legacy sentinel key pool, then Ollama."""
     from langchain_ollama import ChatOllama
     from langchain_openai import ChatOpenAI
 
-    # If it's a cloud model and we have OpenRouter keys, build a fallback chain
+    # ── Primary: use llm_manager's multi-provider selector ────────────────────
+    try:
+        import llm_manager
+        result = llm_manager.get_best_llm()
+        if result:
+            llm, key, model = result
+            if bind_tools:
+                llm = llm.bind_tools(bind_tools)
+            return llm
+    except Exception as e:
+        logger.warning(f"llm_manager.get_best_llm failed: {e}")
+
+    # ── Fallback: legacy sentinel key pool (OpenRouter) ────────────────────────
     if "/" in model_name and pool.or_keys:
         llms = []
-        # Order keys so the next round-robin key is first
         start_idx = pool.index
         ordered_keys = [pool.or_keys[(start_idx + i) % len(pool.or_keys)] for i in range(len(pool.or_keys))]
-        pool.index = (pool.index + 1) % len(pool.or_keys) # advance for next time
+        pool.index = (pool.index + 1) % len(pool.or_keys)
 
         for key in ordered_keys:
             llm = ChatOpenAI(
                 model=model_name,
                 api_key=key,
                 base_url="https://openrouter.ai/api/v1",
-                max_retries=0, # Let fallbacks handle retries
-                request_timeout=120,
+                max_retries=0,
+                timeout=120,
                 **kwargs
             )
             if bind_tools:
@@ -290,11 +302,11 @@ def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
             primary = primary.with_fallbacks(llms[1:])
         return primary
 
+    # ── Last resort: local Ollama ──────────────────────────────────────────────
     if "/" in model_name:
         model_name = DEFAULT_LOCAL_MODEL
-    llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL, request_timeout=120, **kwargs)
+    llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL, timeout=120, **kwargs)
 
-    # If the user has OpenRouter keys, provide a cloud fallback in case Ollama is dead!
     if pool.or_keys:
         cloud_fallbacks = []
         for key in pool.or_keys:
@@ -303,7 +315,7 @@ def get_langchain_model(model_name: str, bind_tools: list = None, **kwargs):
                 api_key=key,
                 base_url="https://openrouter.ai/api/v1",
                 max_retries=0,
-                request_timeout=120,
+                timeout=120,
                 **kwargs
             )
             if bind_tools:

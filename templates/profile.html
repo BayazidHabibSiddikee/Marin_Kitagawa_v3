@@ -9,21 +9,34 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #13100e;
-            --bg2: #1c1814;
-            --panel: #221e19;
-            --border: #3a342c;
-            --purple: #4db8a4;
-            --violet: #2d8a78;
-            --text: #e8ddd0;
-            --dim: #8a7d72;
-            --muted: #4a4038;
-            --danger: #e07b6a;
-            --gold: #c9965a;
-            --success: #10b981;
-            
-            --teal: #4db8a4;
-            --teal-dim: #2d8a78;
+            --ink:        #13100e;
+            --ink2:       #1c1814;
+            --ink3:       #221e19;
+            --surface:    #2a2520;
+            --border:     #3a342c;
+            --border-hi:  #52473c;
+            --teal:       #4db8a4;
+            --teal-dim:   #2d8a78;
+            --teal-glow:  rgba(77,184,164,.18);
+            --teal-soft:  rgba(77,184,164,.08);
+            --coral:      #e07b6a;
+            --coral-dim:  #a85244;
+            --gold:       #c9965a;
+            --gold-soft:  rgba(201,150,90,.12);
+            --success:    #5db882;
+            --danger:     #e07b6a;
+            --text:       #e8ddd0;
+            --text-dim:   #8a7d72;
+            --text-muted: #4a4038;
+            --radius:     10px;
+            --radius-sm:  6px;
+
+            /* aliases kept for backward compat */
+            --bg:    var(--ink);
+            --bg2:   var(--ink2);
+            --panel: var(--ink3);
+            --dim:   var(--text-dim);
+            --muted: var(--text-muted);
         }
 
         * {
@@ -33,7 +46,7 @@
         }
 
         body {
-            background: var(--bg);
+            background: var(--ink);
             color: var(--text);
             font-family: 'DM Sans', sans-serif;
             min-height: 100vh;
@@ -142,7 +155,7 @@
         }
 
         .page-sub {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .68rem;
             color: var(--muted);
             letter-spacing: .15em;
@@ -202,7 +215,7 @@
         }
 
         .identity-role {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--violet);
             letter-spacing: .12em;
@@ -216,7 +229,7 @@
         }
 
         .tag {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .6rem;
             color: var(--dim);
             border: 1px solid var(--border);
@@ -240,7 +253,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .7rem;
             color: var(--success);
             letter-spacing: .1em;
@@ -291,7 +304,7 @@
         }
 
         .stat-value {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 2rem;
             color: var(--violet);
             display: block;
@@ -300,7 +313,7 @@
         }
 
         .stat-label {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .62rem;
             color: var(--muted);
             letter-spacing: .12em;
@@ -322,7 +335,7 @@
         }
 
         .session-card h3 {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--success);
             letter-spacing: .15em;
@@ -343,7 +356,7 @@
         }
 
         .session-elapsed {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 1.4rem;
             color: var(--gold);
         }
@@ -356,7 +369,7 @@
             color: var(--danger);
             border-radius: 4px;
             cursor: pointer;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .65rem;
             letter-spacing: .08em;
             transition: all .2s;
@@ -376,7 +389,7 @@
         }
 
         .panel-title {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .7rem;
             color: var(--muted);
             letter-spacing: .15em;
@@ -405,7 +418,7 @@
         }
 
         .focus-bar-label .pct {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--violet);
         }
@@ -456,13 +469,13 @@
         }
 
         .log-dur {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--violet);
         }
 
         .log-time {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .65rem;
             color: var(--muted);
         }
@@ -470,7 +483,7 @@
         .empty-log {
             text-align: center;
             padding: 30px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--muted);
             letter-spacing: .1em;
@@ -528,7 +541,7 @@
         }
 
         .repo-name {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .8rem;
             color: var(--violet);
             letter-spacing: .04em;
@@ -560,7 +573,7 @@
             display: flex;
             align-items: center;
             gap: 5px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .62rem;
             color: var(--muted);
         }
@@ -572,7 +585,7 @@
         }
 
         .repo-stars {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .62rem;
             color: var(--muted);
             display: flex;
@@ -583,7 +596,7 @@
         .repo-loading {
             text-align: center;
             padding: 40px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--muted);
             letter-spacing: .1em;
@@ -593,7 +606,7 @@
         .repo-error {
             text-align: center;
             padding: 30px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .72rem;
             color: var(--danger);
             letter-spacing: .08em;
@@ -601,7 +614,7 @@
         }
 
         .gh-link-btn {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .65rem;
             padding: 5px 14px;
             border: 1px solid var(--purple);
@@ -635,7 +648,7 @@
             gap: 8px;
             padding: 8px 18px;
             border-radius: 6px;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .68rem;
             letter-spacing: .08em;
             text-decoration: none;
@@ -697,7 +710,7 @@
 
         /* ── REFRESH BTN ────────────────────────────────────────────── */
         .refresh-btn {
-            font-family: 'Share Tech Mono', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: .65rem;
             padding: 5px 14px;
             border: 1px solid var(--border);
@@ -825,13 +838,13 @@
             <div class="session-info">
                 <div>
                     <div
-                        style="font-size:.72rem;font-family:'Share Tech Mono',monospace;color:var(--muted);margin-bottom:3px;">
+                        style="font-size:.72rem;font-family:'JetBrains Mono',monospace;color:var(--muted);margin-bottom:3px;">
                         TASK</div>
                     <div class="session-task-name" id="s-task">—</div>
                 </div>
                 <div>
                     <div
-                        style="font-size:.72rem;font-family:'Share Tech Mono',monospace;color:var(--muted);margin-bottom:3px;">
+                        style="font-size:.72rem;font-family:'JetBrains Mono',monospace;color:var(--muted);margin-bottom:3px;">
                         ELAPSED</div>
                     <div class="session-elapsed" id="s-elapsed">00:00</div>
                 </div>
@@ -1071,7 +1084,7 @@
                                 ${lang}
                             </span>
                             ${stars > 0 ? `<span class="repo-stars">★ ${stars}</span>` : ''}
-                            <span style="font-family:'Share Tech Mono',monospace;font-size:.6rem;color:var(--muted);margin-left:auto">${updated}</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--muted);margin-left:auto">${updated}</span>
                         </div>
                     </div>`;
                 }).join('');

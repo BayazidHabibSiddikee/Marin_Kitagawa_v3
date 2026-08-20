@@ -17,7 +17,14 @@ _TIMER_PAT   = re.compile(r'\b(timer|countdown|stopwatch)\b')
 _ALARM_PAT   = re.compile(r'\b(alarm|wake|remind)\b')
 _LIST_PAT    = re.compile(r'\b(ls|list|show|check|scan|files|directory|cwd)\b')
 _READ_PAT    = re.compile(r'\b(read|open|cat|analyze|view)\b')
-_CRYPTO_PAT  = re.compile(r'\b(crypto|bitcoin|ethereum|solana|price|market)\b')
+# Shell execution — run/execute/bash/shell commands
+_SHELL_PAT   = re.compile(
+    r'\b(run|execute|bash|shell|terminal|cmd|command|start\s+server|run\s+server|'
+    r'run\s+the\s+script|run\s+this\s+script|run\s+this\s+command|'
+    r'execute\s+this|run\s+python|launch)\b',
+    re.IGNORECASE
+)
+_CRYPTO_PAT  = re.compile(r'\b(crypto|bitcoin|ethereum|solana|bnb|cardano|dogecoin|ripple|btc|eth|sol|ada|doge|xrp|binancecoin|altcoin|defi|nft|blockchain|satoshi)\b')
 _STOCK_PAT   = re.compile(r'\b(stock|share|equity|company|aapl|tsla|nvda|quote)\b')
 _NEWS_PAT    = re.compile(r'\b(news|headlines|world|latest)\b')
 _WEATHER_PAT = re.compile(r'\b(weather|temp|humidity|rain|sun)\b')
@@ -32,15 +39,102 @@ _BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
 _YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play)\b')
 # Dance ONLY triggers on explicit dance words — NOT on generic play/music
 _DANCE_PAT   = re.compile(r'\b(dance|dancing|twerk|boogie|groove)\b|let\'?s dance|start dancing')
+# Telegram: "send telegram", "message me on telegram", "notify me via tg"
+_TELEGRAM_PAT = re.compile(r'\b(telegram|tg)\b|send\s+(me\s+a\s+)?message\s+on\s+telegram|notify\s+(via|on)\s+telegram')
+# Email: "send email", "send mail", "email someone", "write an email"
+_EMAIL_PAT    = re.compile(r'\b(gmail|send\s+email|send\s+mail|email\s+to|write\s+(an?\s+)?email|compose\s+email|mail\s+to)\b')
+# Memory: "remember", "recall", "forget", "what do you know about me"
+_MEMORY_PAT   = re.compile(
+    r'\b(remember\s+that|don\'?t\s+forget|keep\s+in\s+mind|store\s+this|save\s+this|'
+    r'note\s+that|memorize\s+this|recall\s+my|what\s+do\s+you\s+know\s+about\s+me|'
+    r'forget\s+that|what\s+did\s+i\s+tell\s+you|your\s+memory|show\s+(my\s+)?memory)\b'
+)
+# opencode: "use opencode to", "ask opencode", "run opencode", "delegate to opencode"
+_OPENCODE_PAT = re.compile(
+    r'\b(use\s+opencode|ask\s+opencode|run\s+opencode|delegate\s+(to\s+)?opencode|'
+    r'opencode\s+(this|that|it|the|a)|write\s+(me\s+)?(a\s+)?(function|script|class|tool|code)|'
+    r'write\s+\w+\s+(function|script|class|code)|write\s+\w+\s+\w+\s+(function|script|class|code))\b'
+)
+# Playground / Widget builder
+_PLAYGROUND_PAT = re.compile(
+    r'\b(build|create|make|generate|design)\s+(me\s+)?(a\s+|an\s+)?'
+    r'(widget|simulator|calculator|game|quiz|interactive|tool|app|demo|playground|prototype)\b',
+    re.IGNORECASE
+)
+# Resource / URL downloader
+_RESOURCE_PAT = re.compile(
+    r'(https?://\S+)|\b(download|fetch|scrape|clone|grab)\b.*?\b(url|repo|github\.com|link)\b',
+    re.IGNORECASE
+)
+# YouTube transcript specifically
+_TRANSCRIPT_PAT = re.compile(
+    r'\b(transcript|subtitles?|captions?|closed captions?)\b.*\b(youtube|video|yt)\b|'
+    r'\b(youtube|video|yt)\b.*\b(transcript|subtitles?|captions?)\b|'
+    r'\bget\s+(the\s+)?transcript\b',
+    re.IGNORECASE
+)
 
 def _regex_stage(text: str) -> dict | None:
     """Returns {intent, params, confidence} or None if uncertain."""
     lower = text.lower().strip()
 
+    # YouTube transcript — must come BEFORE general youtube check
+    if _TRANSCRIPT_PAT.search(lower):
+        return {"intent": "youtube_transcript_tool", "params": {"query": lower}, "confidence": 1.0}
+
+    # Playground / Widget builder — before generic chat fallthrough
+    if _PLAYGROUND_PAT.search(lower):
+        return {"intent": "playground_tool", "params": {"query": lower}, "confidence": 0.95}
+
+    # Resource / URL downloader — before code/terminal checks
+    if _RESOURCE_PAT.search(lower):
+        return {"intent": "resource_tool", "params": {"query": lower}, "confidence": 0.95}
+
+    # opencode — write a function/script: must come BEFORE _LIST_PAT
+    if _OPENCODE_PAT.search(lower):
+        task = re.sub(r'\b(use\s+opencode|ask\s+opencode|run\s+opencode|delegate\s+(to\s+)?opencode|opencode\s+(this|that|it|the|a))\b', '', lower).strip()
+        return {"intent": "opencode_tool", "params": {"task": task or lower}, "confidence": 1.0}
+
     # Study / Learning (God-Tier Workflow)
     if _STUDY_PAT.search(lower):
         topic = re.sub(_STUDY_PAT, '', lower).replace('me', '').replace('how to', '').strip()
         return {"intent": "learn_topic_tool", "params": {"topic": topic or lower}, "confidence": 1.0}
+
+    # Crypto — check BEFORE _BUSINESS_PAT so "ethereum market cap" isn't eaten by "market"
+    if _CRYPTO_PAT.search(lower):
+        coin_map = {
+            "btc": "bitcoin", "bitcoin": "bitcoin",
+            "eth": "ethereum", "ethereum": "ethereum",
+            "sol": "solana", "solana": "solana",
+            "bnb": "binancecoin", "binance coin": "binancecoin",
+            "ada": "cardano", "cardano": "cardano",
+            "doge": "dogecoin", "dogecoin": "dogecoin",
+            "xrp": "ripple", "ripple": "ripple",
+        }
+        coin = "bitcoin"
+        for alias, name in coin_map.items():
+            if alias in lower:
+                coin = name
+                break
+        return {"intent": "crypto_tool", "params": {"coin": coin}, "confidence": 0.9}
+
+    # Stock — check BEFORE _BUSINESS_PAT so "tesla stock" isn't eaten by business
+    if _STOCK_PAT.search(lower):
+        ticker_match = re.search(r'\b([A-Z]{1,5})\b', text)
+        company_tickers = {
+            "apple": "AAPL", "tesla": "TSLA", "google": "GOOGL", "alphabet": "GOOGL",
+            "microsoft": "MSFT", "amazon": "AMZN", "meta": "META", "facebook": "META",
+            "nvidia": "NVDA", "netflix": "NFLX", "twitter": "TWTR",
+        }
+        symbol = "AAPL"
+        for company, ticker in company_tickers.items():
+            if company in lower:
+                symbol = ticker
+                break
+        else:
+            if ticker_match:
+                symbol = ticker_match.group(1)
+        return {"intent": "stock_tool", "params": {"symbol": symbol}, "confidence": 0.9}
 
     # Business / Trading (The Arena)
     if _BUSINESS_PAT.search(lower):
@@ -73,9 +167,11 @@ def _regex_stage(text: str) -> dict | None:
             return {"intent": "batch_convert_tool", "params": {"directory": "."}, "confidence": 0.9}
         return {"intent": "pdf_analyze_tool", "params": {"path": "document.pdf"}, "confidence": 0.8}
 
-    # Books - prioritize learn_topic_tool for technical learning
+    # Books - prioritize learn_topic_tool for technical learning, but only when
+    # user is NOT asking to find/get/download a book (those go to book_download_tool)
     if _BOOK_PAT.search(lower):
-        if any(w in lower for w in ["arduino", "python", "coding", "programming", "manual", "guide", "datasheet", "assembly", "asm", "c programming", "kernel", "linux"]):
+        is_fetch = any(w in lower for w in ["find", "get", "download", "epub", "grab", "search for"])
+        if not is_fetch and any(w in lower for w in ["arduino", "python", "coding", "programming", "manual", "guide", "datasheet", "assembly", "asm", "c programming", "kernel", "linux"]):
             return {"intent": "learn_topic_tool", "params": {"topic": lower}, "confidence": 1.0}
         return {"intent": "book_download_tool", "params": {"query": lower}, "confidence": 0.9}
 
@@ -98,7 +194,59 @@ def _regex_stage(text: str) -> dict | None:
             return {"intent": "habit_tool", "params": {"action": "done", "task_args": task_id.group(1) if task_id else ""}, "confidence": 0.9}
         return {"intent": "habit_tool", "params": {"action": "list", "task_args": ""}, "confidence": 0.8}
 
+    # Telegram
+    if _TELEGRAM_PAT.search(lower):
+        # Strip command words to extract the actual message
+        msg = re.sub(r'\b(send|telegram|tg|message|notify|me|via|on|a|please|can\s+you|marin)\b', '', lower).strip()
+        msg = re.sub(r'\s+', ' ', msg).strip()
+        return {"intent": "telegram_tool", "params": {"message": msg or lower}, "confidence": 0.95}
+
+    # Email
+    if _EMAIL_PAT.search(lower):
+        # Try to extract recipient email address from the message
+        import re as _re
+        addr_match = _re.search(r'[\w.+-]+@[\w-]+\.[a-z]{2,}', lower)
+        to = addr_match.group(0) if addr_match else ""
+        # Extract subject/body hints — agent will fill in the rest
+        subj_match = _re.search(r'(?:subject|about)[:\s]+(.+?)(?:\s+body|\s+saying|\s+message|\Z)', lower)
+        body_match = _re.search(r'(?:saying|body|message|content)[:\s]+(.+)', lower)
+        subject = subj_match.group(1).strip() if subj_match else "Message from Marin"
+        body    = body_match.group(1).strip() if body_match else re.sub(r'\b(send|email|mail|to|an?|gmail|write|compose)\b', '', lower).strip()
+        return {
+            "intent": "email_tool",
+            "params": {"to": to, "subject": subject, "body": body or lower},
+            "confidence": 0.95,
+        }
+
+    # Memory
+    if _MEMORY_PAT.search(lower):
+        # Detect action from message
+        if re.search(r'\b(forget|delete|remove)\b', lower):
+            key_guess = re.sub(r'\b(forget|delete|remove|that|please|marin)\b', '', lower).strip()
+            return {"intent": "memory_tool", "params": {"action": "forget", "key": key_guess}, "confidence": 0.9}
+        if re.search(r'\b(recall|what do you know|what did i|show|list|your memory)\b', lower):
+            q = re.sub(r'\b(recall|what\s+do\s+you\s+know\s+about\s+me|what\s+did\s+i\s+tell|show|list|your\s+memory|my\s+memory)\b', '', lower).strip()
+            return {"intent": "memory_tool", "params": {"action": "recall" if q else "list", "query": q}, "confidence": 0.9}
+        # Default: remember
+        fact = re.sub(r'\b(remember\s+that|don\'?t\s+forget|keep\s+in\s+mind|store\s+this|save\s+this|note\s+that|memorize\s+this|marin|please)\b', '', lower).strip()
+        return {"intent": "memory_tool", "params": {"action": "remember", "key": fact[:60], "value": fact}, "confidence": 0.85}
+
     # Standard Tools
+    if _MAP_PAT.search(lower):
+        city_match = re.search(r'(?:map|location|places|find|pin)\s+(?:of|in|at|for)?\s+([A-Za-z ]+?)(?:\?|$)', lower)
+        if city_match:
+            city = city_match.group(1).strip().title()
+        else:
+            city_cap = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
+            city = city_cap.group(1) if city_cap else "Dhaka"
+        return {"intent": "map_tool", "params": {"city": city}, "confidence": 0.9}
+
+    if _SHELL_PAT.search(lower):
+        # Extract the actual command to run — strip directive words
+        cmd_raw = re.sub(r'\b(please|marin|can\s+you|could\s+you|run|execute|bash|shell|terminal|the\s+command|this\s+command|this\s+script)\b', '', lower).strip()
+        cmd_raw = re.sub(r'\s+', ' ', cmd_raw).strip()
+        return {"intent": "terminal_tool", "params": {"command": cmd_raw or lower}, "confidence": 0.9}
+
     if _LIST_PAT.search(lower):
         if any(w in lower for w in ["file", "directory", "cwd", "folder"]):
             return {"intent": "terminal_tool", "params": {"command": "ls -F"}, "confidence": 1.0}
@@ -161,23 +309,6 @@ def _regex_stage(text: str) -> dict | None:
                 coin = name
                 break
         return {"intent": "crypto_tool", "params": {"coin": coin}, "confidence": 0.9}
-    if _STOCK_PAT.search(lower):
-        # Extract ticker symbol (all-caps word) or well-known company names
-        ticker_match = re.search(r'\b([A-Z]{1,5})\b', text)  # use original text for case
-        company_tickers = {
-            "apple": "AAPL", "tesla": "TSLA", "google": "GOOGL", "alphabet": "GOOGL",
-            "microsoft": "MSFT", "amazon": "AMZN", "meta": "META", "facebook": "META",
-            "nvidia": "NVDA", "netflix": "NFLX", "twitter": "TWTR",
-        }
-        symbol = "AAPL"
-        for company, ticker in company_tickers.items():
-            if company in lower:
-                symbol = ticker
-                break
-        else:
-            if ticker_match:
-                symbol = ticker_match.group(1)
-        return {"intent": "stock_tool", "params": {"symbol": symbol}, "confidence": 0.9}
     if _NEWS_PAT.search(lower):
         # Extract source name if mentioned
         news_sources = ["BBC", "Reuters", "AlJazeera", "AP", "DW", "France24", "TheGuardian",
@@ -198,14 +329,6 @@ def _regex_stage(text: str) -> dict | None:
             city_cap = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
             city = city_cap.group(1) if city_cap else "Dhaka"
         return {"intent": "weather_tool", "params": {"city": city}, "confidence": 0.9}
-    if _MAP_PAT.search(lower):
-        city_match = re.search(r'(?:map|location|places|find|pin)\s+(?:of|in|at|for)?\s+([A-Za-z ]+?)(?:\?|$)', lower)
-        if city_match:
-            city = city_match.group(1).strip().title()
-        else:
-            city_cap = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
-            city = city_cap.group(1) if city_cap else "Dhaka"
-        return {"intent": "map_tool", "params": {"city": city}, "confidence": 0.9}
     if _MATH_PAT.search(lower):
         # Extract expression: "plot y=x^2", "draw a heart", "graph sin(x)", etc.
         expr_match = re.search(r'(?:plot|draw|graph|equation|calculate)\s+(?:a\s+|the\s+|me\s+)?(.+)', lower)

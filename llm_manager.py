@@ -2,7 +2,6 @@ import json
 import os
 import time
 
-from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 import database
@@ -39,6 +38,11 @@ def is_rate_limit_error(e: Exception) -> bool:
 def is_model_not_found_error(e: Exception) -> bool:
     err_str = str(e).lower()
     return any(x in err_str for x in ["404", "model not found", "does not exist", "not found"])
+
+
+def is_insufficient_credits_error(e: Exception) -> bool:
+    err_str = str(e).lower()
+    return any(x in err_str for x in ["402", "insufficient credits", "requires more credits", "can only afford"])
 
 
 def is_transient_error(e: Exception) -> bool:
@@ -93,7 +97,27 @@ def report_rate_limit(key: str, model: str):
     _save_rate_limits(limits)
 
 
+def _is_provider_reachable(base_url: str) -> bool:
+    """Quick TCP check — skips a provider instantly if its host is unreachable.
+    Only applies to localhost/LAN URLs; cloud URLs are assumed reachable."""
+    import socket
+    import urllib.parse
+    parsed = urllib.parse.urlparse(base_url)
+    host = parsed.hostname or ""
+    # Only probe local endpoints; don't add latency for cloud providers
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return True
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def _is_rate_limited(key: str, model: str, limits: dict, now: float, cooldown: int = COOLDOWN_SECONDS) -> bool:
+    entry = limits.get(f"{key}|{model}")
+    return entry is not None and (now - entry) < cooldown
     entry = limits.get(f"{key}|{model}")
     return entry is not None and (now - entry) < cooldown
 
@@ -166,14 +190,15 @@ def get_providers() -> list:
             "base_url": f"{freellmapi_url}/v1",
             "api_keys": [freellmapi_key],
             "models": [
-                "google/gemini-2.5-flash",
-                "meta-llama/llama-3.3-70b-instruct:free",
-                "qwen/qwen-2.5-72b-instruct:free",
-                "nousresearch/hermes-3-llama-3.1-405b:free",
-                "nvidia/llama-3.1-nemotron-70b-instruct:free",
+                "auto",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "deepseek-v4-flash-free",
+                "llama-3.3-70b-versatile",
+                "mistral-small-latest",
             ],
             "enabled": True,
-            "priority": 0,  # Higher priority than legacy OpenRouter
+            "priority": 0,
         })
 
     proxy_url = os.getenv("LLM_PROXY_URL", "")
@@ -228,7 +253,7 @@ def _try_build_llm(model: str, key: str, base_url: str):
     """
     return ChatOpenAI(
         model=model,
-        openai_api_key=key,
+        api_key=key,
         base_url=base_url,
         max_retries=1,
     )
@@ -270,6 +295,10 @@ def get_best_llm(deep: bool = False):
         name     = provider.get("name", "unknown")
         if not api_keys or not base_url or not model_list:
             return None
+        # Skip instantly if a local provider is not running
+        if not _is_provider_reachable(base_url):
+            print(f"[LLM] {name} unreachable — skipping")
+            return None
 
         num_keys   = len(api_keys)
         start_idx  = _get_key_index(name, num_keys)
@@ -290,6 +319,9 @@ def get_best_llm(deep: bool = False):
                         print(f"[LLM] Auth error for key ...{key[-6:]} on {name} — blacklisting")
                         invalid.add(key)
                         _save_invalid_keys(invalid)
+                    elif is_insufficient_credits_error(e):
+                        print(f"[LLM] Insufficient credits on {name}/{model} — skipping model")
+                        # Don't blacklist the key, just skip this model
                     elif is_rate_limit_error(e):
                         print(f"[LLM] Rate limit on {name}/{model}: {e}")
                         report_rate_limit(key, model)
@@ -328,7 +360,7 @@ def get_best_llm(deep: bool = False):
         try:
             llm = ChatOpenAI(
                 model=ollama_model,
-                openai_api_key="ollama",
+                api_key="ollama",
                 base_url=OLLAMA_BASE_URL,
                 max_retries=2,
             )
@@ -345,56 +377,79 @@ def get_best_llm(deep: bool = False):
 # ── Key validation (used by settings UI) ───────────────────────────────────────
 
 def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -> tuple[bool, str]:
-    """Lightweight test request to validate an API key."""
+    """
+    Validate an API key without consuming any tokens.
+
+    - OpenRouter: hits /auth/key (no tokens used)
+    - Google Gemini: lists available models
+    - OpenAI: lists available models
+    - Others: minimal /models list call
+    """
+    import httpx
+
     if not key:
         return False, "No key provided"
 
-    # Remove from invalid set to allow re-testing a key that was blacklisted
+    # Remove from invalid set to allow re-testing a blacklisted key
     invalid = _get_invalid_keys()
     if key in invalid:
         invalid.discard(key)
         _save_invalid_keys(invalid)
 
-    test_model = "google/gemini-2.5-flash"
-    if "generativelanguage.googleapis.com" in base_url:
-        test_model = "gemini-2.5-flash"
-    elif "api.openai.com" in base_url:
-        test_model = "gpt-4o-mini"
-    elif "api-inference.huggingface.co" in base_url:
-        test_model = "meta-llama/Llama-3.2-3B-Instruct"
-    elif "api.ollama.ai" in base_url or "localhost" in base_url or "127.0.0.1" in base_url:
-        test_model = "llama3.2"
-
     try:
-        from langchain_core.tools import tool
-        @tool
-        def dummy_search_tool(query: str) -> str:
-            """Searches the web for the given query."""
-            return "Found results"
+        headers = {"Authorization": f"Bearer {key}"}
 
-        llm = ChatOpenAI(
-            model=test_model,
-            openai_api_key=key,
-            base_url=base_url,
-            max_retries=0,
+        # ── OpenRouter: dedicated key-info endpoint (zero cost) ────────────
+        if "openrouter.ai" in base_url:
+            r = httpx.get(
+                "https://openrouter.ai/api/v1/auth/key",
+                headers=headers,
+                timeout=10.0,
+            )
+            if r.status_code == 200:
+                info = r.json().get("data", {})
+                usage = info.get("usage", 0)
+                limit = info.get("limit")
+                label = info.get("label", "")
+                free_tier = info.get("is_free_tier", False)
+                credits = f"{limit - usage:.4f}" if limit else "unlimited"
+                tier = " [free tier]" if free_tier else ""
+                name_part = f" — {label}" if label else ""
+                return True, f"Key valid{name_part}{tier}. Credits remaining: {credits}"
+            if r.status_code == 401:
+                invalid.add(key)
+                _save_invalid_keys(invalid)
+                return False, "Invalid API key."
+            return False, f"OpenRouter returned HTTP {r.status_code}."
+
+        # ── Google Gemini: list models (no tokens) ─────────────────────────
+        if "generativelanguage.googleapis.com" in base_url:
+            r = httpx.get(
+                f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+                timeout=10.0,
+            )
+            if r.status_code == 200:
+                return True, "Gemini key is valid."
+            if r.status_code in (400, 401, 403):
+                invalid.add(key)
+                _save_invalid_keys(invalid)
+                return False, "Invalid Gemini API key."
+            return False, f"Gemini returned HTTP {r.status_code}."
+
+        # ── OpenAI / compatible: list models (no tokens) ──────────────────
+        r = httpx.get(
+            base_url.rstrip("/").replace("/v1", "") + "/v1/models",
+            headers=headers,
             timeout=10.0,
         )
-        # Test basic connection
-        llm.invoke([HumanMessage(content="hi")])
-
-        # Test tool calling
-        try:
-            llm_with_tools = llm.bind_tools([dummy_search_tool])
-            llm_with_tools.invoke([HumanMessage(content="hi")])
-            tool_msg = " (Tool calling supported)"
-        except Exception:
-            tool_msg = " (Valid, but this model might not support tools)"
-
-        return True, f"Key is valid{tool_msg}"
-    except Exception as e:
-        if is_auth_error(e):
-            invalid = _get_invalid_keys()
+        if r.status_code == 200:
+            models = r.json().get("data", [])
+            return True, f"Key valid. {len(models)} model(s) available."
+        if r.status_code in (401, 403):
             invalid.add(key)
             _save_invalid_keys(invalid)
             return False, "Invalid API key or authentication failed."
+        return False, f"Provider returned HTTP {r.status_code}."
+
+    except Exception as e:
         return False, f"Connection failed: {str(e)}"

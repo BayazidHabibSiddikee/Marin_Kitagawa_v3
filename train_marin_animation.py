@@ -14,7 +14,7 @@
 # At inference, director_engine._safe_anim() guards against labels for
 # animations that no longer exist on disk.
 
-!pip install -q transformers datasets evaluate accelerate torch scikit-learn
+# !pip install -q transformers datasets evaluate accelerate torch scikit-learn
 
 import json
 import torch

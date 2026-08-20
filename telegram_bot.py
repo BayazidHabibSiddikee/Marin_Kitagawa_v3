@@ -35,7 +35,7 @@ _last_update_id = 0
 _processing = set()  # chat IDs currently being processed
 
 
-def _api(method: str, data: dict = None) -> dict:
+def _api(method: str, data: dict | None = None) -> dict:
     """Call Telegram Bot API method."""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     body = json.dumps(data).encode() if data else None
@@ -111,12 +111,12 @@ def _process_message_sync(chat_id: int, user_text: str, user_name: str):
             loop.close()
 
         if result:
-            # Clean up any stray tags
-            result = result.replace("__VIBE__flirty", "").replace("__VIBE__neutral", "")
-            result = result.replace("__VIBE__lovely", "").replace("__VIBE__excited", "")
-            result = result.replace("__VIBE__sad", "").replace("__VIBE__angry", "")
-            result = result.replace("__VIBE__stressed", "").replace("__VIBE__focused", "")
-            result = result.replace("__VIBE__playful", "").strip()
+            # Strip ALL control tags: __VIBE__x, __ANIM__x, __DIRECTOR__x,
+            # __YOUTUBE__x, __DANCE__, __TALK_ON__, __TALK_OFF__, __STREAM__x, etc.
+            import re as _re
+            result = _re.sub(r'__[A-Z_]+__[A-Za-z0-9+/=\-]*', '', result)
+            result = _re.sub(r'__[A-Z_]+__', '', result)
+            result = result.strip()
 
             if result:
                 _send_text(chat_id, result)

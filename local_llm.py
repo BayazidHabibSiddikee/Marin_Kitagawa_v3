@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from config import DEFAULT_MODEL
 
 
-async def stream_local_chat(messages: list[dict[str, str]], model: str = None, max_tokens: int = 2000) -> AsyncIterator[str]:
+async def stream_local_chat(messages: list[dict[str, str]], model: str | None = None, max_tokens: int = 2000) -> AsyncIterator[str]:
     """
     Stream chat completions from a local Ollama instance.
     """

@@ -86,11 +86,11 @@ async def analyze_youtube(url: str) -> str:
             elif "v=" in url:
                 vid_id = url.split("v=")[1].split("&")[0]
 
-            if not vid_id: return None
+            if not vid_id: return ""
             ytt_api = YouTubeTranscriptApi()
             tlist   = ytt_api.list(vid_id)
             t       = next(iter(tlist), None)
-            if not t: return None
+            if not t: return ""
             if t.language_code != "en" and t.is_translatable:
                 t = t.translate("en")
             full = " ".join(e.text for e in t.fetch())
@@ -98,7 +98,7 @@ async def analyze_youtube(url: str) -> str:
             return full
         except Exception as e:
             print(f"[AgentLogic] YouTube fetch failed: {e}")
-            return None
+            return ""
 
     result = await asyncio.to_thread(_fetch, url)
     if result:
@@ -217,7 +217,7 @@ def execute_text_commands(text: str, user: dict):
 
 # ── Unified Preprocessor ─────────────────────────────────────────────────────
 
-async def preprocess_input(user_input: str, image_path: str = None, rag_enabled: bool = False) -> dict[str, Any]:
+async def preprocess_input(user_input: str, image_path: str | None = None, rag_enabled: bool = False) -> dict[str, Any]:
     from marin_fier import classify
 
     classification = classify(user_input)
@@ -275,7 +275,7 @@ async def stream_marin_chat(
     prompt: str,
     user: dict,
     session_id: str = "default",
-    image_path: str = None
+    image_path: str | None = None
 ) -> AsyncIterator[str]:
     """
     Two-System Pipeline:
@@ -329,8 +329,13 @@ async def stream_marin_chat(
 
     persona_llm = get_llm(PERSONA_MODEL)
     theme = "evil" if is_owner else "standard"
-    user_name = database.get_state("USER_NAME") or "Limon"
+    user_name = database.get_state("USER_NAME") or "Bayazid"
     system = get_character_prompt(user_vibe, theme=theme, user_name=user_name)
+
+    # ── Inject persistent user memories ──────────────────────────────────────
+    memory_ctx = database.memory_get_context(user_id=user_id, limit=30)
+    if memory_ctx:
+        system += f"\n\n{memory_ctx}"
 
     # Make Persona aware of what it is doing
     context_instruction = "\nIMPORTANT: ALWAYS use proper spaces. Do NOT glom words."
@@ -365,8 +370,11 @@ async def stream_marin_chat(
     try:
         async for chunk in persona_llm.astream(fast_msgs):
             if chunk.content:
-                full_response += chunk.content
-                yield chunk.content
+                text = chunk.content
+                # Strip any stray == markers the LLM copies from old prompt formatting
+                text = text.replace("==", "")
+                full_response += text
+                yield text
     except Exception as e:
         print(f"[AgentLogic] Streaming error: {e}")
         if not full_response:

@@ -3,115 +3,187 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Vault Explorer — Private Playgrounds</title>
+    <title>Marin — Vault Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root {
-            --bg-dark: #0a0a0f;
-            --panel: #221e19;
-            --border: #3a342c;
-            --marin-accent: #e91e8c;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
+            --ink:        #13100e;
+            --ink2:       #1c1814;
+            --ink3:       #221e19;
+            --surface:    #2a2520;
+            --border:     #3a342c;
+            --border-hi:  #52473c;
+            --teal:       #4db8a4;
+            --teal-dim:   #2d8a78;
+            --teal-glow:  rgba(77,184,164,.18);
+            --teal-soft:  rgba(77,184,164,.08);
+            --coral:      #e07b6a;
+            --gold:       #c9965a;
+            --success:    #5db882;
+            --danger:     #e07b6a;
+            --text:       #e8ddd0;
+            --text-dim:   #8a7d72;
+            --text-muted: #4a4038;
+            --radius:     10px;
+            --radius-sm:  6px;
         }
 
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            background-color: var(--bg-dark);
-            color: var(--text-primary);
-            font-family: 'Inter', sans-serif;
-            margin: 0;
+            background: var(--ink);
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
             display: flex;
+            flex-direction: column;
             height: 100vh;
+            overflow: hidden;
+        }
+
+        /* grain overlay */
+        body::before {
+            content: '';
+            position: fixed; inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+            pointer-events: none; z-index: 900; opacity: .6;
+        }
+
+        /* ── NAV ── */
+        nav {
+            background: var(--ink2);
+            border-bottom: 1px solid var(--border);
+            padding: 0 28px;
+            height: 54px;
+            display: flex; align-items: center; justify-content: space-between;
+            position: relative; z-index: 200;
+            flex-shrink: 0;
+        }
+        nav::after {
+            content: '';
+            position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, var(--teal-dim), transparent);
+        }
+        .nav-brand {
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.05rem; color: var(--teal);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .nav-brand .hs {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .6rem;
+            background: linear-gradient(135deg, var(--teal), var(--teal-dim));
+            color: #fff; padding: 2px 8px; border-radius: 2px; letter-spacing: .05em;
+        }
+        .nav-links { display: flex; gap: 6px; }
+        .nav-links a {
+            color: var(--text-dim); text-decoration: none; font-size: .82rem;
+            padding: 6px 12px; border-radius: var(--radius-sm);
+            transition: all .2s;
+        }
+        .nav-links a:hover { color: var(--text); background: var(--ink3); }
+        .nav-links a.active { color: var(--teal); background: var(--teal-soft); }
+
+        /* ── Layout ── */
+        .layout {
+            display: flex;
+            flex: 1;
             overflow: hidden;
         }
 
         /* ── Sidebar ── */
         .sidebar {
-            width: 300px;
-            background: var(--panel);
+            width: 280px;
+            background: var(--ink2);
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             overflow-y: auto;
+            flex-shrink: 0;
         }
 
         .vault-header {
-            padding: 1.5rem;
-            font-weight: bold;
-            letter-spacing: 1px;
+            padding: 14px 18px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            letter-spacing: .1em;
             text-transform: uppercase;
-            font-size: 0.8rem;
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 8px;
+            color: var(--teal);
         }
 
-        .marin-header { color: var(--marin-accent); }
+        .file-list { padding: 12px; }
 
-        .file-list {
-            padding: 1rem;
-        }
-
-        .category-group {
-            margin-bottom: 1.5rem;
-        }
+        .category-group { margin-bottom: 1.25rem; }
 
         .category-name {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            margin-bottom: 0.5rem;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
             display: block;
             text-transform: uppercase;
+            letter-spacing: .08em;
+            padding: 0 6px;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .file-item {
-            padding: 0.5rem 0.8rem;
-            border-radius: 6px;
+            padding: 7px 10px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
+            font-size: 0.83rem;
+            transition: all 0.15s;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 8px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: var(--text-dim);
         }
 
-        .file-item:hover {
-            background: rgba(255,255,255,0.05);
-        }
-
-        .file-item.active {
-            background: rgba(139, 92, 246, 0.15);
-            color: white;
-        }
+        .file-item i { color: var(--text-muted); font-size: .75rem; flex-shrink: 0; }
+        .file-item:hover { background: var(--ink3); color: var(--text); }
+        .file-item.active { background: var(--teal-soft); color: var(--teal); border: 1px solid rgba(77,184,164,.2); }
+        .file-item.active i { color: var(--teal); }
 
         /* ── Viewer ── */
         .viewer {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #0f0f1a;
+            background: var(--ink);
+            overflow: hidden;
         }
 
         .viewer-header {
-            padding: 1rem 2rem;
-            background: var(--panel);
+            padding: 12px 24px;
+            background: var(--ink2);
             border-bottom: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
+        }
+
+        #active-filename {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .78rem;
+            color: var(--text-dim);
         }
 
         .viewer-content {
             flex: 1;
             padding: 2rem;
             overflow-y: auto;
-            font-family: 'Share Tech Mono', monospace;
-            line-height: 1.6;
-            color: #d1d5db;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .8rem;
+            line-height: 1.7;
+            color: var(--text-dim);
             white-space: pre-wrap;
         }
 
@@ -121,47 +193,63 @@
             align-items: center;
             justify-content: center;
             height: 100%;
-            color: var(--text-secondary);
+            color: var(--text-muted);
+            gap: 12px;
         }
 
-        .empty-state i {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            opacity: 0.3;
-        }
+        .empty-state i { font-size: 2.5rem; opacity: 0.2; }
+        .empty-state p { font-size: .85rem; }
 
         .btn-delete {
-            background: rgba(220, 38, 38, 0.1);
-            color: #ef4444;
-            border: 1px solid rgba(220, 38, 38, 0.2);
-            padding: 0.4rem 1rem;
-            border-radius: 4px;
+            background: rgba(224,123,106,.08);
+            color: var(--danger);
+            border: 1px solid rgba(224,123,106,.2);
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            font-size: 0.8rem;
+            font-size: 0.78rem;
+            font-family: 'DM Sans', sans-serif;
+            transition: all .15s;
         }
 
-        .btn-delete:hover { background: #dc2626; color: white; }
+        .btn-delete:hover { background: rgba(224,123,106,.16); border-color: var(--danger); }
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="vault-header marin-header">
-            <i class="fas fa-heart"></i> Marin's Vault
+    <nav>
+        <div class="nav-brand">
+            Marin <span class="hs">HS-02</span>
         </div>
-        <div class="file-list" id="marin-files">
-            <!-- Dynamically loaded -->
+        <div class="nav-links">
+            <a href="/chat">Chat</a>
+            <a href="/">Home</a>
+            <a href="/profile">Profile</a>
+            <a href="/vault" class="active">Vault</a>
         </div>
-    </div>
+    </nav>
 
-    <div class="viewer">
-        <div class="viewer-header">
-            <div id="active-filename">Select a file to view</div>
-            <button class="btn-delete" id="delete-btn" style="display: none;" onclick="deleteFile()">Delete File</button>
+    <div class="layout">
+        <div class="sidebar">
+            <div class="vault-header">
+                <i class="fas fa-lock"></i> Marin's Vault
+            </div>
+            <div class="file-list" id="marin-files">
+                <!-- Dynamically loaded -->
+            </div>
         </div>
-        <div class="viewer-content" id="content">
-            <div class="empty-state">
-                <i class="fas fa-folder-open"></i>
-                <p>No file selected</p>
+
+        <div class="viewer">
+            <div class="viewer-header">
+                <div id="active-filename">Select a file to view</div>
+                <button class="btn-delete" id="delete-btn" style="display: none;" onclick="deleteFile()">
+                    <i class="fas fa-trash-alt"></i> Delete
+                </button>
+            </div>
+            <div class="viewer-content" id="content">
+                <div class="empty-state">
+                    <i class="fas fa-folder-open"></i>
+                    <p>No file selected</p>
+                </div>
             </div>
         </div>
     </div>
@@ -188,7 +276,7 @@
                         const item = document.createElement('div');
                         item.className = 'file-item';
                         item.innerHTML = `<i class="far fa-file-alt"></i> ${file}`;
-                        item.onclick = () => viewFile(agent, cat, file);
+                        item.onclick = (e) => viewFile(agent, cat, file, e);
                         group.appendChild(item);
                     });
                     container.appendChild(group);
@@ -196,7 +284,7 @@
             }
         }
 
-        async function viewFile(agent, category, filename) {
+        async function viewFile(agent, category, filename, e) {
             currentAgent = agent;
             currentCategory = category;
             currentFile = filename;
@@ -214,7 +302,7 @@
             
             // Highlight active
             document.querySelectorAll('.file-item').forEach(i => i.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+            if (e && e.currentTarget) e.currentTarget.classList.add('active');
         }
 
         async function deleteFile() {

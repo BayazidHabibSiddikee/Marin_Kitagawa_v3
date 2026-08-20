@@ -2,8 +2,9 @@
 import json
 import os
 import sys
-import requests
 from pathlib import Path
+
+import requests
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.persona import BASE_CHARACTER_EVIL, VIBE_MODIFIERS
@@ -12,14 +13,14 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "gemma4:31b-cloud"
 ANIMATIONS_DIR = Path(__file__).resolve().parent.parent / "static" / "animations"
 OUTPUT_FILE = "marin_animation_dataset.jsonl"
-EXAMPLES_PER_VIBE = 50 
+EXAMPLES_PER_VIBE = 50
 
 def ask_ollama(prompt: str) -> str:
     payload = {
         "model": MODEL_NAME,
         "prompt": prompt,
         "stream": False,
-        "temperature": 0.8 
+        "temperature": 0.8
     }
     try:
         response = requests.post(OLLAMA_URL, json=payload, timeout=180)
@@ -49,11 +50,11 @@ def main():
             available_anims = bvh_files
 
             system_prompt = BASE_CHARACTER_EVIL.replace("{user}", "Limon") + vibe_prompt.replace("{user}", "Limon")
-            
+
             batches = EXAMPLES_PER_VIBE // 5
             for batch in range(batches):
                 print(f"Batch {batch+1}/{batches}...")
-                
+
                 prompt = f"""You are generating training data for a Text-to-Animation Machine Learning model.
 Below is the Persona that the AI MUST strictly follow when speaking:
 ```
@@ -85,10 +86,10 @@ RULES:
 3. Output NOTHING but the raw JSON array.
 """
                 response_text = ask_ollama(prompt)
-                
+
                 # Cleanup formatting
                 response_text = response_text.replace("```json", "").replace("```", "").strip()
-                
+
                 try:
                     examples = json.loads(response_text)
                     kept = 0

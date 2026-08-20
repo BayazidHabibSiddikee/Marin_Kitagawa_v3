@@ -122,7 +122,7 @@ class PrivilegeManager:
         self._suspicion: dict[str, dict] = {}
         self._deploy_honey_files()
 
-    def log_ai_action(self, user: str, action: str, intent: str = "", details: dict = None):
+    def log_ai_action(self, user: str, action: str, intent: str = "", details: dict | None = None):
         """Log AI-initiated actions to the Observatory.
         Mandatory for all AI decisions."""
         entry = {

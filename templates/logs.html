@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marin · Log Viewer</title>
+<style>
+  :root {
+    --bg: #0a0c0f; --bg2: #0f1218; --bg3: #141920;
+    --border: #1e2530; --teal: #00d4aa; --teal-dim: #00d4aa33;
+    --gold: #f0b429; --danger: #e55; --success: #2ecc71;
+    --text: #d0dce8; --text-dim: #8899aa; --text-muted: #556677;
+    --radius: 8px; --radius-sm: 5px; --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── Top bar ── */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg2); flex-shrink: 0;
+  }
+  .topbar-title { font-size: .8rem; color: var(--teal); letter-spacing: .08em; flex: 1; }
+  .back-btn {
+    font-size: .7rem; color: var(--text-dim); border: 1px solid var(--border);
+    background: none; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .back-btn:hover { color: var(--teal); border-color: var(--teal-dim); }
+
+  /* ── Layout ── */
+  .layout { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Sidebar: file list ── */
+  .sidebar {
+    width: 200px; border-right: 1px solid var(--border); background: var(--bg2);
+    overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column;
+  }
+  .sidebar-header {
+    padding: 8px 12px; font-size: .65rem; color: var(--text-muted);
+    letter-spacing: .06em; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .file-item {
+    padding: 7px 12px; font-size: .68rem; color: var(--text-dim); cursor: pointer;
+    border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px;
+    transition: background .15s;
+  }
+  .file-item:hover { background: var(--bg3); color: var(--text); }
+  .file-item.active { background: var(--teal-dim); color: var(--teal); }
+  .file-item .fname { word-break: break-all; }
+  .file-item .fsize { font-size: .6rem; color: var(--text-muted); }
+
+  /* ── Main log area ── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .log-toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .log-toolbar-file { font-size: .72rem; color: var(--teal); flex: 1; min-width: 120px; }
+  .log-count { font-size: .65rem; color: var(--text-muted); }
+  .tb-btn {
+    font-size: .68rem; font-family: var(--font-mono); color: var(--text-dim);
+    border: 1px solid var(--border); background: none; padding: 4px 10px;
+    border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap;
+  }
+  .tb-btn:hover { color: var(--teal); border-color: var(--teal-dim); }
+  .tb-btn.active { color: var(--teal); border-color: var(--teal); }
+  .search-input {
+    font-family: var(--font-mono); font-size: .7rem; background: var(--bg3);
+    border: 1px solid var(--border); color: var(--text); padding: 4px 8px;
+    border-radius: var(--radius-sm); width: 180px; outline: none;
+  }
+  .search-input:focus { border-color: var(--teal-dim); }
+  .level-btn {
+    font-size: .62rem; padding: 3px 7px; border-radius: 3px; border: 1px solid transparent;
+    cursor: pointer; font-family: var(--font-mono); background: none;
+  }
+  .level-btn[data-level="ERROR"]   { color: var(--danger);  border-color: #e5555533; }
+  .level-btn[data-level="WARNING"] { color: var(--gold);    border-color: #f0b42933; }
+  .level-btn[data-level="INFO"]    { color: var(--success); border-color: #2ecc7133; }
+  .level-btn.active[data-level="ERROR"]   { background: #e5555520; }
+  .level-btn.active[data-level="WARNING"] { background: #f0b42920; }
+  .level-btn.active[data-level="INFO"]    { background: #2ecc7120; }
+
+  /* ── Log output ── */
+  #log-output {
+    flex: 1; overflow-y: auto; padding: 10px 14px; font-size: .7rem;
+    line-height: 1.6; background: var(--bg);
+  }
+  #log-output::-webkit-scrollbar { width: 6px; }
+  #log-output::-webkit-scrollbar-track { background: var(--bg2); }
+  #log-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .log-line { display: block; padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+  .log-line.err  { color: #ff7070; }
+  .log-line.warn { color: var(--gold); }
+  .log-line.info { color: var(--success); }
+  .log-line.debug { color: var(--text-muted); }
+  .log-line.highlight { background: #f0b42922; border-left: 2px solid var(--gold); padding-left: 4px; }
+  .log-line .ts  { color: var(--text-muted); margin-right: 6px; }
+
+  .log-empty { color: var(--text-muted); font-size: .75rem; padding: 20px; text-align: center; }
+
+  /* ── Live indicator ── */
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--success);
+    display: inline-block; animation: pulse 1.5s infinite;
+  }
+  .live-dot.off { background: var(--text-muted); animation: none; }
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: .3; }
+  }
+
+  /* ── Status bar ── */
+  .statusbar {
+    padding: 5px 14px; border-top: 1px solid var(--border); background: var(--bg2);
+    font-size: .62rem; color: var(--text-muted); display: flex; gap: 16px; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/" class="back-btn">← back</a>
+  <div class="topbar-title">🗂 LOG VIEWER — SWORDFISH OS</div>
+  <span class="live-dot" id="live-dot"></span>
+  <span style="font-size:.65rem;color:var(--text-muted)">live</span>
+  <button class="tb-btn active" id="live-toggle-btn" onclick="toggleLive()">auto-refresh: on</button>
+</div>
+
+<div class="layout">
+  <!-- Sidebar: file list -->
+  <div class="sidebar">
+    <div class="sidebar-header">LOG FILES</div>
+    <div id="file-list">
+      <div class="log-empty">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Main log area -->
+  <div class="main">
+    <div class="log-toolbar">
+      <span class="log-toolbar-file" id="current-file-label">Select a log file</span>
+      <input class="search-input" id="search-input" placeholder="filter…" oninput="applyFilter()">
+      <button class="level-btn" data-level="ERROR"   onclick="toggleLevel('ERROR')"  >ERR</button>
+      <button class="level-btn" data-level="WARNING" onclick="toggleLevel('WARNING')">WARN</button>
+      <button class="level-btn" data-level="INFO"    onclick="toggleLevel('INFO')"   >INFO</button>
+      <button class="tb-btn" onclick="copyVisible()">copy</button>
+      <button class="tb-btn" onclick="scrollToBottom()">↓ bottom</button>
+      <span class="log-count" id="line-count"></span>
+    </div>
+
+    <div id="log-output"><div class="log-empty">Select a log file from the sidebar.</div></div>
+
+    <div class="statusbar">
+      <span id="status-file">—</span>
+      <span id="status-lines">—</span>
+      <span id="status-last-refresh">—</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentFile   = null;
+  let liveEnabled   = true;
+  let liveTimer     = null;
+  let rawLines      = [];
+  let filterText    = '';
+  let activeLevels  = new Set();
+  let autoScroll    = true;
+
+  // ── File list ──────────────────────────────────────────────────────────────
+  async function loadFileList() {
+    try {
+      const res  = await fetch('/api/logs/files');
+      const data = await res.json();
+      const container = document.getElementById('file-list');
+      container.innerHTML = '';
+      for (const f of data.files) {
+        const div = document.createElement('div');
+        div.className = 'file-item' + (f.name === currentFile ? ' active' : '');
+        div.innerHTML = `<span class="fname">${f.name}</span><span class="fsize">${formatBytes(f.size)}</span>`;
+        div.onclick = () => selectFile(f.name);
+        container.appendChild(div);
+      }
+    } catch(e) {
+      document.getElementById('file-list').innerHTML = '<div class="log-empty">Error loading files</div>';
+    }
+  }
+
+  function formatBytes(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(1) + ' MB';
+  }
+
+  // ── File selection ─────────────────────────────────────────────────────────
+  function selectFile(name) {
+    currentFile = name;
+    document.getElementById('current-file-label').textContent = name;
+    document.getElementById('status-file').textContent = name;
+    document.querySelectorAll('.file-item').forEach(el => {
+      el.classList.toggle('active', el.querySelector('.fname').textContent === name);
+    });
+    loadLog(true);
+  }
+
+  // ── Log loading ────────────────────────────────────────────────────────────
+  async function loadLog(scrollBottom = false) {
+    if (!currentFile) return;
+    try {
+      const res  = await fetch(`/api/logs?file=${encodeURIComponent(currentFile)}&lines=500`);
+      const data = await res.json();
+      if (data.error && !data.lines.length) {
+        document.getElementById('log-output').innerHTML = `<div class="log-empty">Error: ${data.error}</div>`;
+        return;
+      }
+      rawLines = data.lines || [];
+      document.getElementById('status-lines').textContent = `${rawLines.length} lines`;
+      document.getElementById('status-last-refresh').textContent = 'refreshed ' + new Date().toLocaleTimeString();
+      renderLines();
+      if (scrollBottom || autoScroll) scrollToBottom();
+    } catch(e) {
+      console.error('Log load error:', e);
+    }
+  }
+
+  // ── Render lines with filter/level ────────────────────────────────────────
+  function renderLines() {
+    const output   = document.getElementById('log-output');
+    const search   = filterText.toLowerCase();
+    const filtered = rawLines.filter(line => {
+      if (search && !line.toLowerCase().includes(search)) return false;
+      if (activeLevels.size > 0) {
+        const up = line.toUpperCase();
+        let matched = false;
+        activeLevels.forEach(lv => { if (up.includes(lv)) matched = true; });
+        if (!matched) return false;
+      }
+      return true;
+    });
+
+    document.getElementById('line-count').textContent = `${filtered.length}/${rawLines.length} lines`;
+
+    if (!filtered.length) {
+      output.innerHTML = '<div class="log-empty">No lines match the filter.</div>';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const line of filtered) {
+      const span = document.createElement('span');
+      span.className = 'log-line ' + classifyLine(line);
+      if (search && line.toLowerCase().includes(search)) span.classList.add('highlight');
+      span.textContent = line;
+      fragment.appendChild(span);
+    }
+    output.innerHTML = '';
+    output.appendChild(fragment);
+  }
+
+  function classifyLine(line) {
+    const up = line.toUpperCase();
+    if (up.includes('ERROR') || up.includes('CRITICAL') || up.includes('EXCEPTION') || up.includes('TRACEBACK')) return 'err';
+    if (up.includes('WARNING') || up.includes('WARN')) return 'warn';
+    if (up.includes('INFO') || up.includes('STARTED') || up.includes('SUCCESS')) return 'info';
+    if (up.includes('DEBUG')) return 'debug';
+    return '';
+  }
+
+  // ── Filter & level toggles ─────────────────────────────────────────────────
+  function applyFilter() {
+    filterText = document.getElementById('search-input').value;
+    renderLines();
+  }
+
+  function toggleLevel(level) {
+    if (activeLevels.has(level)) activeLevels.delete(level);
+    else activeLevels.add(level);
+    document.querySelectorAll('.level-btn').forEach(b => {
+      if (b.dataset.level === level) b.classList.toggle('active', activeLevels.has(level));
+    });
+    renderLines();
+  }
+
+  // ── Live refresh ───────────────────────────────────────────────────────────
+  function toggleLive() {
+    liveEnabled = !liveEnabled;
+    const btn = document.getElementById('live-toggle-btn');
+    const dot = document.getElementById('live-dot');
+    btn.textContent = `auto-refresh: ${liveEnabled ? 'on' : 'off'}`;
+    btn.classList.toggle('active', liveEnabled);
+    dot.classList.toggle('off', !liveEnabled);
+    if (liveEnabled) startLive(); else stopLive();
+  }
+
+  function startLive() {
+    stopLive();
+    liveTimer = setInterval(() => {
+      loadLog(false);
+      // Also refresh file sizes periodically
+    }, 2500);
+  }
+
+  function stopLive() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  }
+
+  // ── Scroll & copy ──────────────────────────────────────────────────────────
+  function scrollToBottom() {
+    const o = document.getElementById('log-output');
+    o.scrollTop = o.scrollHeight;
+  }
+
+  async function copyVisible() {
+    const lines = Array.from(document.querySelectorAll('#log-output .log-line'))
+                       .map(el => el.textContent).join('\n');
+    try { await navigator.clipboard.writeText(lines); } catch(e) {}
+  }
+
+  // Track whether user manually scrolled up (stop auto-scroll)
+  document.getElementById('log-output').addEventListener('scroll', function() {
+    const o = this;
+    autoScroll = (o.scrollHeight - o.scrollTop - o.clientHeight) < 60;
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    await loadFileList();
+    // Auto-select main.err.log
+    selectFile('main.err.log');
+    startLive();
+  }
+
+  init();
+</script>
+</body>
+</html>

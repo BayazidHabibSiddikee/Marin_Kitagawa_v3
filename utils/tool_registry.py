@@ -21,6 +21,18 @@ TOOL_DOMAINS = {
         "keywords": ["youtube", "yt", "video", "videos", "watch", "song", "music", "play", "news", "headlines", "world", "latest", "dance", "dancing", "twerk", "boogie", "groove"],
         "tools": ["youtube_search_tool", "youtube_transcript_tool", "news_tool"]
     },
+    "Communication": {
+        "keywords": ["telegram", "tg", "message", "notify", "notification", "ping", "send message",
+                     "email", "mail", "gmail", "send email", "send mail", "write email",
+                     "inbox", "compose", "recipient"],
+        "tools": ["telegram_tool", "email_tool"]
+    },
+    "Memory": {
+        "keywords": ["remember", "recall", "forget", "memory", "note", "notes", "memorize",
+                     "don't forget", "keep in mind", "store this", "save this", "what do you know",
+                     "what did i tell", "my preferences", "my goals", "about me"],
+        "tools": ["memory_tool"]
+    },
     "System": {
         "keywords": ["ls", "list", "show", "check", "scan", "file", "files", "folder", "save", "write", "directory", "cwd", "read", "open", "cat", "analyze", "view", "terminal", "bash", "shell", "run", "execute"],
         "tools": ["terminal_tool", "file_tool", "batch_convert_tool"]

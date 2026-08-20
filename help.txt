@@ -17,3 +17,6 @@ docker compose down              # stop
 9. Instructor
 10. vLLM (opppp) like ollama but handles AI/LLM more better 
 11. Ragas (check if it's correct or not) 
+
+
+claude --resume 911d6dc4-666e-4e6d-ad24-3ff6e97758c5

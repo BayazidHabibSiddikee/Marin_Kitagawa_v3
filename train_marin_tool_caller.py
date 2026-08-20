@@ -2,8 +2,8 @@
 # Upload this notebook to Kaggle along with your marin_tool_dataset.jsonl
 # Turn on GPU T4 x2 or P100
 
-!pip install -q "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-!pip install -q --no-deps "trl<0.9.0" peft accelerate bitsandbytes
+# !pip install -q "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+# !pip install -q --no-deps "trl<0.9.0" peft accelerate bitsandbytes
 
 import torch
 from unsloth import FastLanguageModel

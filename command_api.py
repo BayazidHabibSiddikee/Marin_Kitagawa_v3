@@ -47,7 +47,7 @@ _api_key_header = APIKeyHeader(name="X-Marin-Token", auto_error=False)
 
 async def require_token(
     header_token: str = Depends(_api_key_header),
-    token: str = None,  # also accept ?token= query param
+    token: str | None = None,  # also accept ?token= query param
 ):
     """FastAPI dependency: validates the bearer token on protected endpoints."""
     provided = header_token or token
@@ -222,6 +222,8 @@ def write_file(op: FileOp, _auth: None = Depends(require_token)):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), _auth: None = Depends(require_token)):
+    if not file.filename:
+        raise HTTPException(400, "Filename is required")
     dest_dir = MARIN_HOME / "Documents"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / file.filename
@@ -235,74 +237,40 @@ async def upload_file(file: UploadFile = File(...), _auth: None = Depends(requir
 # ── Telegram ───────────────────────────────────────────
 @app.post("/telegram")
 def configure_telegram(cfg: TelegramConfig, _auth: None = Depends(require_token)):
-    env = load_env()
-    env["TELEGRAM_BOT_TOKEN"] = cfg.bot_token
-    env["TELEGRAM_CHAT_ID"] = cfg.chat_id
-    env["TELEGRAM_NEWS_BOT_TOKEN"] = cfg.bot_token
-    env["TELEGRAM_NEWS_CHAT_ID"] = cfg.chat_id
-    env["TELEGRAM_USER_ID"] = cfg.chat_id
-    save_env(env)
-
-    # Update .bashrc
-    lines = []
-    if BASHRC.exists():
-        lines = BASHRC.read_text().splitlines()
-    lines = [l for l in lines if not any(x in l for x in [
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-        "TELEGRAM_NEWS_BOT_TOKEN", "TELEGRAM_NEWS_CHAT_ID", "TELEGRAM_USER_ID"
-    ])]
-    lines.extend([
-        f"export TELEGRAM_BOT_TOKEN={cfg.bot_token}",
-        f"export TELEGRAM_CHAT_ID={cfg.chat_id}",
-    ])
-    BASHRC.write_text("\n".join(lines) + "\n")
-
+    """Save Telegram credentials to the encrypted database (not .env)."""
+    import database as db
+    db.save_user_key("USR-MASTER", "TELEGRAM_BOT_TOKEN", cfg.bot_token)
+    db.save_user_key("USR-MASTER", "TELEGRAM_CHAT_ID",   cfg.chat_id)
     return {"message": "Telegram configured", "token_preview": cfg.bot_token[:10] + "..."}
 
 
 @app.get("/telegram")
 def get_telegram(_auth: None = Depends(require_token)):
-    env = load_env()
+    """Read Telegram credentials from the encrypted database."""
+    import database as db
     return {
-        "bot_token": env.get("TELEGRAM_BOT_TOKEN", ""),
-        "chat_id": env.get("TELEGRAM_CHAT_ID", ""),
+        "bot_token": db.get_user_key("USR-MASTER", "TELEGRAM_BOT_TOKEN") or "",
+        "chat_id":   db.get_user_key("USR-MASTER", "TELEGRAM_CHAT_ID")   or "",
     }
 
 
 # ── Email ──────────────────────────────────────────────
 @app.post("/email")
 def configure_email(cfg: EmailConfig, _auth: None = Depends(require_token)):
-    env = load_env()
-    env["GMAIL_ADDRESS"] = cfg.gmail_address
-    env["GMAIL_APP_PASSWORD"] = cfg.gmail_password
-    env["EMAIL_SENDER"] = cfg.gmail_address
-    env["EMAIL_PASSWORD"] = cfg.gmail_password
-    save_env(env)
-
-    # Update .bashrc
-    lines = []
-    if BASHRC.exists():
-        lines = BASHRC.read_text().splitlines()
-    lines = [l for l in lines if not any(x in l for x in [
-        "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD", "EMAIL_SENDER", "EMAIL_PASSWORD"
-    ])]
-    lines.extend([
-        f"export GMAIL_ADDRESS={cfg.gmail_address}",
-        f"export GMAIL_APP_PASSWORD={cfg.gmail_password}",
-        f"export EMAIL_SENDER={cfg.gmail_address}",
-        f"export EMAIL_PASSWORD={cfg.gmail_password}",
-    ])
-    BASHRC.write_text("\n".join(lines) + "\n")
-
+    """Save Gmail credentials to the encrypted database (not .env)."""
+    import database as db
+    db.save_user_key("USR-MASTER", "GMAIL_ADDRESS",      cfg.gmail_address)
+    db.save_user_key("USR-MASTER", "GMAIL_APP_PASSWORD", cfg.gmail_password)
     return {"message": "Email configured", "address": cfg.gmail_address}
 
 
 @app.get("/email")
 def get_email(_auth: None = Depends(require_token)):
-    env = load_env()
+    """Read Gmail credentials from the encrypted database."""
+    import database as db
     return {
-        "gmail_address": env.get("GMAIL_ADDRESS", ""),
-        "gmail_password": env.get("GMAIL_APP_PASSWORD", ""),
+        "gmail_address": db.get_user_key("USR-MASTER", "GMAIL_ADDRESS")      or "",
+        "gmail_password": db.get_user_key("USR-MASTER", "GMAIL_APP_PASSWORD") or "",
     }
 
 

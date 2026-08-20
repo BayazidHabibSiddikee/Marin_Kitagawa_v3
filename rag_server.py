@@ -534,7 +534,7 @@ class KnowledgeBase:
 
     # ── Public API ────────────────────────────────────────────────────────────
     def search(self, query: str, k: int = 10,
-               source_type: str = None) -> list[dict[str, Any]]:
+               source_type: str | None = None) -> list[dict[str, Any]]:
         if self._raw_index is None or self._embeddings is None:
             return []
         try:
@@ -577,7 +577,7 @@ class KnowledgeBase:
             return []
 
     def get_context(self, query: str, k: int = 10,
-                    source_type: str = None) -> str:
+                    source_type: str | None = None) -> str:
         results = self.search(query, k=k, source_type=source_type)
         if not results:
             return ""
@@ -656,7 +656,7 @@ async def embed_texts(req: EmbedRequest):
 class SearchRequest(BaseModel):
     query:       str
     k:           int = 10
-    source_type: str = None  # "doc" | "code" | None = search everything
+    source_type: str | None = None  # "doc" | "code" | None = search everything
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -678,6 +678,8 @@ async def context(req: SearchRequest):
 @app.post("/upload/doc")
 async def upload_doc(file: UploadFile = File(...)):
     """Upload PDF, DOCX, TXT, or MD into doc/ and index immediately."""
+    if not file.filename:
+        raise HTTPException(400, "Filename is required")
     ext = Path(file.filename).suffix.lower()
     if ext not in DOC_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {DOC_EXTENSIONS}")
@@ -691,6 +693,8 @@ async def upload_doc(file: UploadFile = File(...)):
 @app.post("/upload/code")
 async def upload_code(file: UploadFile = File(...)):
     """Upload PY, C, CPP, H, or MD into code/ and index immediately."""
+    if not file.filename:
+        raise HTTPException(400, "Filename is required")
     ext = Path(file.filename).suffix.lower()
     if ext not in CODE_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {CODE_EXTENSIONS}")
@@ -704,6 +708,8 @@ async def upload_code(file: UploadFile = File(...)):
 @app.post("/upload/image")
 async def upload_image(file: UploadFile = File(...)):
     """Upload image into static/uploads/ for vision tasks. Not RAG-indexed."""
+    if not file.filename:
+        raise HTTPException(400, "Filename is required")
     ext = Path(file.filename).suffix.lower()
     if ext not in IMAGE_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {IMAGE_EXTENSIONS}")
