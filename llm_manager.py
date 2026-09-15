@@ -118,8 +118,6 @@ def _is_provider_reachable(base_url: str) -> bool:
 def _is_rate_limited(key: str, model: str, limits: dict, now: float, cooldown: int = COOLDOWN_SECONDS) -> bool:
     entry = limits.get(f"{key}|{model}")
     return entry is not None and (now - entry) < cooldown
-    entry = limits.get(f"{key}|{model}")
-    return entry is not None and (now - entry) < cooldown
 
 
 # ── Key rotation index — persisted per provider so load spreads across keys ────

@@ -146,7 +146,7 @@ async def set_voice_setting(request: Request):
 @app.get("/api/tts/status")
 async def tts_status():
     from utils.tts import is_tts_available
-    return {"available": is_tts_available(), "engine": "vibevoice", "voice": "en-Grace_woman"}
+    return {"available": is_tts_available(), "engine": "gtts", "voice": "en-female-google"}
 
 @app.get("/settings/rag")
 async def get_rag_setting():

@@ -3270,7 +3270,32 @@
         if (_audioMode === 'beat') return;
         try {
             if (!_micStream) {
-                _micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // ── Try system audio first (Glava-style: captures speaker output) ──
+                // getDisplayMedia with audio:true + video:false captures the system
+                // audio output without any microphone — just like Glava does.
+                let stream = null;
+                let sourceLabel = 'system audio';
+                try {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: false,
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            sampleRate: 44100,
+                        }
+                    });
+                } catch (sysErr) {
+                    console.warn('[Physics] System audio unavailable, trying mic:', sysErr.message);
+                    // ── Fallback: microphone ──
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        sourceLabel = 'microphone';
+                    } catch (micErr) {
+                        throw new Error('Both system audio and microphone access denied.');
+                    }
+                }
+
+                _micStream = stream;
                 if (!audioContext) {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -3280,6 +3305,7 @@
                 _micAnalyser.smoothingTimeConstant = 0.3;
                 _micSource.connect(_micAnalyser);
                 _micReady = true;
+                console.log(`[Physics] Beat mode using: ${sourceLabel}`);
             }
             _audioMode = 'beat';
             _beatHistory = [];
@@ -3287,8 +3313,13 @@
             document.getElementById('physics-emotion-chip').style.color = '#e84393';
             console.log('[Physics] Beat mode activated — listening for music...');
         } catch(e) {
-            console.warn('[Physics] Mic unavailable:', e.message);
-            alert('Mic access denied — tap "beat" mode again after allowing mic permission.');
+            console.warn('[Physics] Audio capture unavailable:', e.message);
+            // ── Graceful degradation: pulse on a timer instead ──
+            _audioMode = 'beat';
+            _beatHistory = [];
+            _micReady = false;
+            document.getElementById('physics-emotion-chip').textContent = '● beat (visual)';
+            document.getElementById('physics-emotion-chip').style.color = '#e84393';
         }
     }
 
@@ -3317,7 +3348,7 @@
             _audioEnergy = Math.min(1, Math.sqrt(sum / data.length) * 6);
             return;
         }
-        // beat mode: analyze mic for bass energy
+        // beat mode: analyze captured audio (system or mic) for bass energy
         if (_audioMode === 'beat' && _micAnalyser) {
             const data = new Uint8Array(_micAnalyser.frequencyBinCount);
             _micAnalyser.getByteFrequencyData(data);
@@ -3351,6 +3382,12 @@
             }
             // Decay when no beat
             _audioEnergy *= 0.88;
+            return;
+        }
+        // beat mode visual-only fallback (no audio access) — pulse at ~72 BPM
+        if (_audioMode === 'beat' && !_micAnalyser) {
+            const t = performance.now() / 1000;
+            _audioEnergy = 0.3 + 0.25 * Math.abs(Math.sin(Math.PI * _beatFreq * t));
             return;
         }
         // idle: gentle breathing
