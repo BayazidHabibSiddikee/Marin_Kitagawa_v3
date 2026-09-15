@@ -243,15 +243,23 @@ class BodyPhysics:
     transition_progress: float = 1.0  # 0 = old params, 1 = new params
 
     def apply_emotion(self, emotion: str) -> None:
-        """Smoothly transition physics parameters to match an emotion."""
+        """Immediately snap physics parameters to an emotion (transitions are instant)."""
         if emotion == self.current_emotion:
             return
-        prev = EMOTION_PHYSICS.get(self.current_emotion, DEFAULT_PHYSICS)
         curr = EMOTION_PHYSICS.get(emotion, DEFAULT_PHYSICS)
+        # Reset spring displacements/velocities so old motion doesn't carry over
+        for spring_name in ("hair", "spine", "chest"):
+            s = getattr(self, spring_name)
+            s.disp = 0.0
+            s.vel = 0.0
+            s.k = curr[f"{spring_name}_k"]
+            s.c = curr[f"{spring_name}_c"]
+            s.amp = curr[f"{spring_name}_amp"]
+            s.freq = curr.get("freq", 1.5)
+        self.head_tilt = curr["head_tilt"]
+        self.shoulder_drop = curr["shoulder_drop"]
         self.current_emotion = emotion
-        # Interpolate springs
-        self._interp(prev, curr, 0.0)
-        self.transition_progress = 0.0
+        self.transition_progress = 1.0
 
     def _interp(self, a: dict, b: dict, t: float) -> None:
         """Lerp between two param dicts, applied to springs."""
@@ -274,19 +282,7 @@ class BodyPhysics:
 
     def step(self, dt: float, elapsed: float) -> dict:
         """Advance physics one frame. Returns blendshape-style output dict."""
-        # Ease transition over ~0.5s
-        if self.transition_progress < 1.0:
-            self.transition_progress = min(1.0, self.transition_progress + dt / 0.5)
-            t = self.transition_progress
-            prev = EMOTION_PHYSICS.get(
-                [k for k, v in EMOTION_PHYSICS.items() if v is not None][
-                    list(EMOTION_PHYSICS.keys()).index(self.current_emotion)
-                ] if False else "neutral", DEFAULT_PHYSICS
-            )
-            curr = EMOTION_PHYSICS.get(self.current_emotion, DEFAULT_PHYSICS)
-            self._interp(prev if prev is not EMOTION_PHYSICS[self.current_emotion] else curr, curr, t)
-
-        # Add idle breathing to target
+        # Idle breathing drives chest target
         breath = math.sin(2 * math.pi * 1.5 * elapsed) * 0.003
         self.chest.target = breath
 
