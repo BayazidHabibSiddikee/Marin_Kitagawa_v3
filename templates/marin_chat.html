@@ -2295,12 +2295,19 @@
 
         canvas.addEventListener("webglcontextcreationerror", function(e) {
             console.error("WebGL context error:", e.statusMessage);
-            // Silently fallback — sandboxed browsers may not support WebGL
-            // The chat still works fully; the avatar panel just stays hidden.
-            const container = document.getElementById('vrm-container');
-            if (container) container.style.display = 'none';
-            const resizer   = document.getElementById('vrm-resizer');
-            if (resizer) resizer.style.display = 'none';
+            // Keep panel visible but show diagnostic message
+            if (!window._webglErrorShown) {
+                window._webglErrorShown = true;
+                const msg = document.createElement('div');
+                msg.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;'
+                    + 'background:rgba(13,10,8,0.95);color:#e07b6a;font-family:JetBrains Mono,sans-serif;'
+                    + 'font-size:.7rem;text-align:center;padding:20px;z-index:50;line-height:1.8;';
+                msg.innerHTML = `<strong>WebGL unavailable</strong><br>`
+                    + `Browser sandbox blocked the 3D context.<br>`
+                    + `The chat works fine — physics run server-side.<br>`
+                    + `Launch Chromium with: <code style="color:#4db8a4">chromium --disable-webgl-sandbox</code>`;
+                container.appendChild(msg);
+            }
         }, false);
 
         vrmScene = new THREE.Scene();
@@ -3365,40 +3372,33 @@
         'surprised': 'surprised',
         'relaxed':   'relaxed',
         'neutral':   'neutral',
-        // ── Thinking / curious — no dedicated VRM key, use relaxed ────────
+        // ── Physics emotion names → VRM expression keys ───────────────────
+        'joy':       'happy',
+        'excited':   'happy',
         'thinking':  'relaxed',
         'curious':   'relaxed',
-        // ── VRM BlendShape phoneme presets (mouth shapes) ─────────────────
-        'aa':        'aa',       // open mouth vowel A
-        'ih':        'ih',       // vowel I
-        'ou':        'ou',       // vowel O/U
-        'ee':        'ee',       // vowel E
-        'oh':        'oh',       // vowel OH
-        // ── Gaze / look-at presets ────────────────────────────────────────
-        'lookUp':    'lookUp',
-        'lookDown':  'lookDown',
-        'lookLeft':  'lookLeft',
-        'lookRight': 'lookRight',
-        // ── Blink presets ─────────────────────────────────────────────────
-        'blink':          'blink',
-        'blinkLeft':      'blinkLeft',
-        'blinkRight':     'blinkRight',
-        // ── Aliases used by director_engine.py ────────────────────────────
+        'fear':      'surprised',
+        'shock':     'surprised',
+        'realization':'surprised',
         'love':      'happy',
-        'excited':   'happy',
-        'joy':       'happy',
+        'confident': 'relaxed',
         'grief':     'sad',
         'remorse':   'sad',
         'caring':    'relaxed',
-        'embarrassed': 'neutral',
-        'fear':      'surprised',
-        'shock':     'surprised',
-        'realization': 'surprised',
+        'embarrassed':'neutral',
         'annoyed':   'angry',
         'disgust':   'angry',
-        'confident': 'relaxed',
         'explaining':'neutral',
         'greeting':  'happy',
+        // ── BVH animation names → also valid as expression names ──────────
+        'admiration':'happy', 'amusement':'happy', 'approval':'happy',
+        'curiosity':'relaxed', 'desire':'happy', 'disappointment':'sad',
+        'disapproval':'angry', 'disgust':'angry', 'embarrassment':'neutral',
+        'excitement':'happy', 'fear':'surprised', 'gratitude':'happy',
+        'grief':'sad', 'joy':'happy', 'love':'happy', 'nervousness':'surprised',
+        'optimism':'happy', 'pride':'happy', 'realization':'surprised',
+        'relief':'happy', 'remorse':'sad', 'sadness':'sad',
+        'surprise':'surprised',
     };
 
     function setVRMExpression(name, strength = 1.0) {
