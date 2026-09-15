@@ -3070,9 +3070,31 @@
         updateSidebarOffset();
     }
 
+    // ── three.ws-inspired FPS auto-degradation ─────────────────────────────────
+    // Samples frame times over ~1.5s; auto-halves pixel ratio on slow devices.
+    let _vrmFpsWindow = [];
+    let _vrmDegraded  = false;
+    let _vrmLastFrame = 0;
+    function _sampleVrmFps(now) {
+        if (_vrmDegraded || !_vrmLastFrame) { _vrmLastFrame = now; return; }
+        _vrmFpsWindow.push(now - _vrmLastFrame);
+        _vrmLastFrame = now;
+        if (_vrmFpsWindow.length < 90) return;        // ~1.5s at 60fps
+        const avg = _vrmFpsWindow.reduce((a, b) => a + b, 0) / _vrmFpsWindow.length;
+        _vrmFpsWindow = [];
+        if (avg > 41.6 && vrmRenderer) {              // <24fps sustained
+            _vrmDegraded = true;
+            const cur = vrmRenderer.getPixelRatio();
+            vrmRenderer.setPixelRatio(Math.max(1, cur * 0.75));
+            console.log('[VRM] FPS too low — reducing pixel ratio for smooth render');
+        }
+    }
+
     function animateVRM() {
         requestAnimationFrame(animateVRM);
-        const delta = vrmClock.getDelta();
+        const now = performance.now();
+        _sampleVrmFps(now);
+        const delta = Math.min(vrmClock.getDelta(), 0.05);  // clamp delta to avoid physics explosion on tab switch
         if (vrmControls) vrmControls.update();
         if (vrmMixer) vrmMixer.update(delta);
         
