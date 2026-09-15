@@ -136,7 +136,7 @@ async def set_voice_setting(request: Request):
 @app.get("/api/tts/status")
 async def tts_status():
     from utils.tts import is_tts_available
-    return {"available": is_tts_available(), "engine": "piper", "voice": "en_US-amy-medium"}
+    return {"available": is_tts_available(), "engine": "vibevoice", "voice": "en-Grace_woman"}
 
 @app.get("/settings/rag")
 async def get_rag_setting():
@@ -177,7 +177,6 @@ async def set_wordlimit(request: Request):
 @app.post("/audio/stop")
 async def stop_audio():
     subprocess.run(["pkill", "-f", "aplay"], capture_output=True)
-    subprocess.run(["pkill", "-f", "piper-tts"], capture_output=True)
     return {"status": "stopped"}
 
 @app.get("/audio/speak")
@@ -1185,6 +1184,28 @@ async def get_document_page(filename: str, page_num: int):
         return {"error": str(e)}
 
 # Duplicate /api/documents DELETE and POST removed — single definitions kept above (lines ~472-530)
+
+
+# ── CHARACTER PHYSICS API ───────────────────────────────────────────────────
+class _EmotionReq(_BaseModel):
+    text: str = ""
+
+@app.get("/api/physics/emotion")
+async def get_physics_emotion(text: str = ""):
+    """Analyze text for emotion and return soft-body physics parameters for the avatar."""
+    from utils.character_physics import analyze_text, get_current_state
+    if text:
+        return analyze_text(text)
+    return get_current_state()
+
+
+@app.post("/api/physics/set-emotion")
+async def set_physics_emotion(req: _EmotionReq):
+    """Apply an emotion from text to the live physics state."""
+    from utils.character_physics import apply_emotion_from_text
+    if req.text:
+        return apply_emotion_from_text(req.text)
+    return {"error": "No text provided"}
 
 
 if __name__ == "__main__":
