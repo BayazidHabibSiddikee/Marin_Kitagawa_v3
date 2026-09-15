@@ -1118,6 +1118,7 @@
         <button id="tools-btn" onclick="toggleToolsPanel()" class="tb-btn"><span id="tools-label">tools: …</span></button>
         <button id="vrm-toggle-btn" onclick="toggleVRM()"         class="tb-btn"><span id="vrm-label">avatar</span></button>
         <span id="physics-emotion-chip" style="display:none;font-size:.6rem;padding:3px 8px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-muted);letter-spacing:.05em;margin-left:-4px;" title="Live emotion physics">● neutral</span>
+        <button id="beat-btn"        onclick="window._toggleBeat()" class="tb-btn" title="Tap to listen to music and bounce on beat"><span id="beat-label">beat: off</span></button>
         <button id="stop-speech-btn" onclick="stopSpeech()" class="tb-btn" style="display:none; color:var(--danger); border-color:var(--danger)">✕ stop</button>
         <button id="voice-btn"      onclick="toggleVoice()"       class="tb-btn" title="Toggle TTS voice output"><span id="voice-label">voice: off</span></button>
         <button id="rag-btn"        onclick="toggleRag()"         class="tb-btn"><span id="rag-label">rag: off</span></button>
@@ -3219,8 +3220,8 @@
     }
 
     // ── SOFT-BODY PHYSICS ENGINE ───────────────────────────────────────────────
-    // Mass-spring-damper system for hair, spine, chest oscillation on VRM bones.
-    // Parameters shift with detected emotion; transition eases over ~0.5s.
+    // Three modes: idle (emotion-based), talk-reactive (voice amplitude drives bounce),
+    // beat-reactive (mic picks up music bass and bounces on beat).
 
     const EMOTION_PHYSICS_JS = {
         neutral:   { hair:{k:0.0016,c:0.06,amp:0.02,freq:1.8}, spine:{k:0.002,c:0.08,amp:0.005,freq:1.2}, chest:{k:0.001,c:0.05,amp:0.003,freq:1.5}, headTilt:0, shoulderDrop:0 },
@@ -3250,6 +3251,112 @@
     let _physShoulder = 0;
     let _physPrevP    = null;
 
+    // ── AUDIO / BEAT DETECTION ──────────────────────────────────────────────────
+    // talkMode:  uses audioAnalyser (TTS playback) to drive bounce from voice volume
+    // beatMode:  opens a mic stream and detects bass-energy beats for music response
+    let _audioMode = 'idle'; // 'idle' | 'talk' | 'beat'
+    let _audioEnergy = 0;    // smoothed voice/music energy 0..1
+    let _beatPhase   = 0;    // continuous phase for beat-synced oscillation
+    let _beatFreq    = 1.2;  // inferred beat frequency in Hz
+    let _beatBass    = 0;    // low-freq band energy (bass drum detection)
+    let _lastBeatTime = 0;   // last detected beat timestamp
+    let _beatHistory = [];   // recent beat intervals for BPM tracking
+    let _micStream   = null;
+    let _micAnalyser = null;
+    let _micSource   = null;
+    let _micReady    = false;
+
+    async function startBeatMode() {
+        if (_audioMode === 'beat') return;
+        try {
+            if (!_micStream) {
+                _micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                _micSource = audioContext.createMediaStreamSource(_micStream);
+                _micAnalyser = audioContext.createAnalyser();
+                _micAnalyser.fftSize = 512;
+                _micAnalyser.smoothingTimeConstant = 0.3;
+                _micSource.connect(_micAnalyser);
+                _micReady = true;
+            }
+            _audioMode = 'beat';
+            _beatHistory = [];
+            document.getElementById('physics-emotion-chip').textContent = '● beat';
+            document.getElementById('physics-emotion-chip').style.color = '#e84393';
+            console.log('[Physics] Beat mode activated — listening for music...');
+        } catch(e) {
+            console.warn('[Physics] Mic unavailable:', e.message);
+            alert('Mic access denied — tap "beat" mode again after allowing mic permission.');
+        }
+    }
+
+    function stopBeatMode() {
+        _audioMode = 'idle';
+        _audioEnergy = 0;
+        _beatBass = 0;
+        _beatHistory = [];
+        if (_micStream) {
+            _micStream.getTracks().forEach(t => t.stop());
+            _micStream = null;
+        }
+        _micReady = false;
+    }
+
+    function _readAudioEnergy() {
+        // talk mode: use existing TTS analyser (audioAnalyser is connected during playback)
+        if (_audioMode === 'talk' && audioAnalyser) {
+            const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+            audioAnalyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            _audioEnergy = Math.min(1, Math.sqrt(sum / data.length) * 6);
+            return;
+        }
+        // beat mode: analyze mic for bass energy
+        if (_audioMode === 'beat' && _micAnalyser) {
+            const data = new Uint8Array(_micAnalyser.frequencyBinCount);
+            _micAnalyser.getByteFrequencyData(data);
+            const binCount = data.length;
+            // Bass band: first ~8 bins (0-~750 Hz at 44.1kHz sample rate, fftSize=512)
+            const bassBins = Math.min(8, binCount);
+            let bassSum = 0;
+            let totalSum = 0;
+            for (let i = 0; i < bassBins; i++) bassSum += data[i];
+            for (let i = 0; i < binCount; i++) totalSum += data[i];
+            _beatBass = bassSum / (bassBins * 255);
+            _audioEnergy = Math.min(1, _beatBass * 1.5 + (totalSum / (binCount * 255)) * 0.3);
+            // Beat detection: energy spike vs rolling average
+            const now = performance.now();
+            if (_audioEnergy > 0.35 && now - _lastBeatTime > 280) { // min 214 bpm spacing
+                if (_beatHistory.length > 0) {
+                    const last = _beatHistory[_beatHistory.length - 1];
+                    const interval = now - last;
+                    if (interval > 300 && interval < 2000) {
+                        _beatHistory.push(now);
+                        if (_beatHistory.length > 8) _beatHistory.shift();
+                        if (_beatHistory.length >= 3) {
+                            const avgInterval = _beatHistory.reduce((a,b) => a+b,0) / _beatHistory.length;
+                            _beatFreq = 1000 / avgInterval;
+                            if (_beatFreq > 0.8 && _beatFreq < 4) { /* valid BPM range */ }
+                            else _beatHistory.shift();
+                        }
+                    }
+                }
+                _lastBeatTime = now;
+            }
+            // Decay when no beat
+            _audioEnergy *= 0.88;
+            return;
+        }
+        // idle: gentle breathing
+        _audioEnergy = 0;
+    }
+
     function _applyPhysEmotion(emotion) {
         if (emotion === _physEmotion) return;
         const prev = EMOTION_PHYSICS_JS[_physEmotion] || EMOTION_PHYSICS_JS.neutral;
@@ -3262,6 +3369,7 @@
     }
 
     function _stepPhys(dt, t) {
+        // Emotion parameter transition
         if (_physTrans < 1.0) {
             _physTrans = Math.min(1.0, _physTrans + dt / 0.5);
         }
@@ -3280,7 +3388,6 @@
         _physHeadTilt    = pp.headTilt + (cp.headTilt - pp.headTilt) * tx;
         _physShoulder    = pp.shoulderDrop + (cp.shoulderDrop - pp.shoulderDrop) * tx;
 
-        // Slowly drift springs toward current emotion params even after transition
         if (_physTrans >= 1.0) {
             ['hair','spine','chest'].forEach(part => {
                 const s = _springs[part];
@@ -3294,9 +3401,12 @@
             _physShoulder    += (cp.shoulderDrop - _physShoulder) * 0.03;
         }
 
-        // Spring-damper integration
+        // Read audio input every frame
+        _readAudioEnergy();
+
+        // ── MODE-SPECIFIC PHYSICS ─────────────────────────────────────────────────
         const breath = Math.sin(2 * Math.PI * 1.5 * t) * 0.003;
-        _springs.chest.target = breath;
+        const talking = _isTalking() || _audioEnergy > 0.08;
 
         function springStep(s, extForce, phaseOffset) {
             const springF = -s.k * (s.disp - s.target);
@@ -3307,21 +3417,66 @@
             return s.disp + s.amp * Math.sin(2 * Math.PI * s.freq * (t + phaseOffset));
         }
 
-        const hx = springStep(_springs.hair, 0, 0);
-        const hy = springStep(_springs.hair, 0, 0.5);
-        const sp = springStep(_springs.spine, 0, 0);
-        const ch = springStep(_springs.chest, 0, 0);
+        let hairX, hairY, spineFwd, chestExp;
+        if (_audioMode === 'beat' && _micReady) {
+            // ── BEAT MODE: bounce on detected beats ───────────────────────────────
+            const beatPulse = Math.max(0, _audioEnergy) * 0.08;
+            const beatPhase = (t * _beatFreq) % 1.0;
+            const kick = Math.exp(-beatPhase * 6) * beatPulse; // sharp attack, quick decay
+            const bodyBounce = kick * 0.6;
+            const hairBounce  = kick * 1.4; // hair is lighter, bounces more
+            const spineBounce = kick * 0.4;
+            hairX  = hairBounce * Math.sin(t * Math.PI * 2 * _beatFreq);
+            hairY  = hairBounce * 0.5;
+            spineFwd = spineBounce * (Math.sin(t * Math.PI * _beatFreq) * 0.5 + 0.5);
+            chestExp = bodyBounce * 0.3;
+            _physHeadTilt = Math.sin(t * Math.PI * 2 * _beatFreq) * 0.04 * beatPulse * 5;
+            _physShoulder = -beatPulse * 0.03 * Math.sin(t * Math.PI * _beatFreq);
+            // Update chip to show BPM
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) {
+                chip.textContent = `● ${_beatFreq.toFixed(1)}bpm`;
+                chip.style.color = '#e84393';
+            }
+        } else if (talking) {
+            // ── TALK MODE: bounce driven by voice energy ──────────────────────────
+            const talkAmp = Math.min(1, _audioEnergy * 2.5);
+            // Voice-driven random-looking bounce using deterministic noise
+            const talkPh = t * (3.5 + _audioEnergy * 2);
+            const talkMod = Math.sin(talkPh) * 0.5 + Math.sin(talkPh * 1.7) * 0.3 + Math.sin(talkPh * 2.3) * 0.2;
+            hairX  = talkMod * talkAmp * 0.025;
+            hairY  = Math.sin(talkPh * 0.7) * talkAmp * 0.008;
+            spineFwd = Math.sin(talkPh * 0.5) * talkAmp * 0.01;
+            chestExp = Math.sin(talkPh * 0.8) * talkAmp * 0.006;
+            _physHeadTilt = Math.sin(talkPh * 1.1) * talkAmp * 0.03;
+            _physShoulder = -talkAmp * 0.015;
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) { chip.textContent = '● talking'; chip.style.color = 'var(--teal)'; }
+        } else {
+            // ── IDLE MODE: gentle emotion-based breathing ─────────────────────────
+            _springs.chest.target = breath;
+            const hx = springStep(_springs.hair, 0, 0);
+            const hy = springStep(_springs.hair, 0, 0.5);
+            const sp = springStep(_springs.spine, 0, 0);
+            const ch = springStep(_springs.chest, 0, 0);
+            hairX  = hx * 0.015;
+            hairY  = hy * 0.004;
+            spineFwd = sp * 0.008;
+            chestExp = ch * 0.004;
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) {
+                const colors = {neutral:'var(--text-muted)',joy:'var(--teal)',excited:'var(--gold)',sad:'var(--coral)',angry:'#c0392b',thinking:'#8e44ad',surprised:'#e67e22',fear:'#7f8c8d',love:'#e84393',confident:'var(--teal)'};
+                chip.textContent = '● ' + _physEmotion;
+                chip.style.color = colors[_physEmotion] || 'var(--text-muted)';
+                chip.style.borderColor = colors[_physEmotion] || 'var(--border)';
+            }
+        }
 
         return {
-            hairX:     hx * 0.015,
-            hairY:     hy * 0.004,
-            spineFwd:  sp * 0.008,
-            spineTlt:  Math.sin(t * 2.1) * (_springs.spine.amp || 0.005) * 0.4,
-            chestExp:  ch * 0.004,
-            headTilt:  _physHeadTilt,
-            shoulder:  _physShoulder,
-            emotion:   _physEmotion,
-            trans:     Math.round(_physTrans * 1000) / 1000,
+            hairX, hairY, spineFwd,
+            spineTlt: Math.sin(t * 2.1) * (_springs.spine.amp || 0.005) * 0.4,
+            chestExp, headTilt: _physHeadTilt, shoulder: _physShoulder,
+            emotion: _physEmotion, trans: Math.round(_physTrans * 1000) / 1000,
         };
     }
 
@@ -3345,9 +3500,7 @@
             vrmModel.scene.scale.set(sc, 1.0, sc);
         }
     }
-
-    // Call from animateVRM each frame when vrmVisible
-    // Usage: var ph = _stepPhys(delta, vrmClock.elapsedTime); _applyPhysToVRM(ph);
+    // Usage in animateVRM: const ph = _stepPhys(delta, vrmClock.elapsedTime); _applyPhysToVRM(ph);
 
     // ── DIRECTOR PLAYBACK ENGINE ───────────────────────────────────────────────
     // Plays a timed action script from the Director model.
