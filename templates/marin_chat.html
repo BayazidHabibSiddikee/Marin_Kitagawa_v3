@@ -2295,7 +2295,12 @@
 
         canvas.addEventListener("webglcontextcreationerror", function(e) {
             console.error("WebGL context error:", e.statusMessage);
-            alert("WebGL Error: " + e.statusMessage);
+            // Silently fallback — sandboxed browsers may not support WebGL
+            // The chat still works fully; the avatar panel just stays hidden.
+            const container = document.getElementById('vrm-container');
+            if (container) container.style.display = 'none';
+            const resizer   = document.getElementById('vrm-resizer');
+            if (resizer) resizer.style.display = 'none';
         }, false);
 
         vrmScene = new THREE.Scene();

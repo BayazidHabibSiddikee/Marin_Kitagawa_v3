@@ -16,6 +16,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.cors import CORSMiddleware
 
 import database
 from config import (
@@ -52,6 +53,15 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Marin Tools", lifespan=lifespan)
+
+# Allow cross-origin so the VRM canvas can load GLTF/BVH from same server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ── SIMPLE AUTH MIDDLEWARE ───────────────────────────────────────────────
 
