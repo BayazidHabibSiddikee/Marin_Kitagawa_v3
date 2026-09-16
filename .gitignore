@@ -89,3 +89,10 @@ marin_tool_caller_gguf/
 # ── Large Archives & Patches ─────────────────────────────────────────────────
 *.zip
 *.patch
+
+# ── Local Configs & Secrets ──────────────────────────────────────────────────
+settings.json
+config.py
+storage/.session_key
+storage/guest_vault/.secret/root_key.pem
+storage/guest_vault/admin_config.yaml
