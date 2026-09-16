@@ -1,4 +1,7 @@
-from duckduckgo_search import DDGS
+try:
+    from ddgs import DDGS
+except ImportError:
+    from duckduckgo_search import DDGS
 
 from tools.trading_strategies.base_strategy import TradingStrategy
 
