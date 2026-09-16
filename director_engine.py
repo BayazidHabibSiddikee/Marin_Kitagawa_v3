@@ -557,6 +557,6 @@ def make_video_director_script(
 
     encoded = encode_director_script(script)
     tag = f"__DIRECTOR__{encoded}"
-    if allow_dance and mood in ("dance", "hype", "hype_metal"):
-        tag += "__DANCE__"
+    if allow_dance and mood in ("dance", "hype", "hype_metal", "chill"):
+        tag += " __DANCE__"
     return tag, mood

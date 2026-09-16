@@ -385,7 +385,7 @@ def binance_tool(action: str = "portfolio") -> str:
 def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
     """Search YouTube for a video or music, classify its mood from the transcript,
     and return a timed director animation sequence for Marin to perform.
-    Set allow_dance=True only when the user explicitly asked to dance."""
+    Set allow_dance=True if the user explicitly asked to dance, or if the search is for upbeat music."""
     try:
         import yt_dlp
         ydl_opts = {

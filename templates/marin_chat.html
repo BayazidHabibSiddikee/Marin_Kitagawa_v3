@@ -4011,23 +4011,34 @@
             const rawMatch   = url.match(/^([\w-]{11})$/);
             if (embedMatch) videoId = embedMatch[1];
             else if (rawMatch) videoId = rawMatch[1];
+            else if (url.includes('v=')) videoId = url.split('v=')[1].split('&')[0];
+            else if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1].split('?')[0];
             else videoId = url;
-            if (!videoId) return;
-            if (tvIframe) {
+            
+            if (tvIframe && videoId) {
                 tvIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
                 tvIframe.style.display = 'block';
             }
-            if (standby) standby.style.display = 'none';
-            // Dance mode is only triggered by explicit __DANCE__ tag from the AI
-            // Trigger a relaxed "watching together" VRM sequence if no director script is already playing
-            _triggerWatchingAnimation();
-            return;
+        } else {
+            if (tvIframe) {
+                tvIframe.src = url;
+                tvIframe.style.display = 'block';
+            }
         }
-
-        if (tvIframe) { tvIframe.src = url; tvIframe.style.display = 'block'; }
         if (standby) standby.style.display = 'none';
-        // Also trigger watching animation for generic stream content
-        _triggerWatchingAnimation();
+
+        // Turn around to face the TV (z = -4)
+        if (typeof vrmModel !== 'undefined' && vrmModel) {
+            let targetRot = 0; // face TV
+            let turnInterval = setInterval(() => {
+                if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
+                    vrmModel.scene.rotation.y = targetRot;
+                    clearInterval(turnInterval);
+                } else {
+                    vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
+                }
+            }, 16);
+        }
     }
 
     function hideProjector() {
@@ -4037,6 +4048,19 @@
         if (standby)  standby.style.display = 'flex';
         // Stop dancing when TV turns off
         if (typeof stopDanceMode === 'function') stopDanceMode();
+
+        // Turn back to face the camera (+Z)
+        if (typeof vrmModel !== 'undefined' && vrmModel) {
+            let targetRot = Math.PI; // face camera
+            let turnInterval = setInterval(() => {
+                if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
+                    vrmModel.scene.rotation.y = targetRot;
+                    clearInterval(turnInterval);
+                } else {
+                    vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
+                }
+            }, 16);
+        }
     }
 
     // ── Watching Together Animation ───────────────────────────────────────────
@@ -4874,6 +4898,7 @@
                                       .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
                                       .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
                                       .replace('__PROJECTOR_OFF__','')
+                                      .replace(/==+/g, '')
                                       .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
 
                 // During streaming: throttled partial render (markdown + KaTeX every ~250ms)
@@ -4901,6 +4926,7 @@
                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
                                      .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
                                      .replace('__PROJECTOR_OFF__', '')
+                                     .replace(/==+/g, '')
                                      .replace('__TALK_ON__','')
                                      .replace('__TALK_OFF__','')
                                      .trim();
