@@ -147,13 +147,27 @@ def generate_lipsync_schedule(wav_bytes: bytes, hop_ms: int = 20) -> list[dict]:
 
 
 # ── Main TTS entry points ──────────────────────────────────────────────────────
+CURRENT_ENGINE = "gtts"
+
+def set_engine(engine: str):
+    global CURRENT_ENGINE
+    if engine in ["gtts", "piper"]:
+        CURRENT_ENGINE = engine
+        print(f"[tts] Engine set to {engine}")
+
 async def generate_wav(text: str) -> bytes:
-    """Generate WAV bytes from text. Uses gTTS online first, falls back to Piper."""
+    """Generate WAV bytes from text using the selected TTS engine."""
     clean_text = _clean(text)
     if not clean_text:
         return b""
 
-    # Primary: gTTS (Google, online, female voice, zero RAM)
+    if CURRENT_ENGINE == "piper":
+        # Fast local TTS
+        wav = await _generate_wav_piper(clean_text)
+        if wav: return wav
+        print("[tts] Piper failed, falling back to gTTS")
+
+    # gTTS (Google online)
     try:
         wav = await asyncio.to_thread(_gtts_to_wav, clean_text)
         if wav:
@@ -161,9 +175,10 @@ async def generate_wav(text: str) -> bytes:
     except Exception as e:
         print(f"[tts] gTTS async error: {e}")
 
-    # Fallback: Piper (local)
-    return await _generate_wav_piper(clean_text)
-
+    # Fallback to Piper if gTTS was the selected engine but failed
+    if CURRENT_ENGINE == "gtts":
+        return await _generate_wav_piper(clean_text)
+    return b""
 
 async def generate_wav_with_lipsync(text: str) -> tuple[bytes, list[dict]]:
     """

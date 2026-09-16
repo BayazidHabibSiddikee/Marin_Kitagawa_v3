@@ -143,6 +143,14 @@ async def set_voice_setting(request: Request):
     print(f"[VOICE] Manual Override: {'ON' if marin.VOICE_ENABLED else 'OFF'}")
     return {"status": "success", "voice_enabled": marin.VOICE_ENABLED}
 
+@app.post("/settings/tts-engine")
+async def set_tts_engine(request: Request):
+    from utils.tts import set_engine
+    data = await request.json()
+    engine = data.get("engine", "gtts")
+    set_engine(engine)
+    return {"status": "success", "engine": engine}
+
 @app.get("/api/tts/status")
 async def tts_status():
     from utils.tts import is_tts_available

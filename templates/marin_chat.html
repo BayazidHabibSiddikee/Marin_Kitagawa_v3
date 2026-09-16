@@ -1186,6 +1186,15 @@
                  <button class="sidebar-btn" onclick="loadVRMModel('7931905149146643613.vrm')" style="color:var(--teal);border-color:var(--teal-dim);">Lynx ★</button>
             </div>
         </div>
+        
+        <div class="sidebar-section">Voice Engine</div>
+        <div style="padding: 0 16px 12px; display:flex; flex-direction:column; gap:8px;">
+            <select id="sidebar-tts-engine" onchange="setTTSEngine(this.value)" style="width:100%; padding:8px; background:var(--ink2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12px; outline:none; cursor:pointer;">
+                <option value="gtts">Google TTS (Online)</option>
+                <option value="piper">Piper TTS (Local, Instant)</option>
+            </select>
+        </div>
+
         <div class="dropdown-wrapper" id="actions-dropdown">
             <button class="sidebar-btn" onclick="toggleSidebarDropdown('actions-dropdown')">
                 <span class="icon">🏃</span> Motions <span class="icon-arrow">▼</span>
@@ -5079,6 +5088,19 @@
         btn.style.color = voiceOn ? 'var(--teal)' : '';
         btn.style.borderColor = voiceOn ? 'var(--teal-dim)' : '';
     }
+    async function setTTSEngine(engine) {
+        try {
+            await fetch('/settings/tts-engine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ engine: engine })
+            });
+            console.log("TTS Engine set to", engine);
+        } catch (e) {
+            console.error("Failed to set TTS engine", e);
+        }
+    }
+
     async function toggleVoice() {
         if (!_ttsAvailable) return;  // disabled if TTS not available
         voiceOn = !voiceOn;
