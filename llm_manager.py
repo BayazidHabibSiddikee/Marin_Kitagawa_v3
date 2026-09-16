@@ -404,6 +404,38 @@ def get_best_llm(deep: bool = False):
         _save_rate_limits(cleaned)
         limits = cleaned
 
+    # ── FreeLLMAPI — priority-0 proxy (port 3001) ──────────────────────────────
+    # freellmapi is a local OpenAI-compatible proxy with its own bandit router.
+    # Sending model='auto' means "let freellmapi pick the best model".
+    # It handles rate-limit rotation, sticky sessions, and health checks itself.
+    # We probe port 3001 first — if not running, fall through to normal providers.
+    _FREELLM_URL  = os.environ.get("FREELLMAPI_URL", "http://127.0.0.1:3001/v1")
+    _FREELLM_KEY  = os.environ.get("FREELLMAPI_KEY", "")
+    _FREELLM_RATE_KEY = f"freellmapi|auto"
+
+    if not _is_rate_limited("freellmapi", "auto", limits, now):
+        _freellm_up = False
+        try:
+            resp = _get_http_client().get("http://127.0.0.1:3001/api/health", timeout=2.0)
+            _freellm_up = resp.status_code < 500
+        except Exception:
+            pass
+
+        if _freellm_up:
+            try:
+                llm = _try_build_llm("auto", _FREELLM_KEY, _FREELLM_URL)
+                if _smart_router:
+                    _smart_router.register_provider("freellmapi", intelligence=0.90, priority=0)
+                    _smart_router.record_success("freellmapi", latency_ms=1)
+                print("[LLM] Using freellmapi (local proxy, port 3001)")
+                return llm, _FREELLM_KEY, "auto"
+            except Exception as _fe:
+                print(f"[LLM] freellmapi build failed: {_fe} — falling through to providers")
+        else:
+            print("[LLM] freellmapi not running on :3001 — falling through to providers")
+    else:
+        print("[LLM] freellmapi rate-limited — skipping")
+
     providers = get_providers()
 
     def _try_provider_with_models(provider: dict, model_list: list):
