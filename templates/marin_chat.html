@@ -4607,74 +4607,9 @@
         if (isRecording) { stopMic(); return; }
         const btn = document.getElementById('mic-btn');
 
-        // ── Priority 1: Web Speech API (live preview) ──────────────────────────
-        if (SpeechRecognition) {
-            try {
-                _speechRec = new SpeechRecognition();
-                _speechRec.continuous = false;
-                _speechRec.interimResults = true;
-                _speechRec.lang = 'en-US';
-                _speechRec.maxAlternatives = 1;
-
-                const inp = document.getElementById('msg-input');
-                let _baseValue = inp.value;   // preserve existing text
-                let _finalText = '';
-
-                _speechRec.onresult = (ev) => {
-                    let interim = '';
-                    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-                        const t = ev.results[i][0].transcript;
-                        if (ev.results[i].isFinal) _finalText += t;
-                        else interim = t;
-                    }
-                    // Show live preview
-                    inp.value = _baseValue + (_baseValue ? ' ' : '') + (_finalText + interim).trim();
-                    inp.style.height = 'auto';
-                    inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
-                };
-
-                _speechRec.onend = () => {
-                    isRecording = false;
-                    _usingSpeechAPI = false;
-                    btn.classList.remove('recording');
-                    btn.textContent = '🎤';
-                    btn.title = 'Hold to speak';
-                    btn.disabled = false;
-                    // Focus input for easy editing/sending
-                    if (inp.value.trim()) inp.focus();
-                };
-
-                _speechRec.onerror = (ev) => {
-                    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-                        // Fall through to MediaRecorder path
-                        _speechRec = null;
-                        isRecording = false;
-                        toggleMic();  // retry with MediaRecorder
-                        return;
-                    }
-                    console.warn('[STT] SpeechRecognition error:', ev.error);
-                    isRecording = false;
-                    btn.classList.remove('recording');
-                    btn.textContent = '🎤';
-                    btn.disabled = false;
-                };
-
-                _speechRec.start();
-                isRecording = true;
-                _usingSpeechAPI = true;
-                btn.classList.add('recording');
-                btn.title = 'Listening… click to stop';
-                btn.textContent = '🔴';
-                return;
-            } catch(e) {
-                console.warn('[STT] Web Speech API failed, falling back to Whisper:', e);
-                _speechRec = null;
-            }
-        }
-
-        // ── Priority 2: MediaRecorder → server Whisper ─────────────────────────
+        // Force MediaRecorder → server Whisper (more reliable than Web Speech API)
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            alert('Microphone not supported in this browser.');
+            alert('Microphone blocked by browser. You must access Marin via http://localhost:5069 or http://127.0.0.1:5069 (not a raw IP network address) for the microphone to work over HTTP.');
             return;
         }
         let stream;
