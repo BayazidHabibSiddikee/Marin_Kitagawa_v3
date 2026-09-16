@@ -322,7 +322,14 @@ async def stream_marin_chat(
             needs_tools = False
             # Push YouTube/VRM tags immediately so TV + avatar react without waiting for LLM
             for tag in tool_tags:
-                yield tag
+                yield f"{tag} "
+            
+            # If the tool provided a fully crafted response (like youtube_search_tool), skip the LLM
+            if tool_result and intent in ["youtube_search_tool"]:
+                yield tool_result
+                database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
+                database.save_message("marin", "assistant", tool_result, user_id=user_id, session_id=session_id)
+                return
 
     # 2. INSTANT PERSONA RESPONSE
     from config import PERSONA_MODEL
