@@ -55,7 +55,13 @@ def _gtts_to_wav(text: str) -> bytes:
         segment = AudioSegment.from_file(mp3_buf, format="mp3")
         segment = segment.set_channels(1).set_frame_rate(SAMPLE_RATE).set_sample_width(2)
 
+        # Speed up the voice by 1.25x (pitch shifts up slightly, which fits Marin)
+        fast_rate = int(segment.frame_rate * 1.25)
+        segment = segment._spawn(segment.raw_data, overrides={'frame_rate': fast_rate})
+        segment = segment.set_frame_rate(SAMPLE_RATE)
+
         wav_buf = io.BytesIO()
+
         segment.export(wav_buf, format="wav")
         return wav_buf.getvalue()
 

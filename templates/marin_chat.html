@@ -3880,13 +3880,15 @@
             if (now - _lastLiveAnimTime < rule.minGap) continue;
             if (rule.words.some(w => lower.includes(w))) {
                 if (typeof playAnimation === 'function') playAnimation(rule.anim);
-                // Drive VRM facial expression with strength blending
                 if (typeof setVRMExpression === 'function') {
                     setVRMExpression(rule.expr || rule.anim, 0.85);
-                    // Fade back to neutral after 3 seconds
+                    // Fade back to neutral after 3.5 seconds
                     setTimeout(() => {
-                        try { setVRMExpression('neutral', 0.3); } catch(e) {}
-                    }, 3000);
+                        try { 
+                            setVRMExpression('neutral', 1.0); 
+                            if (typeof _applyPhysEmotion === 'function') _applyPhysEmotion('neutral');
+                        } catch(e) {}
+                    }, 3500);
                 }
                 // Also drive soft-body physics for this emotion
                 const emotionMap = {
@@ -5866,8 +5868,11 @@
             if (typeof setVRMExpression === 'function' && d.expr) {
                 setVRMExpression(d.expr, strength);
                 setTimeout(() => {
-                    try { setVRMExpression('neutral', 0.3); } catch(_) {}
-                }, 4000);
+                    try { 
+                        setVRMExpression('neutral', 1.0); 
+                        if (typeof _applyPhysEmotion === 'function') _applyPhysEmotion('neutral');
+                    } catch(_) {}
+                }, 3500);
             }
 
             // Drive soft-body physics emotion
