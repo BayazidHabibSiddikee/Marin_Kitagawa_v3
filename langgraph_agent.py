@@ -392,9 +392,7 @@ def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
             'quiet': True,
             'default_search': 'ytsearch1',
             'noplaylist': True,
-            'format': 'best[ext=webm]/best[ext=mp4]/best',
-            # Use nodejs as the JS runtime — avoids the deno-not-found warning
-            'js_runtimes': ['nodejs:/usr/sbin/node'],
+            'format': 'best[ext=webm]/best[ext=mp4]/best'
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=False)
