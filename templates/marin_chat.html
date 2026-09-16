@@ -1291,6 +1291,20 @@
                 <button class="set-dashed-btn" onclick="hideProjector()" style="flex:1; color:var(--danger); border-color:var(--danger);">Turn Off</button>
             </div>
         </div>
+
+        <!-- Browser Activity Log -->
+        <div class="dropdown-wrapper" id="browser-log-dropdown" style="margin-top:8px;">
+            <button class="sidebar-btn" onclick="toggleSidebarDropdown('browser-log-dropdown')">
+                🌐 Browser Activity
+            </button>
+            <div class="dropdown-content" style="display:none;padding:6px;">
+                <div id="browser-log-panel" style="background:var(--ink2);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:var(--text-muted);height:160px;overflow-y:auto;line-height:1.5;">
+                    <span style="color:var(--text-dim)">Waiting for Marin's search activity...</span>
+                </div>
+                <button onclick="window.openBrowserInTV()" style="margin-top:6px;width:100%;padding:4px 8px;background:var(--ink2);border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:.65rem;cursor:pointer;">📺 Show search in TV</button>
+            </div>
+        </div>
+
         <div class="sidebar-section">Commands</div>
         <div id="active-tasks" style="padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-dim);">
             <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
@@ -3729,15 +3743,37 @@
     // ── Live Director: scan each incoming chunk for emotion keywords ──────────
     // Fires animations in real-time as Marin's response streams in.
     const _LIVE_EMOTION_RULES = [
-        { words: ['excited','amazing','awesome','incredible','yes!','yay','!'], anim: 'excitement',   minGap: 4000 },
-        { words: ['haha','lol','funny','hehe','laugh'],                          anim: 'amusement',    minGap: 5000 },
-        { words: ['hmm','think','consider','actually','well,'],                  anim: 'curiosity',    minGap: 5000 },
-        { words: ['sorry','sad','unfortunate','miss'],                           anim: 'sadness',      minGap: 8000 },
-        { words: ['wow','whoa','wait','really?','seriously?'],                   anim: 'surprise',     minGap: 4000 },
-        { words: ['love','adore','sweetheart','❤','💕'],                        anim: 'love',         minGap: 6000 },
-        { words: ['sure','absolutely','definitely','of course'],                 anim: 'approval',     minGap: 5000 },
-        { words: ['hello','hi','hey','welcome'],                                 anim: 'action_greeting', minGap: 10000 },
-        { words: ['let me explain','basically','the idea','so,'],               anim: 'neutral2',     minGap: 6000 },
+        // Joy / happiness
+        { words: ['haha','lol','lmao','rofl','hehe','😂','🤣','funny','hilarious','cracking up'], anim: 'amusement',   expr: 'happy',    minGap: 4000 },
+        { words: ['yay','woohoo','amazing','awesome','incredible','yes!','finally!','🎉','🥳','congrats'], anim: 'excitement', expr: 'happy', minGap: 3500 },
+        { words: ['love you','luv','adore','sweetheart','darling','❤','💕','💖','💗','mwah'], anim: 'love', expr: 'happy', minGap: 5000 },
+        { words: ['happy','glad','great','wonderful','fantastic','perfect','nice!','yep!','sure!'], anim: 'approval', expr: 'happy', minGap: 4500 },
+
+        // Thinking / curiosity
+        { words: ['hmm','hm,','let me think','actually','well,','interesting','consider','wonder'], anim: 'curiosity', expr: 'relaxed', minGap: 4000 },
+        { words: ['i think','i believe','in my opinion','perhaps','maybe','probably','likely'], anim: 'curiosity', expr: 'relaxed', minGap: 5000 },
+        { words: ['let me explain','basically','so,','the reason','because','therefore','thus'], anim: 'neutral2',  expr: 'neutral',  minGap: 5000 },
+
+        // Surprise / shock
+        { words: ['wow','whoa','wait','really?','seriously?','no way','oh my','omg','what?!','!?'], anim: 'surprise', expr: 'surprised', minGap: 3500 },
+        { words: ['i did not expect','shocking','unbelievable','incredible','mind-blowing','wait what'], anim: 'surprise', expr: 'surprised', minGap: 4000 },
+
+        // Sadness / empathy
+        { words: ['sorry','i apologize','unfortunately','that is sad','sad','miss you','miss','😢','😭','hurts'], anim: 'sadness', expr: 'sad', minGap: 7000 },
+        { words: ['difficult','hard time','struggling','lost','gone','passed away','heartbroken'], anim: 'sadness', expr: 'sad', minGap: 8000 },
+
+        // Confidence / pride
+        { words: ['absolutely','definitely','of course','100%','for sure','no doubt','trust me'], anim: 'approval', expr: 'happy', minGap: 4000 },
+        { words: ['i can do','i will','let me handle','leave it to me','i got this','i know'], anim: 'action_confidence', expr: 'happy', minGap: 5000 },
+
+        // Greetings
+        { words: ['hello','hi','hey','welcome','good morning','good evening','nice to meet'], anim: 'action_greeting', expr: 'happy', minGap: 10000 },
+
+        // Embarrassed / shy
+        { words: ['ehehe','hehe~','um,','uh,','w-well','i-i','blush','shy','embarrass','teehee','kyaa'], anim: 'neutral2', expr: 'neutral', minGap: 5000 },
+
+        // Anger / frustration (Marin mild)
+        { words: ['ugh','argh','not again','frustrating','come on','really now','seriously?!'], anim: 'amusement', expr: 'angry', minGap: 6000 },
     ];
     let _lastLiveAnimTime = 0;
 
@@ -3750,6 +3786,14 @@
             if (now - _lastLiveAnimTime < rule.minGap) continue;
             if (rule.words.some(w => lower.includes(w))) {
                 if (typeof playAnimation === 'function') playAnimation(rule.anim);
+                // Drive VRM facial expression with strength blending
+                if (typeof setVRMExpression === 'function') {
+                    setVRMExpression(rule.expr || rule.anim, 0.85);
+                    // Fade back to neutral after 3 seconds
+                    setTimeout(() => {
+                        try { setVRMExpression('neutral', 0.3); } catch(e) {}
+                    }, 3000);
+                }
                 // Also drive soft-body physics for this emotion
                 const emotionMap = {
                     excitement: 'excited', amusement: 'joy', curiosity: 'thinking',
@@ -4405,16 +4449,87 @@
         }
     }
 
-    // ── MIC / SPEECH-TO-TEXT ────────────────────────────────────────────────
-    // Click to start recording, click again to stop. The recorded blob is sent
-    // to /audio/transcribe (faster-whisper) and the result is dropped into the
-    // input box for review before sending.
+    // ── MIC / SPEECH-TO-TEXT ────────────────────────────────────────────────────
+    // Priority 1: Web Speech API (real-time, no upload, works offline)
+    // Priority 2: MediaRecorder → /audio/transcribe (faster-whisper on server)
     let mediaRecorder = null;
     let micChunks = [];
     let isRecording = false;
+    let _speechRec = null;
+    let _usingSpeechAPI = false;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     async function toggleMic() {
         if (isRecording) { stopMic(); return; }
+        const btn = document.getElementById('mic-btn');
+
+        // ── Priority 1: Web Speech API (live preview) ──────────────────────────
+        if (SpeechRecognition) {
+            try {
+                _speechRec = new SpeechRecognition();
+                _speechRec.continuous = false;
+                _speechRec.interimResults = true;
+                _speechRec.lang = 'en-US';
+                _speechRec.maxAlternatives = 1;
+
+                const inp = document.getElementById('msg-input');
+                let _baseValue = inp.value;   // preserve existing text
+                let _finalText = '';
+
+                _speechRec.onresult = (ev) => {
+                    let interim = '';
+                    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+                        const t = ev.results[i][0].transcript;
+                        if (ev.results[i].isFinal) _finalText += t;
+                        else interim = t;
+                    }
+                    // Show live preview
+                    inp.value = _baseValue + (_baseValue ? ' ' : '') + (_finalText + interim).trim();
+                    inp.style.height = 'auto';
+                    inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
+                };
+
+                _speechRec.onend = () => {
+                    isRecording = false;
+                    _usingSpeechAPI = false;
+                    btn.classList.remove('recording');
+                    btn.textContent = '🎤';
+                    btn.title = 'Hold to speak';
+                    btn.disabled = false;
+                    // Focus input for easy editing/sending
+                    if (inp.value.trim()) inp.focus();
+                };
+
+                _speechRec.onerror = (ev) => {
+                    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+                        // Fall through to MediaRecorder path
+                        _speechRec = null;
+                        isRecording = false;
+                        toggleMic();  // retry with MediaRecorder
+                        return;
+                    }
+                    console.warn('[STT] SpeechRecognition error:', ev.error);
+                    isRecording = false;
+                    btn.classList.remove('recording');
+                    btn.textContent = '🎤';
+                    btn.disabled = false;
+                };
+
+                _speechRec.start();
+                isRecording = true;
+                _usingSpeechAPI = true;
+                btn.classList.add('recording');
+                btn.title = 'Listening… click to stop';
+                btn.textContent = '🔴';
+                return;
+            } catch(e) {
+                console.warn('[STT] Web Speech API failed, falling back to Whisper:', e);
+                _speechRec = null;
+            }
+        }
+
+        // ── Priority 2: MediaRecorder → server Whisper ─────────────────────────
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             alert('Microphone not supported in this browser.');
             return;
@@ -4423,31 +4538,35 @@
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (e) {
-            alert('Microphone access denied. Please allow microphone permission and try again.');
+            alert('Microphone access denied. Please allow microphone permission.');
             return;
         }
         micChunks = [];
         mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
         mediaRecorder.onstop = async () => {
-            stream.getTracks().forEach(t => t.stop());  // release the mic
+            stream.getTracks().forEach(t => t.stop());
             const blob = new Blob(micChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
             await transcribeBlob(blob);
         };
         mediaRecorder.start();
         isRecording = true;
-        const btn = document.getElementById('mic-btn');
         btn.classList.add('recording');
         btn.title = 'Click to stop recording';
         btn.textContent = '⏹';
     }
 
     function stopMic() {
+        const btn = document.getElementById('mic-btn');
+        if (_usingSpeechAPI && _speechRec) {
+            _speechRec.stop();
+            _speechRec = null;
+            return;
+        }
         if (mediaRecorder && isRecording) {
             isRecording = false;
-            const btn = document.getElementById('mic-btn');
             btn.classList.remove('recording');
-            btn.textContent = '⋯';  // processing spinner
+            btn.textContent = '⋯';
             btn.title = 'Transcribing…';
             btn.disabled = true;
             mediaRecorder.stop();
@@ -4470,7 +4589,6 @@
                 inp.style.height = 'auto';
                 inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
             } else {
-                // Give the user a brief visual cue that nothing was heard
                 btn.textContent = '—';
                 await new Promise(r => setTimeout(r, 800));
             }
@@ -4684,7 +4802,13 @@
                                      .trim();
                 try { typingBubble.innerHTML = renderWithLatex(cleanText); }
                 catch { typingBubble.textContent = cleanText; }
-                
+
+                // Run transformer emotion on full response (more accurate than streaming keywords)
+                // Fire and forget — doesn't block TTS or UI updates
+                if (typeof _classifyAndApplyEmotion === 'function') {
+                    _classifyAndApplyEmotion(cleanText).catch(() => {});
+                }
+
                 if (shouldSpeak) {
                     playVoiceAudio(cleanText);
                 } else {
@@ -5489,6 +5613,124 @@
             setTimeout(_schedulePreload, 3000);
         } catch(e) { console.error('Init error:', e); }
     };
+
+    // ── BROWSER ACTIVITY LOG (SSE stream from /api/browser/stream) ────────────
+    // Color-coded live feed of Marin's web searches and fetches.
+    // When a FETCH event fires, the TV projector automatically shows the live
+    // browser page (/api/browser/live) if it is currently idle.
+    let _browserLogES = null;
+
+    function _initBrowserLog() {
+        if (_browserLogES) return;
+        const panel = document.getElementById('browser-log-panel');
+        if (!panel) return;
+        panel.innerHTML = '';   // clear placeholder text
+
+        _browserLogES = new EventSource('/api/browser/stream');
+
+        _browserLogES.onmessage = (ev) => {
+            try {
+                const d    = JSON.parse(ev.data);
+                const line = (d.line || '').trim();
+                if (!line) return;
+
+                // Remove leading timestamp for readability
+                const clean = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ /, '');
+
+                // Color by event type
+                let color = '#64748b';
+                if (line.includes('SEARCH:'))  color = '#7dd3fc';
+                else if (line.includes('FETCH:'))  color = '#86efac';
+                else if (line.includes('RESULT:')) color = '#c4b5fd';
+                else if (line.includes('ERROR'))   color = '#fca5a5';
+
+                const el = document.createElement('div');
+                el.style.cssText = `color:${color};margin:1px 0;word-break:break-all`;
+                el.textContent   = clean;
+                panel.appendChild(el);
+                panel.scrollTop  = panel.scrollHeight;
+
+                // Keep DOM lean
+                while (panel.children.length > 200) panel.removeChild(panel.firstChild);
+
+                // ── Auto-show live browser in TV projector on FETCH ────────────
+                if (line.includes('FETCH:')) {
+                    try {
+                        const tvIframe = document.getElementById('vrm-tv-iframe');
+                        const tvSrc    = tvIframe ? tvIframe.src : '';
+                        const isIdle   = !tvSrc || tvSrc === '' || tvSrc === window.location.href;
+                        if (isIdle && typeof projectorObject !== 'undefined' && projectorObject) {
+                            showProjector('/api/browser/live', 'stream');
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+        };
+
+        _browserLogES.onerror = () => {
+            if (_browserLogES) { _browserLogES.close(); _browserLogES = null; }
+            setTimeout(_initBrowserLog, 3000);
+        };
+    }
+
+    // Open browser live view in the TV projector (sidebar button)
+    window.openBrowserInTV = function() {
+        showProjector('/api/browser/live', 'stream');
+    };
+
+    // Start browser log SSE connection after page fully loads
+    setTimeout(_initBrowserLog, 1500);
+
+
+    // ── TRANSFORMER EMOTION (/api/emotion/classify after each full response) ───
+    // liveDirectorScan() runs fast keyword rules during streaming.
+    // _classifyAndApplyEmotion() runs the distilroberta transformer once the full
+    // response arrives — more accurate, combines with keyword boost layer.
+    let _lastEmotionCall = 0;
+    const _MIN_EMOTION_GAP = 3000;   // limit calls to once per 3s
+
+    async function _classifyAndApplyEmotion(text) {
+        if (!text || text.length < 10) return;
+        const now = Date.now();
+        if (now - _lastEmotionCall < _MIN_EMOTION_GAP) return;
+        _lastEmotionCall = now;
+
+        try {
+            const r = await fetch('/api/emotion/classify', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ text: text.slice(0, 500) }),
+            });
+            if (!r.ok) return;
+            const d = await r.json();
+
+            if (!d || d.emotion === 'neutral' || (d.confidence || 0) < 0.38) return;
+
+            const strength = Math.min(0.95, (d.confidence || 0.5) * 0.9);
+
+            // Blend VRM facial expression
+            if (typeof setVRMExpression === 'function' && d.expr) {
+                setVRMExpression(d.expr, strength);
+                setTimeout(() => {
+                    try { setVRMExpression('neutral', 0.3); } catch(_) {}
+                }, 4000);
+            }
+
+            // Drive soft-body physics emotion
+            if (typeof _applyPhysEmotion === 'function' && d.phys) {
+                _applyPhysEmotion(d.phys);
+            }
+
+            // Trigger matching animation if nothing scripted is running
+            if (typeof playAnimation === 'function' && d.anim
+                    && !_danceMode && !_directorScriptActive) {
+                playAnimation(d.anim);
+            }
+
+            console.log(`[EmotionCLF] ${d.emotion} (${(d.confidence*100).toFixed(0)}%) expr:${d.expr}`);
+        } catch(e) { /* silently ignore — enhancement only */ }
+    }
+
 </script>
 
 </body>

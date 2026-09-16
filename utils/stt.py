@@ -68,13 +68,35 @@ def listen_and_transcribe(timeout: int = 5) -> str:
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
     """Transcribe an in-memory audio clip (webm/ogg/wav/mp3 — anything ffmpeg/PyAV
-    can decode). Used by the web UI's mic button, which uploads a recorded blob."""
+    can decode). Used by the web UI's mic button, which uploads a recorded blob.
+
+    Fallback chain:
+    1. faster-whisper (local, fast, high quality)
+    2. Google Speech Recognition (free, no API key — requires internet)
+    """
     if not audio_bytes:
         return ""
-    model = get_stt_model()
-    # faster-whisper decodes the container itself via PyAV, so a raw BytesIO works
-    segments, _ = model.transcribe(io.BytesIO(audio_bytes), beam_size=1)
-    return "".join(segment.text for segment in segments).strip()
+
+    # ── Priority 1: faster-whisper ─────────────────────────────────────────
+    try:
+        model = get_stt_model()
+        # faster-whisper decodes the container itself via PyAV, so a raw BytesIO works
+        segments, _ = model.transcribe(io.BytesIO(audio_bytes), beam_size=1)
+        result = "".join(segment.text for segment in segments).strip()
+        if result:
+            return result
+    except Exception as e:
+        print(f"[STT] faster-whisper failed: {e} — trying Google SR")
+
+    # ── Priority 2: Google Speech Recognition (free, no API key) ──────────
+    try:
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
+            audio_data = recognizer.record(source)
+        return recognizer.recognize_google(audio_data)
+    except Exception as e:
+        print(f"[STT] Google SR also failed: {e}")
+        return ""
 
 
 if __name__ == "__main__":

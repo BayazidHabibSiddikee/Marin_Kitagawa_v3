@@ -38,8 +38,12 @@ TOOL_DOMAINS = {
         "tools": ["terminal_tool", "file_tool", "batch_convert_tool"]
     },
     "Research": {
-        "keywords": ["pdf", "document", "paper", "analyzer", "search", "web", "rag", "knowledge", "hub", "scrape", "resource"],
-        "tools": ["rag_search", "resource_tool", "pdf_analyze_tool"]
+        "keywords": [
+            "pdf", "document", "paper", "analyzer", "search", "web", "rag", "knowledge",
+            "hub", "scrape", "resource", "news", "information", "research", "look up",
+            "find out", "what is", "current", "latest", "today",
+        ],
+        "tools": ["rag_search", "resource_tool", "pdf_analyze_tool", "web_search_tool"]
     },
     "Productivity": {
         "keywords": ["timer", "countdown", "stopwatch", "alarm", "wake", "remind", "weather", "temp", "humidity", "rain", "sun", "map", "location", "places", "find", "pin", "habit", "habits", "todo", "task"],

@@ -536,6 +536,15 @@ def opencode_tool(task: str, working_dir: str = "") -> str:
     except Exception as e:
         return f"opencode error: {e}"
 
+@tool
+def web_search_tool(query: str) -> str:
+    """Search the web for current information. Use when the user asks about news, facts, prices, or anything requiring live internet data."""
+    try:
+        from tools.web_search_tool import run
+        return run(query)
+    except Exception as e:
+        return f"Search error: {e}"
+
 # ── Core Tools (General Use) ─────────────────────────────────────────────────
 CORE_TOOLS = [
     timer_tool, weather_tool, map_tool, terminal_tool,
@@ -548,6 +557,7 @@ CORE_TOOLS = [
     telegram_tool, email_tool,
     memory_tool,
     opencode_tool,
+    web_search_tool,
 ]
 
 # ── Business/Trading Tools (Loaded Separately) ────────────────────────

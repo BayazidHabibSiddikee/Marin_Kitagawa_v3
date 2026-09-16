@@ -908,6 +908,152 @@ async def proxy_stream(request: Request, url: str = ""):
     except Exception as e:
         raise HTTPException(502, f"Proxy error: {e}")
 
+
+@app.get("/api/browser/stream")
+async def browser_activity_stream():
+    """SSE stream of Marin's web browsing activity for the mini-screen."""
+    import asyncio
+    import json as _json
+    from pathlib import Path as _Path
+    from fastapi.responses import StreamingResponse as _SR
+
+    BROWSER_LOG = _Path("logs/browser_activity.log")
+
+    async def generate():
+        # Send last 20 lines on connect
+        if BROWSER_LOG.exists():
+            lines = BROWSER_LOG.read_text(encoding="utf-8", errors="ignore").splitlines()[-20:]
+            for line in lines:
+                yield f"data: {_json.dumps({'line': line})}\n\n"
+
+        # Tail the log file for new lines
+        pos = BROWSER_LOG.stat().st_size if BROWSER_LOG.exists() else 0
+        while True:
+            await asyncio.sleep(0.5)
+            if not BROWSER_LOG.exists():
+                continue
+            size = BROWSER_LOG.stat().st_size
+            if size > pos:
+                with open(BROWSER_LOG, encoding="utf-8", errors="ignore") as f:
+                    f.seek(pos)
+                    new_content = f.read()
+                pos = size
+                for line in new_content.splitlines():
+                    if line.strip():
+                        yield f"data: {_json.dumps({'line': line})}\n\n"
+
+    return _SR(generate(), media_type="text/event-stream",
+               headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/browser/log")
+async def browser_activity_log():
+    """Return the last 50 lines of Marin's browser activity log."""
+    from pathlib import Path as _Path
+    BROWSER_LOG = _Path("logs/browser_activity.log")
+    if not BROWSER_LOG.exists():
+        return {"lines": []}
+    lines = BROWSER_LOG.read_text(encoding="utf-8", errors="ignore").splitlines()[-50:]
+    return {"lines": lines}
+
+
+@app.get("/api/browser/live")
+async def browser_live_page():
+    """
+    Auto-refreshing HTML page showing Marin's current web fetch URL + activity log.
+    Designed to be shown inside the VRM TV projector iframe so you can watch
+    what Marin is browsing in real-time.
+    """
+    from pathlib import Path as _Path
+    from fastapi.responses import HTMLResponse as _HTMLResponse
+
+    BROWSER_LOG = _Path("logs/browser_activity.log")
+    lines: list[str] = []
+    if BROWSER_LOG.exists():
+        lines = BROWSER_LOG.read_text(encoding="utf-8", errors="ignore").splitlines()[-30:]
+
+    # Find most recent FETCH URL
+    current_url = ""
+    current_query = ""
+    for line in reversed(lines):
+        if "FETCH:" in line and not current_url:
+            current_url = line.split("FETCH:")[-1].strip()
+        if "SEARCH:" in line and not current_query:
+            current_query = line.split("SEARCH:")[-1].strip()
+        if current_url and current_query:
+            break
+
+    def _color(line: str) -> str:
+        if "SEARCH:" in line:  return "#7dd3fc"
+        if "FETCH:"  in line:  return "#86efac"
+        if "RESULT:" in line:  return "#c4b5fd"
+        if "ERROR"   in line:  return "#fca5a5"
+        return "#64748b"
+
+    def _strip_ts(line: str) -> str:
+        """Remove leading timestamp."""
+        import re
+        return re.sub(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ ", "", line)
+
+    rows_html = "\n".join(
+        f'<div style="color:{_color(l)};margin:1px 0;word-break:break-all">{_strip_ts(l)}</div>'
+        for l in lines[-20:]
+    )
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="2">
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:#070a10;color:#94a3b8;font-family:'JetBrains Mono',ui-monospace,monospace;
+          font-size:11px;padding:12px;overflow:hidden;height:100vh}}
+    .hdr{{color:#e2e8f0;font-size:13px;font-weight:700;border-bottom:1px solid #1e293b;
+          padding-bottom:6px;margin-bottom:8px;display:flex;align-items:center;gap:6px}}
+    .badge{{background:#0f172a;border:1px solid #1e3a5f;border-radius:4px;
+            padding:2px 7px;font-size:9px;color:#38bdf8}}
+    .query{{color:#fbbf24;font-size:10px;margin-bottom:4px;padding:3px 0}}
+    .url{{color:#38bdf8;font-size:9px;word-break:break-all;padding:4px 0 8px;
+          border-bottom:1px solid #1e293b;margin-bottom:6px;opacity:.85}}
+    .log{{overflow-y:auto;height:calc(100vh - 110px)}}
+    ::-webkit-scrollbar{{width:4px}} ::-webkit-scrollbar-track{{background:#0d1117}}
+    ::-webkit-scrollbar-thumb{{background:#334155;border-radius:2px}}
+  </style>
+</head>
+<body>
+  <div class="hdr">🌐 Marin's Browser <span class="badge">LIVE</span></div>
+  {"<div class='query'>🔍 " + current_query + "</div>" if current_query else ""}
+  <div class="url">{"→ " + current_url if current_url else "⏳ Waiting for activity…"}</div>
+  <div class="log">{rows_html or '<span style="color:#334155">No activity yet…</span>'}</div>
+</body>
+</html>"""
+    return _HTMLResponse(html)
+
+
+@app.post("/api/emotion/classify")
+async def classify_emotion_endpoint(request: Request):
+    """
+    Classify emotion in text using the j-hartmann distilroberta transformer
+    combined with keyword-boost layer. Returns VRM-ready emotion data.
+
+    Body: {"text": "...", "fast": false}
+    fast=true uses keyword-only (instant, for streaming chunks).
+    """
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    fast = bool(body.get("fast", False))
+
+    if not text:
+        return {"emotion": "neutral", "confidence": 1.0,
+                "expr": "neutral", "phys": "neutral", "anim": "neutral_idle", "all_scores": {}}
+
+    from utils.emotion_classifier import classify_emotion, classify_emotion_fast
+    if fast:
+        return classify_emotion_fast(text)
+    return classify_emotion(text)
+
+
 # ── MODULEFLOW ────────────────────────────────────────────────────────────
 
 @app.get("/moduleflow")

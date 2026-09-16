@@ -1,11 +1,24 @@
 import json
 import os
 import time
+import threading
 
+import httpx
 from langchain_openai import ChatOpenAI
 
 import database
 from config import OLLAMA_BASE_URL
+
+# ── SmartRouter (FreeLLMAPI bandit algorithm) ──────────────────────────────────
+# Imported lazily to avoid circular imports; initialised after provider list loads.
+# Records success/failure/rate-limit outcomes for every LLM call so the router
+# learns which providers are reliable and auto-demotes ones that are failing.
+try:
+    from utils.smart_router import get_router as _get_router
+    _smart_router = _get_router()
+except Exception as _e:
+    print(f"[LLM] SmartRouter unavailable: {_e}")
+    _smart_router = None
 
 # ── Legacy fallback model list ──────────────────────────────────────────────────
 FALLBACK_MODELS = [
@@ -19,6 +32,65 @@ FALLBACK_MODELS = [
 
 COOLDOWN_SECONDS = 5 * 3600  # 5 hours
 TRANSIENT_COOLDOWN_SECONDS = 60  # 1 minute for network blips
+
+# ── Shared httpx singleton with connection pooling ──────────────────────────────
+# Re-using a single Client avoids TCP handshake overhead on every validate call.
+_http_client: httpx.Client | None = None
+_http_client_lock = threading.Lock()
+
+def _get_http_client() -> httpx.Client:
+    """Return (and lazily create) the shared httpx.Client with connection pooling."""
+    global _http_client
+    if _http_client is None:
+        with _http_client_lock:
+            if _http_client is None:
+                _http_client = httpx.Client(
+                    timeout=httpx.Timeout(15.0),
+                    limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+                )
+    return _http_client
+
+
+# ── Provider health cache (in-memory, no DB writes needed) ─────────────────────
+# Tracks consecutive 5xx failures per provider. After 3 failures the provider
+# is skipped for PROVIDER_COOLDOWN_SECONDS, then retried automatically.
+_provider_health: dict = {}   # key: provider name → {"fails": int, "blocked_until": float}
+_provider_health_lock = threading.Lock()
+_PROVIDER_FAIL_THRESHOLD = 3
+_PROVIDER_COOLDOWN_SECONDS = 120   # 2 minutes
+
+
+def _record_provider_failure(name: str) -> bool:
+    """Record a 5xx failure. Returns True if provider is now blocked."""
+    with _provider_health_lock:
+        entry = _provider_health.setdefault(name, {"fails": 0, "blocked_until": 0.0})
+        entry["fails"] += 1
+        if entry["fails"] >= _PROVIDER_FAIL_THRESHOLD:
+            entry["blocked_until"] = time.time() + _PROVIDER_COOLDOWN_SECONDS
+            print(f"[LLM] Provider '{name}' blocked for {_PROVIDER_COOLDOWN_SECONDS}s after {entry['fails']} failures")
+            return True
+        return False
+
+
+def _is_provider_blocked(name: str) -> bool:
+    """Return True if the provider is currently in its 2-minute cooldown window."""
+    with _provider_health_lock:
+        entry = _provider_health.get(name)
+        if not entry:
+            return False
+        if entry["blocked_until"] > time.time():
+            return True
+        # Cooldown expired — reset failure count so provider gets a fresh start
+        entry["fails"] = 0
+        entry["blocked_until"] = 0.0
+        return False
+
+
+def _clear_provider_failure(name: str) -> None:
+    """Reset failure counter when a provider succeeds."""
+    with _provider_health_lock:
+        _provider_health.pop(name, None)
+
 
 # ── Auth & Rate limit helpers ───────────────────────────────────────────────────
 
@@ -52,6 +124,15 @@ def is_transient_error(e: Exception) -> bool:
     ])
 
 
+def is_context_length_error(e: Exception) -> bool:
+    """Detect context-window overflow — triggers model downgrade, not cooldown."""
+    err_str = str(e).lower()
+    return any(x in err_str for x in [
+        "context_length_exceeded", "context length", "413", "maximum context",
+        "too many tokens", "input too long", "context window",
+    ])
+
+
 # ── Invalid keys — persisted in DB so they survive restarts ────────────────────
 
 def _get_invalid_keys() -> set:
@@ -73,6 +154,46 @@ def report_auth_error(key: str):
     invalid = _get_invalid_keys()
     invalid.add(key)
     _save_invalid_keys(invalid)
+
+
+def clear_invalid_keys():
+    """Remove keys from the invalid set that were added more than 24h ago.
+
+    The invalid-key set is stored as a plain list (no timestamps), so we cannot
+    know individual ages.  To avoid a forever-growing blacklist we simply wipe
+    the whole set once it grows stale — conservative but safe: any genuinely bad
+    key will fail again on its next use and be re-added immediately.
+    """
+    raw = database.get_state("INVALID_KEYS_TS", "{}")
+    try:
+        ts_map: dict = json.loads(raw) if isinstance(raw, str) else {}
+    except Exception:
+        ts_map = {}
+
+    now = time.time()
+    cutoff = 24 * 3600
+    stale = {k for k, v in ts_map.items() if now - v > cutoff}
+    if stale:
+        invalid = _get_invalid_keys()
+        before = len(invalid)
+        invalid -= stale
+        _save_invalid_keys(invalid)
+        for k in stale:
+            ts_map.pop(k, None)
+        database.set_state("INVALID_KEYS_TS", json.dumps(ts_map))
+        print(f"[LLM] clear_invalid_keys: removed {before - len(invalid)} stale entries")
+    return len(stale)
+
+
+def _record_invalid_key_ts(key: str):
+    """Track when each key was blacklisted (for clear_invalid_keys TTL)."""
+    raw = database.get_state("INVALID_KEYS_TS", "{}")
+    try:
+        ts_map: dict = json.loads(raw) if isinstance(raw, str) else {}
+    except Exception:
+        ts_map = {}
+    ts_map[key] = time.time()
+    database.set_state("INVALID_KEYS_TS", json.dumps(ts_map))
 
 
 # ── Rate limits ─────────────────────────────────────────────────────────────────
@@ -271,6 +392,7 @@ def get_best_llm(deep: bool = False):
     Keys are rotated round-robin using a persisted index, so load is spread
     evenly rather than always hammering key[0] until it's rate-limited.
     Invalid keys (auth failures) are persisted in the DB across restarts.
+    Providers with ≥3 consecutive 5xx errors are skipped for 2 minutes.
     """
     limits     = _get_rate_limits()
     now        = time.time()
@@ -297,9 +419,26 @@ def get_best_llm(deep: bool = False):
         if not _is_provider_reachable(base_url):
             print(f"[LLM] {name} unreachable — skipping")
             return None
+        # Skip if provider is in 2-minute health cooldown
+        if _is_provider_blocked(name):
+            print(f"[LLM] {name} in health cooldown — skipping")
+            return None
 
-        num_keys   = len(api_keys)
-        start_idx  = _get_key_index(name, num_keys)
+        # ── Register provider with SmartRouter (first call only) ──────────────
+        if _smart_router:
+            # Intelligence proxy: use model name heuristics
+            _intel = 0.5
+            top_model = (model_list[0] if model_list else "").lower()
+            if any(m in top_model for m in ["gpt-4", "gemini-2.5-pro", "opus", "405b", "70b"]):
+                _intel = 0.85
+            elif any(m in top_model for m in ["gemini-2.5-flash", "gemini-1.5", "gpt-4o", "llama-3.3", "72b"]):
+                _intel = 0.72
+            elif any(m in top_model for m in ["gemini-1.5-flash", "gpt-4o-mini", "haiku", "8b"]):
+                _intel = 0.58
+            _smart_router.register_provider(name, intelligence=_intel, priority=provider.get("priority", 5))
+
+        num_keys  = len(api_keys)
+        start_idx = _get_key_index(name, num_keys)
 
         for model in model_list:
             # Rotate through keys starting at the saved index
@@ -309,14 +448,26 @@ def get_best_llm(deep: bool = False):
                     continue
                 if _is_rate_limited(key, model, limits, now):
                     continue
+                _t0 = time.monotonic()
                 try:
                     llm = _try_build_llm(model, key, base_url)
+                    _clear_provider_failure(name)
+                    _latency = (time.monotonic() - _t0) * 1000
+                    if _smart_router:
+                        _smart_router.record_success(name, latency_ms=_latency)
                     return llm, key, model
                 except Exception as e:
                     if is_auth_error(e):
                         print(f"[LLM] Auth error for key ...{key[-6:]} on {name} — blacklisting")
                         invalid.add(key)
                         _save_invalid_keys(invalid)
+                        _record_invalid_key_ts(key)
+                    elif is_context_length_error(e):
+                        print(f"[LLM] Context length error on {name}/{model} — downgrading model")
+                        if _smart_router:
+                            _smart_router.record_context_length_error(name)
+                        # Don't cooldown the key — just skip this (large) model
+                        break
                     elif is_insufficient_credits_error(e):
                         print(f"[LLM] Insufficient credits on {name}/{model} — skipping model")
                         # Don't blacklist the key, just skip this model
@@ -324,15 +475,25 @@ def get_best_llm(deep: bool = False):
                         print(f"[LLM] Rate limit on {name}/{model}: {e}")
                         report_rate_limit(key, model)
                         limits[f"{key}|{model}"] = now
+                        if _smart_router:
+                            _smart_router.record_rate_limit(name)
                     elif is_model_not_found_error(e):
                         print(f"[LLM] Model not found on {name}/{model}: {e}")
                     elif is_transient_error(e):
                         print(f"[LLM] Transient error on {name}/{model}: {e}")
                         limits[f"{key}|{model}"] = now - COOLDOWN_SECONDS + TRANSIENT_COOLDOWN_SECONDS
+                        # Count 5xx-style transient failures toward provider health cache
+                        err_str = str(e).lower()
+                        if any(code in err_str for code in ["503", "502", "504"]):
+                            _record_provider_failure(name)
+                            if _smart_router:
+                                _smart_router.record_failure(name)
                     else:
                         print(f"[LLM] Error on {name}/{model}: {e}")
                         report_rate_limit(key, model)
                         limits[f"{key}|{model}"] = now
+                        if _smart_router:
+                            _smart_router.record_failure(name)
         return None
 
     # ── Deep mode: try deep_models list across all providers first ─────────────
@@ -372,6 +533,65 @@ def get_best_llm(deep: bool = False):
     return None
 
 
+# ── Provider status snapshot (for UI status page) ──────────────────────────────
+
+def get_provider_status() -> list[dict]:
+    """Return a list of provider health snapshots for the settings/status UI.
+
+    Each entry:
+    {
+      "name":        str,
+      "enabled":     bool,
+      "blocked":     bool,      # True if in 2-min health cooldown
+      "fail_count":  int,       # consecutive 5xx failures
+      "blocked_until": float,   # epoch seconds when cooldown ends (0 = not blocked)
+      "model_count": int,
+    }
+    """
+    providers = get_providers()
+    snapshots = []
+    with _provider_health_lock:
+        health_copy = dict(_provider_health)
+
+    for p in providers:
+        name = p.get("name", "unknown")
+        entry = health_copy.get(name, {"fails": 0, "blocked_until": 0.0})
+        blocked = entry["blocked_until"] > time.time()
+        snapshots.append({
+            "name":          name,
+            "enabled":       p.get("enabled", True),
+            "blocked":       blocked,
+            "fail_count":    entry["fails"],
+            "blocked_until": entry["blocked_until"],
+            "model_count":   len(p.get("models", [])),
+        })
+    return snapshots
+
+
+# ── Web search via DuckDuckGo ───────────────────────────────────────────────────
+
+def web_search(query: str, max_results: int = 5) -> list[dict]:
+    """Search the web using DuckDuckGo. Returns [{title, url, snippet}].
+
+    This is the lightweight llm_manager-level wrapper. For full logging +
+    page-fetch functionality use tools/web_search_tool.py instead.
+    """
+    try:
+        from duckduckgo_search import DDGS
+        results = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=max_results):
+                results.append({
+                    "title":   r.get("title", ""),
+                    "url":     r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                })
+        return results
+    except Exception as e:
+        print(f"[WebSearch] DuckDuckGo search failed: {e}")
+        return []
+
+
 # ── Key validation (used by settings UI) ───────────────────────────────────────
 
 def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -> tuple[bool, str]:
@@ -382,9 +602,9 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
     - Google Gemini: lists available models
     - OpenAI: lists available models
     - Others: minimal /models list call
-    """
-    import httpx
 
+    Uses the shared httpx.Client singleton with connection pooling and 15s timeout.
+    """
     if not key:
         return False, "No key provided"
 
@@ -394,15 +614,16 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
         invalid.discard(key)
         _save_invalid_keys(invalid)
 
+    client = _get_http_client()
+
     try:
         headers = {"Authorization": f"Bearer {key}"}
 
         # ── OpenRouter: dedicated key-info endpoint (zero cost) ────────────
         if "openrouter.ai" in base_url:
-            r = httpx.get(
+            r = client.get(
                 "https://openrouter.ai/api/v1/auth/key",
                 headers=headers,
-                timeout=10.0,
             )
             if r.status_code == 200:
                 info = r.json().get("data", {})
@@ -417,28 +638,28 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
             if r.status_code == 401:
                 invalid.add(key)
                 _save_invalid_keys(invalid)
+                _record_invalid_key_ts(key)
                 return False, "Invalid API key."
             return False, f"OpenRouter returned HTTP {r.status_code}."
 
         # ── Google Gemini: list models (no tokens) ─────────────────────────
         if "generativelanguage.googleapis.com" in base_url:
-            r = httpx.get(
+            r = client.get(
                 f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
-                timeout=10.0,
             )
             if r.status_code == 200:
                 return True, "Gemini key is valid."
             if r.status_code in (400, 401, 403):
                 invalid.add(key)
                 _save_invalid_keys(invalid)
+                _record_invalid_key_ts(key)
                 return False, "Invalid Gemini API key."
             return False, f"Gemini returned HTTP {r.status_code}."
 
         # ── OpenAI / compatible: list models (no tokens) ──────────────────
-        r = httpx.get(
+        r = client.get(
             base_url.rstrip("/").replace("/v1", "") + "/v1/models",
             headers=headers,
-            timeout=10.0,
         )
         if r.status_code == 200:
             models = r.json().get("data", [])
@@ -446,6 +667,7 @@ def validate_api_key(key: str, base_url: str = "https://openrouter.ai/api/v1") -
         if r.status_code in (401, 403):
             invalid.add(key)
             _save_invalid_keys(invalid)
+            _record_invalid_key_ts(key)
             return False, "Invalid API key or authentication failed."
         return False, f"Provider returned HTTP {r.status_code}."
 
