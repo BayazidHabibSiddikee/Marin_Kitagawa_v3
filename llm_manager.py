@@ -262,25 +262,21 @@ def _get_key_index(provider_name: str, num_keys: int) -> int:
 def get_providers() -> list:
     """
     Returns the ordered provider list. Each provider is a dict:
-    {
-      "name":     str,
-      "base_url": str,
-      "api_keys": [str, ...],   # multiple keys, round-robined
-      "models":   [str, ...],   # selected model IDs
-      "enabled":  bool,
-      "priority": int
-    }
-    Falls back to legacy OPENROUTER_API_KEY if no PROVIDERS key is found.
+    ...
     """
     raw = database.get_state("PROVIDERS")
+    providers = []
     if raw is not None:
         try:
-            # Always parse from JSON string; never trust a raw Python object from the DB
-            providers = json.loads(raw) if isinstance(raw, str) else json.loads(json.dumps(raw))
-            if isinstance(providers, list) and providers:
-                return sorted(providers, key=lambda p: p.get("priority", 99))
+            parsed = json.loads(raw) if isinstance(raw, str) else json.loads(json.dumps(raw))
+            if isinstance(parsed, list):
+                providers = parsed
         except Exception:
             pass
+
+    if providers:
+        return sorted(providers, key=lambda p: p.get("priority", 99))
+
 
     # ── Migrate legacy keys to a single provider slot ─────────────────────────
     legacy_key = database.get_state("OPENROUTER_API_KEY", "")
