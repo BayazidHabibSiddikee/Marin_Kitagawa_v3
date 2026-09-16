@@ -1054,7 +1054,54 @@ async def classify_emotion_endpoint(request: Request):
     return classify_emotion(text)
 
 
+# ── ROOM WALL PHOTOS ─────────────────────────────────────────────────────────
+
+@app.get("/api/room/wall-photos")
+async def list_wall_photos():
+    """
+    List available photos for the 3D room wall frame.
+    Looks in static/images/user/ (user-added) + static/images/ (built-in frames).
+    Returns [{url, name}] sorted user photos first.
+    """
+    photos = []
+    user_dir = os.path.join(BASE_DIR, "static", "images", "user")
+    img_dir  = os.path.join(BASE_DIR, "static", "images")
+    exts     = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
+    # User-added photos first (highest priority)
+    if os.path.isdir(user_dir):
+        for f in sorted(os.listdir(user_dir)):
+            if os.path.splitext(f)[1].lower() in exts:
+                photos.append({"url": f"/static/images/user/{f}", "name": f, "user": True})
+
+    # Built-in frame images
+    for f in ["frame_couple.png", "frame_adventure.png", "monitor_wallpaper.png"]:
+        fp = os.path.join(img_dir, f)
+        if os.path.exists(fp):
+            photos.append({"url": f"/static/images/{f}", "name": f, "user": False})
+
+    return {"photos": photos}
+
+
+@app.post("/api/room/wall-photo/upload")
+async def upload_wall_photo(file: UploadFile = File(...)):
+    """Upload a photo to be shown in the 3D room wall frame."""
+    ext = os.path.splitext(file.filename or "photo.jpg")[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return JSONResponse({"error": "Only JPG/PNG/WEBP files accepted."}, status_code=400)
+    user_dir = os.path.join(BASE_DIR, "static", "images", "user")
+    os.makedirs(user_dir, exist_ok=True)
+    # Keep original name, sanitize
+    safe_name = "".join(c for c in (file.filename or "photo") if c.isalnum() or c in "._-")[:80]
+    dest = os.path.join(user_dir, safe_name)
+    content = await file.read()
+    with open(dest, "wb") as f:
+        f.write(content)
+    return {"url": f"/static/images/user/{safe_name}", "name": safe_name}
+
+
 # ── MODULEFLOW ────────────────────────────────────────────────────────────
+
 
 @app.get("/moduleflow")
 async def moduleflow_page(request: Request):
