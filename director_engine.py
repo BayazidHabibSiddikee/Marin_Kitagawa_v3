@@ -463,16 +463,16 @@ _VIDEO_MOOD_KEYWORDS = {
 _VIDEO_MOOD_SEQUENCES = {
     "sad": [
         (0.0,  "sit_idle"),
-        (25.0, "sadness"),
-        (50.0, "caring"),
-        (75.0, "neutral_idle"),
+        (25.0, "sit_idle2"),
+        (50.0, "sit_idle3"),
+        (75.0, "sit_idle"),
     ],
     "emotional": [
         (0.0,  "sit_idle"),
-        (20.0, "caring"),
-        (45.0, "neutral_idle2"),
-        (70.0, "admiration"),
-        (95.0, "neutral_idle"),
+        (20.0, "sit_idle2"),
+        (45.0, "sit_idle4"),
+        (70.0, "sit_idle3"),
+        (95.0, "sit_idle"),
     ],
     "hype": [
         (0.0,  "excitement"),
@@ -484,9 +484,9 @@ _VIDEO_MOOD_SEQUENCES = {
     ],
     "chill": [
         (0.0,  "sit_idle"),
-        (20.0, "neutral_idle"),
-        (45.0, "sit_idle2"),
-        (70.0, "neutral_idle2"),
+        (20.0, "sit_idle2"),
+        (45.0, "sit_idle4"),
+        (70.0, "sit_idle3"),
         (95.0, "sit_idle"),
     ],
     "dance": [
@@ -501,17 +501,30 @@ _VIDEO_MOOD_SEQUENCES = {
     "hype_metal": [
         (0.0,  "excitement"),
         (12.0, "anger"),
-        (24.0, "excitement2"),
-        (36.0, "dance_1"),
-        (48.0, "joy"),
-        (60.0, "excitement"),
+        (24.0, "dance_2"),
+        (36.0, "dance_headdrop"),
+        (48.0, "anger2"),
+        (60.0, "dance_1"),
+    ],
+    "educational": [
+        (0.0,  "sit_idle"),
+        (30.0, "sit_idle3"),
+        (60.0, "sit_idle2"),
+        (90.0, "sit_idle4"),
+        (120.0, "sit_idle"),
+    ],
+    "tech": [
+        (0.0,  "sit_idle"),
+        (30.0, "sit_idle2"),
+        (60.0, "sit_idle3"),
+        (90.0, "sit_idle4"),
     ],
     "normal": [
         (0.0,  "sit_idle"),
-        (30.0, "neutral_idle"),
-        (60.0, "approval"),
-        (90.0, "neutral_idle2"),
-        (120.0, "sit_idle"),
+        (30.0, "sit_idle2"),
+        (60.0, "sit_idle3"),
+        (90.0, "sit_idle4"),
+        (120.0, "sit_idle")
     ],
 }
 

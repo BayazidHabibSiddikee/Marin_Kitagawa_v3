@@ -3485,6 +3485,24 @@
         _micReady = false;
     }
 
+    window._toggleBeat = function() {
+        const label = document.getElementById('beat-label');
+        const btn = document.getElementById('beat-btn');
+        if (_audioMode === 'beat') {
+            stopBeatMode();
+            label.textContent = 'beat: off';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) chip.textContent = '';
+        } else {
+            startBeatMode();
+            label.textContent = 'beat: on';
+            btn.style.color = 'var(--teal)';
+            btn.style.borderColor = 'var(--teal-dim)';
+        }
+    };
+
     function _readAudioEnergy() {
         // talk mode: use existing TTS analyser (audioAnalyser is connected during playback)
         if (_audioMode === 'talk' && audioAnalyser) {
@@ -3778,7 +3796,7 @@
                 try {
                     switch (action.type) {
                         case 'anim':
-                            if (typeof playAnimation === 'function') {
+                            if (typeof playAnimation === 'function' && !_danceMode) {
                                 playAnimation(action.value);
                             }
                             break;
@@ -3830,6 +3848,11 @@
         _danceMode = true;
         _danceIdx  = Math.floor(Math.random() * DANCE_PLAYLIST.length);
         _nextDance();
+
+        // Always face the user when dancing
+        if (typeof window.setAvatarRotation === 'function') {
+            window.setAvatarRotation(Math.PI);
+        }
     };
 
     function _nextDance() {
@@ -3845,6 +3868,16 @@
         _danceMode = false;
         if (_danceTimer) { clearTimeout(_danceTimer); _danceTimer = null; }
         if (typeof playAnimation === 'function') playAnimation('neutral_idle');
+
+        // If TV is playing, turn back to it. Otherwise turn to user.
+        if (typeof window.setAvatarRotation === 'function') {
+            const tvIframe = document.getElementById('vrm-tv-iframe');
+            if (tvIframe && tvIframe.style.display === 'block') {
+                window.setAvatarRotation(0);
+            } else {
+                window.setAvatarRotation(Math.PI);
+            }
+        }
     };
 
     // ── Director-aware talking state ──────────────────────────────────────────
@@ -3986,13 +4019,25 @@
         showProjector(val, 'stream');
     }
 
+    let _avatarTurnInterval = null;
+    window.setAvatarRotation = function(targetRot) {
+        if (typeof vrmModel === 'undefined' || !vrmModel) return;
+        if (_avatarTurnInterval) clearInterval(_avatarTurnInterval);
+        _avatarTurnInterval = setInterval(() => {
+            if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
+                vrmModel.scene.rotation.y = targetRot;
+                clearInterval(_avatarTurnInterval);
+            } else {
+                vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
+            }
+        }, 16);
+    };
+
     function showProjector(url, type='stream', _retries) {
         _retries = (_retries || 0);
-        // If VRM isn't open yet, open it first then retry (max 8 attempts = ~6.4s)
         if (!projectorObject) {
-            if (_retries >= 8) { console.warn('[showProjector] VRM failed to initialize after retries'); return; }
+            if (_retries >= 8) { console.warn('[showProjector] VRM failed to initialize'); return; }
             if (_retries === 0) {
-                // Only open VRM on the very first attempt
                 const vrmContainer = document.getElementById('vrm-container');
                 if (vrmContainer && vrmContainer.style.display === 'none') {
                     toggleVRM();
@@ -4027,17 +4072,9 @@
         }
         if (standby) standby.style.display = 'none';
 
-        // Turn around to face the TV (z = -4)
-        if (typeof vrmModel !== 'undefined' && vrmModel) {
-            let targetRot = 0; // face TV
-            let turnInterval = setInterval(() => {
-                if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
-                    vrmModel.scene.rotation.y = targetRot;
-                    clearInterval(turnInterval);
-                } else {
-                    vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
-                }
-            }, 16);
+        // Turn around to face the TV (z = -4), unless we are in dance mode!
+        if (typeof window.setAvatarRotation === 'function' && !_danceMode) {
+            window.setAvatarRotation(0); // Face TV
         }
     }
 
@@ -4050,16 +4087,8 @@
         if (typeof stopDanceMode === 'function') stopDanceMode();
 
         // Turn back to face the camera (+Z)
-        if (typeof vrmModel !== 'undefined' && vrmModel) {
-            let targetRot = Math.PI; // face camera
-            let turnInterval = setInterval(() => {
-                if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
-                    vrmModel.scene.rotation.y = targetRot;
-                    clearInterval(turnInterval);
-                } else {
-                    vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
-                }
-            }, 16);
+        if (typeof window.setAvatarRotation === 'function') {
+            window.setAvatarRotation(Math.PI);
         }
     }
 
