@@ -14,8 +14,8 @@ echo -e "${CYAN}     Marin AI — Starting all services${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-pkill -f "uvicorn main:app"   2>/dev/null || true
-pkill -f "tsx.*server/src"    2>/dev/null || true
+pkill -9 -f "uvicorn main:app"   2>/dev/null || true
+pkill -9 -f "tsx.*server/src"    2>/dev/null || true
 sleep 1
 
 echo -e "Starting ${CYAN}freellmapi${NC} on :3001..."
