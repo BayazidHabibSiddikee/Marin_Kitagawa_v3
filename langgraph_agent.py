@@ -382,7 +382,7 @@ def binance_tool(action: str = "portfolio") -> str:
         return f"Error: {e}"
 
 @tool
-def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
+def youtube_search_tool(query: str, allow_dance: bool = True) -> str:
     """Search YouTube for a video or music, classify its mood from the transcript,
     and return a timed director animation sequence for Marin to perform.
     Set allow_dance=True if the user explicitly asked to dance, or if the search is for upbeat music."""
@@ -400,6 +400,8 @@ def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
 
         video_id = video.get('id', '')
         title    = video.get('title', query)
+        categories = video.get('categories', [])
+        is_music = 'Music' in categories
 
         if not video_id:
             import urllib.parse
@@ -407,32 +409,64 @@ def youtube_search_tool(query: str, allow_dance: bool = False) -> str:
             return f"Search failed. Show results: __BROWSER__{burl} __ANIM__curiosity"
 
         # ── Fetch transcript for mood classification ──────────────────────────
-        transcript = ""
+        raw_transcript = None
+        transcript_text = ""
         try:
             from tools.youtube_transcript import get_youtube_transcript
-            raw = get_youtube_transcript(f"https://www.youtube.com/watch?v={video_id}")
-            transcript = raw[:2000] if raw else ""
+            raw_transcript = get_youtube_transcript(f"https://www.youtube.com/watch?v={video_id}", return_raw=True)
+            if raw_transcript:
+                transcript_text = " ".join([entry["text"] for entry in raw_transcript])[:2000]
         except Exception:
-            pass  # transcript is optional — we'll classify on title alone
+            pass
+            
+        # Detect music from transcript if yt-dlp missed it
+        if transcript_text and ("[Music]" in transcript_text or "♪" in transcript_text):
+            is_music = True
 
-        # ── Classify mood and build timed director script ──────────────────────
-        from director_engine import make_video_director_script
-        director_tag, mood = make_video_director_script(video_id, transcript, title, allow_dance=allow_dance)
-
-        mood_line = {
-            "sad":        "I found it... I'll feel every note with you 🥺",
-            "emotional":  "This one hits deep. I'll be right here with you 💕",
-            "hype":       "LET'S GOOO!! Hehehe~~ 🔥",
-            "chill":      "Perfect vibe~ I'll chill with you 🌙",
-            "dance":      "Time to dance!! Ummaaah~~ 💃",
-            "hype_metal": "YESSS!! This is FIRE!! 🤘",
-            "normal":     "Casting it to the TV now~",
-        }.get(mood, "Casting it to the TV now~")
-
-        # Return clean output: human-like line + control tags only (no forced template instructions)
-        return f"{mood_line} __YOUTUBE__{video_id} {director_tag}"
+        from director_engine import make_video_director_script, _detect_sentence_emotion, _EMOTION_MAP, _safe_anim, encode_director_script, classify_video_mood
+        
+        mood = classify_video_mood(transcript_text, title)
+        if mood in ("dance", "hype", "chill", "hype_metal"):
+            is_music = True
+        
+        if is_music:
+            if raw_transcript:
+                # Act out the lyrics in sync!
+                script = []
+                for entry in raw_transcript:
+                    text_line = entry['text']
+                    # Skip generic music tags
+                    if "[Music]" in text_line or "♪" in text_line:
+                        continue
+                    t = float(entry['start'])
+                    dur = float(entry['duration'])
+                    
+                    emotion, intensity = _detect_sentence_emotion(text_line)
+                    
+                    # We don't want her to SPEAK the lyrics text bubble, 
+                    # so we don't add a 'talk' type. We just add expression and animation.
+                    if intensity > 0 and emotion != "neutral":
+                        mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
+                        anim = mapping["anim"]
+                        script.append({"t": t, "type": "anim", "value": _safe_anim(anim), "dur": min(dur, 3.0)})
+                        script.append({"t": t, "type": "expr", "value": mapping["expr"], "strength": intensity, "dur": min(dur, 2.5)})
+                
+                # Add dance tag for music
+                encoded = encode_director_script(script)
+                director_tag = f"__DIRECTOR__{encoded} __DANCE__"
+                return f"Playing music '{title}'. I am acting out the lyrics! __YOUTUBE__{video_id} {director_tag}"
+            else:
+                # Music with no lyrics
+                director_tag, mood = make_video_director_script(video_id, "", title, allow_dance=True)
+                return f"Playing music '{title}'. __YOUTUBE__{video_id} {director_tag}"
+        else:
+            # Normal video - she sits and watches
+            director_tag, mood = make_video_director_script(video_id, transcript_text, title, allow_dance=False)
+            return f"Playing video '{title}'. I am sitting and watching. __YOUTUBE__{video_id} {director_tag}"
+            
     except Exception as e:
-        return f"YouTube search error: {e}"
+        return f"Could not find or play video: {e}"
+
 
 @tool
 def youtube_transcript_tool(url: str) -> str:

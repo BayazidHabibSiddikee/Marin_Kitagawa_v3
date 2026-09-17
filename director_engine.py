@@ -243,7 +243,7 @@ def _is_negated(lower: str, kw_pos: int) -> bool:
     return any(w in _NEGATORS for w in preceding[-3:])
 
 
-def _detect_sentence_emotion(sentence: str) -> tuple[str, int]:
+def _detect_sentence_emotion(sentence: str) -> tuple[str, float]:
     lower = sentence.lower()
     scores: dict[str, int] = {}
     for emotion, keywords in _EMOTION_KEYWORDS.items():
@@ -254,10 +254,27 @@ def _detect_sentence_emotion(sentence: str) -> tuple[str, int]:
             if _is_negated(lower, pos):
                 continue
             scores[emotion] = scores.get(emotion, 0) + 1
-    if not scores:
-        return "neutral", 0
-    best = max(scores, key=lambda k: scores[k])
-    return best, scores[best]
+    
+    top_score = 0
+    best_emotion = "neutral"
+    if scores:
+        best_emotion = max(scores, key=lambda k: scores[k])
+        top_score = scores[best_emotion]
+
+    # Calculate intensity using three.ws heuristics
+    exclamations = sentence.count('!')
+    letters = re.sub(r'[^a-zA-Z]', '', sentence)
+    uppers = len(re.sub(r'[^A-Z]', '', sentence))
+    shout_ratio = uppers / len(letters) if letters else 0.0
+    
+    intensity = 0.35 * top_score + 0.12 * exclamations + 0.35 * shout_ratio
+    intensity = max(0.0, min(1.0, intensity))
+    
+    # Base intensity for neutral
+    if best_emotion == "neutral" and intensity == 0.0:
+        intensity = 0.3
+        
+    return best_emotion, intensity
 
 
 # ── Text segmentation ───────────────────────────────────────────────────────
@@ -345,9 +362,9 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
             # ML model gave us a direct BVH name — use it
             script.append({"t": t_start, "type": "anim", "value": ml_anim, "dur": min(dur, 3.5)})
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
-            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping.get("expr", "neutral"), "dur": min(dur, 2.5)})
+            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping.get("expr", "neutral"), "strength": score, "dur": min(dur, 2.5)})
             prev_emotion = emotion
-        elif emotion != prev_emotion and emotion != "neutral" and score >= 1:
+        elif emotion != prev_emotion and emotion != "neutral" and score > 0:
             # Keyword heuristic fallback — a single non-negated keyword hit is
             # enough; requiring 2+ left most short sentences with no gesture
             mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
@@ -355,7 +372,7 @@ def build_director_script(response_text: str, base_emotion: str = "neutral") -> 
             if emotion in ("thinking", "curious", "explaining"):
                 anim = "neutral_idle2" if emotion == "explaining" else "curiosity"
             script.append({"t": t_start, "type": "anim", "value": _safe_anim(anim), "dur": min(dur, 3.0)})
-            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping["expr"], "dur": min(dur, 2.5)})
+            script.append({"t": t_start + 0.1, "type": "expr", "value": mapping["expr"], "strength": score, "dur": min(dur, 2.5)})
             prev_emotion = emotion
 
         cursor = t_start + dur + (0.15 if i < len(segments) - 1 else 0)
@@ -450,7 +467,7 @@ _VIDEO_MOOD_KEYWORDS = {
     "dance": [
         "dance", "dancing", "disco", "groove", "rhythm", "move",
         "floor", "spin", "shake", "funk", "choreography", "tiktok",
-        "rumba", "salsa", "k-pop", "kpop", "hip hop",
+        "rumba", "salsa", "k-pop", "kpop", "hip hop", "music", "song", "audio", "official video", "lyrics", "mv",
     ],
     "hype_metal": [
         "metal", "scream", "rage", "destroy", "shred", "guitar", "riff",
@@ -521,10 +538,11 @@ _VIDEO_MOOD_SEQUENCES = {
     ],
     "normal": [
         (0.0,  "sit_idle"),
-        (30.0, "sit_idle2"),
-        (60.0, "sit_idle3"),
-        (90.0, "sit_idle4"),
-        (120.0, "sit_idle")
+        (25.0, "laying_idle"),
+        (50.0, "laying_idle2"),
+        (75.0, "sit_idle2"),
+        (100.0, "laying_idle3"),
+        (125.0, "sit_idle")
     ],
 }
 

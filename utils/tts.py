@@ -32,7 +32,7 @@ def _clean(text: str) -> str:
     text = re.sub(r"_{1,2}[\s\S]{0,2000}?_{1,2}", "", text)
     text = re.sub(r"```[\s\S]*?```", "", text)
     text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"[#*`~|]", "", text)
+    text = re.sub(r"[#*`~|$]", "", text)
     return " ".join(text.split()).strip()
 
 

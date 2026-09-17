@@ -1,13 +1,12 @@
 import re
 
-
 def extract_youtube_url(text: str):
     """Pull YouTube URL from user message if present."""
     pattern = r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w\-]+)'
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
-def get_youtube_transcript(url: str) -> str:
+def get_youtube_transcript(url: str, return_raw: bool = False) -> str | list:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -23,7 +22,6 @@ def get_youtube_transcript(url: str) -> str:
         ytt_api = YouTubeTranscriptApi()
         transcript_list = ytt_api.list(vid_id)
 
-        # ── Pick first available transcript (any language) ──
         transcript = None
         for t in transcript_list:
             transcript = t
@@ -32,34 +30,18 @@ def get_youtube_transcript(url: str) -> str:
         if not transcript:
             return None
 
-        original_lang = transcript.language
-        print(f"[Marin] Found transcript in: {original_lang}")
-
-        # ── Translate to English if not already English ──
-        if transcript.language_code != "en":
-            if transcript.is_translatable:
-                transcript = transcript.translate("en")
-                print(f"[Marin] Translated {original_lang} → English")
-            else:
-                print(f"[Marin] Translation not available — using {original_lang} as-is")
+        if transcript.language_code != "en" and transcript.is_translatable:
+            transcript = transcript.translate("en")
 
         fetched = transcript.fetch()
-        full_text = " ".join([entry.text for entry in fetched])
+        
+        if return_raw:
+            return fetched
 
+        full_text = " ".join([entry["text"] for entry in fetched])
         if len(full_text) > 3000:
-            full_text = full_text  #[:3000] + "... [transcript truncated]"
-
-
-        print(f"[Marin] Transcript ready: {len(full_text)} chars")
+            full_text = full_text[:3000]
         return full_text
-
-    except ImportError:
-        print("[Marin] Run: pip install youtube-transcript-api")
-        return None
     except Exception as e:
         print(f"[Marin] Transcript fetch failed: {e}")
         return None
-
-if __name__=="__main__":
-    text = get_youtube_transcript("whats in the link https://youtu.be/NP1aZVpNGTo?si=yBpoWTy3v8qwRAAN")
-    print(text)

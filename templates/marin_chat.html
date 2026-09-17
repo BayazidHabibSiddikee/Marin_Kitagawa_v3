@@ -3050,8 +3050,9 @@
         
         const frameObj = new THREE.CSS3DObject(frameDiv);
         frameObj.scale.set(0.003, 0.003, 0.003); // Slightly larger scale
-        // Position at x = W*0.38, y = 1.80 on the back wall
-        frameObj.position.set(W * 0.38, 1.80, -D/2 + 0.06);
+        // Position at right wall
+        frameObj.position.set(W / 2 - 0.06, 1.50, 0);
+        frameObj.rotation.y = -Math.PI / 2;
         vrmScene.add(frameObj);
 
         // Hole mesh: transparent + NoBlending punches a see-through window
@@ -3067,6 +3068,14 @@
         holeMesh.position.set(0, 0.82, -D/2 + 0.065);
         holeMesh.renderOrder = 999;
         vrmScene.add(holeMesh);
+
+        // Hole for Emotion Photo Frame
+        const frameHoleGeo = new THREE.PlaneGeometry(200 * 0.003, 240 * 0.003);
+        const frameHoleMesh = new THREE.Mesh(frameHoleGeo, holeMat);
+        frameHoleMesh.position.set(W / 2 - 0.065, 1.50, 0);
+        frameHoleMesh.rotation.y = -Math.PI / 2;
+        frameHoleMesh.renderOrder = 999;
+        vrmScene.add(frameHoleMesh);
 
         // ── VRM MODEL ─────────────────────────────────────────────────────────
         window.loadVRMModel = function(filename) {
@@ -3427,13 +3436,15 @@
                 let sourceLabel = 'system audio';
                 try {
                     stream = await navigator.mediaDevices.getDisplayMedia({
-                        video: false,
+                        video: true,
                         audio: {
                             echoCancellation: false,
                             noiseSuppression: false,
                             sampleRate: 44100,
                         }
                     });
+                    // Drop the video track since we only want system audio
+                    stream.getVideoTracks().forEach(t => t.stop());
                 } catch (sysErr) {
                     console.warn('[Physics] System audio unavailable, trying mic:', sysErr.message);
                     // ── Fallback: microphone ──
@@ -3531,7 +3542,7 @@
             _audioEnergy = Math.min(1, _beatBass * 1.5 + (totalSum / (binCount * 255)) * 0.3);
             // Beat detection: energy spike vs rolling average
             const now = performance.now();
-            if (_audioEnergy > 0.35 && now - _lastBeatTime > 280) { // min 214 bpm spacing
+            if (_audioEnergy > 0.15 && now - _lastBeatTime > 280) { // min 214 bpm spacing
                 if (_beatHistory.length > 0) {
                     const last = _beatHistory[_beatHistory.length - 1];
                     const interval = now - last;
@@ -3554,8 +3565,13 @@
         }
         // beat mode visual-only fallback (no audio access) — pulse at ~72 BPM
         if (_audioMode === 'beat' && !_micAnalyser) {
-            const t = performance.now() / 1000;
-            _audioEnergy = 0.3 + 0.25 * Math.abs(Math.sin(Math.PI * _beatFreq * t));
+            const now = performance.now();
+            const t = now / 1000;
+            _audioEnergy = 0.5;
+            // Artificial beat trigger
+            if (now - _lastBeatTime > (1000 / _beatFreq)) {
+                _lastBeatTime = now;
+            }
             return;
         }
         // idle: gentle breathing
@@ -3623,10 +3639,10 @@
         }
 
         let hairX, hairY, spineFwd, chestExp;
-        if (_audioMode === 'beat' && _micReady) {
+        if (_audioMode === 'beat') {
             // ── BEAT MODE: bounce on detected beats ───────────────────────────────
             const beatPulse = Math.max(0, _audioEnergy) * 0.08;
-            const beatPhase = (t * _beatFreq) % 1.0;
+            const beatPhase = Math.max(0, (performance.now() - _lastBeatTime) / 1000) * _beatFreq;
             const kick = Math.exp(-beatPhase * 6) * beatPulse; // sharp attack, quick decay
             const bodyBounce = kick * 0.6;
             const hairBounce  = kick * 1.4; // hair is lighter, bounces more
@@ -3796,13 +3812,13 @@
                 try {
                     switch (action.type) {
                         case 'anim':
-                            if (typeof playAnimation === 'function' && !_danceMode) {
+                            if (typeof playAnimation === 'function') {
                                 playAnimation(action.value);
                             }
                             break;
 
                         case 'expr':
-                            setVRMExpression(action.value, 1.0);
+                            setVRMExpression(action.value, action.strength !== undefined ? action.strength : 1.0);
                             // Fade back to neutral after duration
                             if (action.value !== 'neutral' && durMs < 90000) {
                                 const ftid = setTimeout(() => {
@@ -4034,6 +4050,7 @@
     };
 
     function showProjector(url, type='stream', _retries) {
+        if (typeof stopDanceMode === 'function') stopDanceMode();
         _retries = (_retries || 0);
         if (!projectorObject) {
             if (_retries >= 8) { console.warn('[showProjector] VRM failed to initialize'); return; }
@@ -4248,6 +4265,14 @@
 
     async function playAnimation(name) {
         if (!vrmModel) { console.warn("[VRM] playAnimation: model not ready, queuing."); return; }
+        
+        // Stop dance mode if explicitly commanded to enter an idle state
+        if ((name.includes('idle') || name.includes('neutral')) && typeof stopDanceMode === 'function') {
+            // Only stop if we are actually in dance mode and the user explicitly requested idle
+            if (window._danceMode) {
+                window.stopDanceMode();
+            }
+        }
 
         // Ensure mixer exists
         if (!vrmMixer) vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
@@ -4273,13 +4298,18 @@
 
             console.log(`[VRM] Playing: ${clipName}`);
 
-            // For one-shot animations, return to idle when done
+            // For one-shot animations, return to idle (or resume dance) when done
             if (_LOOP_ONCE_ANIMS.has(clipName)) {
                 const FADE = 0.3;
                 const dur = clip.duration;
                 setTimeout(() => {
                     if (currentAction && currentAction._clip === clip) {
-                        playAnimation('neutral_idle');
+                        if (window._danceMode && typeof DANCE_PLAYLIST !== 'undefined') {
+                            const resumeDance = DANCE_PLAYLIST[(window._danceIdx === 0 ? 0 : window._danceIdx - 1) % DANCE_PLAYLIST.length];
+                            playAnimation(resumeDance);
+                        } else {
+                            playAnimation('neutral_idle');
+                        }
                     }
                 }, (dur - FADE) * 1000);
             }
@@ -4829,12 +4859,6 @@
                     }
                 }
 
-                // __DANCE__ tag — marks that music is playing; start looping dance
-                if (chunk.includes('__DANCE__')) {
-                    startDanceMode();
-                    chunk = chunk.replace('__DANCE__', '');
-                }
-                
                 const isPySide = navigator.userAgent.includes('QtWebEngine');
                 
                 const youtubeMatch = chunk.match(/__YOUTUBE__([\w-]+)/);
@@ -4859,6 +4883,12 @@
                 if (youtubeMatch) chunk = chunk.replace(youtubeMatch[0], '');
                 if (streamMatch) chunk = chunk.replace(streamMatch[0], '');
                 if (browserMatch) chunk = chunk.replace(browserMatch[0], '');
+
+                // __DANCE__ tag — marks that music is playing; start looping dance
+                if (chunk.includes('__DANCE__')) {
+                    startDanceMode();
+                    chunk = chunk.replace(/__DANCE__/g, '');
+                }
 
                 if (chunk.includes('__SEARCH__')) {
                     const match = chunk.match(/__SEARCH__(https?:\/\/[^\s<]+)/);
@@ -5825,13 +5855,10 @@
                 // Keep DOM lean
                 while (panel.children.length > 200) panel.removeChild(panel.firstChild);
 
-                // ── Auto-show live browser in TV projector on FETCH ────────────
-                if (line.includes('FETCH:')) {
+                // ── Auto-show live browser in TV projector on SEARCH ────────────
+                if (line.includes('SEARCH:') || line.includes('FETCH:')) {
                     try {
-                        const tvIframe = document.getElementById('vrm-tv-iframe');
-                        const tvSrc    = tvIframe ? tvIframe.src : '';
-                        const isIdle   = !tvSrc || tvSrc === '' || tvSrc === window.location.href;
-                        if (isIdle && typeof projectorObject !== 'undefined' && projectorObject) {
+                        if (typeof projectorObject !== 'undefined' && projectorObject) {
                             showProjector('/api/browser/live', 'stream');
                         }
                     } catch(e) {}
