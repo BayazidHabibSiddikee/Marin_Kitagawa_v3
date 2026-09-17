@@ -454,8 +454,15 @@ def youtube_search_tool(query: str, allow_dance: bool = True) -> str:
                     if intensity > 0 and emotion != "neutral":
                         mapping = _EMOTION_MAP.get(emotion, _EMOTION_MAP["neutral"])
                         anim = mapping["anim"]
-                        script.append({"t": t, "type": "anim", "value": _safe_anim(anim), "dur": min(dur, 3.0)})
-                        script.append({"t": t, "type": "expr", "value": mapping["expr"], "strength": intensity, "dur": min(dur, 2.5)})
+                        
+                        # Never inject an 'idle' or 'neutral' animation during a music lyrics script,
+                        # because playing it will trigger the frontend dance-kill failsafe!
+                        if "idle" in anim or "neutral" in anim:
+                            # Skip the animation, but still do the facial expression
+                            script.append({"t": t, "type": "expr", "value": mapping["expr"], "strength": intensity, "dur": min(dur, 2.5)})
+                        else:
+                            script.append({"t": t, "type": "anim", "value": _safe_anim(anim), "dur": min(dur, 3.0)})
+                            script.append({"t": t, "type": "expr", "value": mapping["expr"], "strength": intensity, "dur": min(dur, 2.5)})
                 
                 # Add dance tag for music
                 encoded = encode_director_script(script)
