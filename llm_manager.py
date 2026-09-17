@@ -310,6 +310,30 @@ def get_providers() -> list:
         "priority": 0,
     })
 
+    # Direct Google Gemini API (Free tier from AI Studio)
+    gemini_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "") or database.get_state("GEMINI_API_KEY", "")
+    if gemini_key:
+        providers.append({
+            "name": "GoogleGemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "api_keys": [gemini_key],
+            "models": ["gemini-2.5-flash", "gemini-2.5-pro"],
+            "enabled": True,
+            "priority": 1,
+        })
+
+    # Direct Groq API (Ultra-fast Llama 3.3 70B free tier)
+    groq_key = os.getenv("GROQ_API_KEY", "") or database.get_state("GROQ_API_KEY", "")
+    if groq_key:
+        providers.append({
+            "name": "Groq",
+            "base_url": "https://api.groq.com/openai/v1",
+            "api_keys": [groq_key],
+            "models": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+            "enabled": True,
+            "priority": 1,
+        })
+
     # FreeLLMAPI - aggregated free LLM providers (local instance)
     freellmapi_key = database.get_state("FREELLMAPI_KEY", "")
     freellmapi_url = os.getenv("FREELLMAPI_URL", "http://localhost:3001")
