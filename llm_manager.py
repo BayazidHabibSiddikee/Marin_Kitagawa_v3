@@ -296,6 +296,20 @@ def get_providers() -> list:
             "priority": 1,
         })
 
+    # g4f (GPT4Free) local proxy
+    providers.append({
+        "name": "g4f",
+        "base_url": "http://127.0.0.1:1337/v1",
+        "api_keys": ["dummy-key"],
+        "models": [
+            "gpt-4",
+            "gemini-pro",
+            "claude-3-haiku"
+        ],
+        "enabled": True,
+        "priority": 0,
+    })
+
     # FreeLLMAPI - aggregated free LLM providers (local instance)
     freellmapi_key = database.get_state("FREELLMAPI_KEY", "")
     freellmapi_url = os.getenv("FREELLMAPI_URL", "http://localhost:3001")

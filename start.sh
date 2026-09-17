@@ -18,6 +18,11 @@ pkill -9 -f "uvicorn main:app"   2>/dev/null || true
 pkill -9 -f "tsx.*server/src"    2>/dev/null || true
 sleep 1
 
+echo -e "Starting ${CYAN}g4f API${NC} on :1337..."
+source "$VENV/bin/activate"
+nohup python3 -m g4f.cli api --bind 127.0.0.1:1337 > "$LOG_DIR/g4f.log" 2>&1 &
+echo $! > "$LOG_DIR/g4f.pid"
+
 echo -e "Starting ${CYAN}freellmapi${NC} on :3001..."
 if [ -d "$FREELLM_DIR" ]; then
     cd "$FREELLM_DIR"
