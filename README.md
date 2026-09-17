@@ -241,6 +241,11 @@ SwordFish maintains two types of persistent knowledge:
 **Memory Tool** — structured long-term memory stored in SQLite. Marin can remember facts, preferences, and context across sessions. Viewable and editable via Settings → Memory.
 
 <p align="center">
+  <img src="images/screenshot1.png" alt="Marin UI Screenshot 1" width="45%"/>
+  <img src="images/screenshot2.png" alt="Marin UI Screenshot 2" width="45%"/>
+</p>
+
+<p align="center">
   <img src="images/map.png" alt="Knowledge Map" width="70%"/>
 </p>
 
