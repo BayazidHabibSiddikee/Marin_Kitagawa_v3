@@ -422,10 +422,16 @@ def youtube_search_tool(query: str, allow_dance: bool = True) -> str:
         # Detect music from transcript if yt-dlp missed it
         if transcript_text and ("[Music]" in transcript_text or "♪" in transcript_text):
             is_music = True
+            
+        # Robust title check for music
+        title_lower = title.lower()
+        if any(w in title_lower for w in ["music video", "official video", "lyric video", "lyrics", "remix", "song", "cover", "mv", "audio", "vevo", "karaoke"]):
+            is_music = True
 
         from director_engine import make_video_director_script, _detect_sentence_emotion, _EMOTION_MAP, _safe_anim, encode_director_script, classify_video_mood
         
         mood = classify_video_mood(transcript_text, title)
+        # If it's classified as dance/hype/chill/hype_metal, it's very likely music
         if mood in ("dance", "hype", "chill", "hype_metal"):
             is_music = True
         

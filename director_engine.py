@@ -579,6 +579,13 @@ def make_video_director_script(
     Returns (tag_string, mood).
     """
     mood = classify_video_mood(transcript, title)
+    
+    # If this is music, we MUST force a dance sequence.
+    # The chill/sad/normal sequences contain 'sit_idle', which triggers the 
+    # emergency dance-kill failsafe in the frontend and stops her from dancing entirely!
+    if allow_dance and mood not in ("dance", "hype", "hype_metal"):
+        mood = "dance"
+        
     sequence = _VIDEO_MOOD_SEQUENCES.get(mood, _VIDEO_MOOD_SEQUENCES["normal"])
 
     script = []
@@ -588,6 +595,9 @@ def make_video_director_script(
 
     encoded = encode_director_script(script)
     tag = f"__DIRECTOR__{encoded}"
-    if allow_dance and mood in ("dance", "hype", "hype_metal", "chill"):
+    
+    # If this is music, unconditionally append __DANCE__ so the frontend triggers the soft-body audio reactivity
+    if allow_dance:
         tag += " __DANCE__"
+        
     return tag, mood
