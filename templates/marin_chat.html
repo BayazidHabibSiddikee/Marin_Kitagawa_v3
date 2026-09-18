@@ -2117,6 +2117,8 @@
             document.getElementById('set-name').value = data.user_name || '';
             document.getElementById('set-location').value = data.location || '';
             document.getElementById('set-active-model').value = data.active_model || '';
+            window.serverTheme = data.theme || window.serverTheme;
+            initThemeGrid();
             if (data.user_avatar) {
                 document.getElementById('set-avatar-preview').src = data.user_avatar;
                 document.getElementById('set-avatar-preview').style.display = 'block';
@@ -2428,6 +2430,9 @@
         // Window / curtain
         const matCurtain = new THREE.MeshLambertMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
         const matWindowFr= new THREE.MeshLambertMaterial({ color: 0x222222 });
+        
+        window.roomMaterials = { matFloor, matWallBack, matWallSide, matCeil, matDarkWood, matMidWood, matLightWood, matBedFrame, matBedSheet, matPillow, matBlanket, matCouch, matCushion, matPot, matLeaf, matLeafDark, matScreen, matLamp, matMetal, matCurtain, matWindowFr };
+        if (typeof syncRoomTheme === 'function') syncRoomTheme();
         // Wardrobe
         const matWardrobe= new THREE.MeshLambertMaterial({ color: 0x151515 });
         const matWardDoor= new THREE.MeshLambertMaterial({ color: 0x222222 });
@@ -5568,7 +5573,7 @@
     function initThemeGrid() {
         const grid = document.getElementById('theme-grid');
         if (!grid) return;
-        let saved = 'Marin Default'; try { saved = localStorage.getItem('marinTheme') || 'Marin Default'; } catch(e) {}
+        let saved = window.serverTheme || 'Marin Default'; try { saved = localStorage.getItem('marinTheme') || saved; } catch(e) {}
         grid.innerHTML = COLOR_THEMES.map(t => `
             <div onclick="applyTheme('${t.name}')" id="theme-card-${t.name.replace(/\s/g,'_')}" style="
                 cursor:pointer;
@@ -5584,6 +5589,39 @@
             </div>`).join('');
     }
 
+    function syncRoomTheme() {
+        if (!window.roomMaterials) return;
+        const style = getComputedStyle(document.documentElement);
+        const getHex = (v) => parseInt(style.getPropertyValue(v).trim().replace('#', '0x'), 16);
+        
+        const ink = getHex('--ink');
+        const ink2 = getHex('--ink2');
+        const ink3 = getHex('--ink3');
+        const surface = getHex('--surface');
+        const teal = getHex('--teal');
+        const tealDim = getHex('--teal-dim');
+        
+        window.roomMaterials.matWallBack.color.setHex(ink);
+        window.roomMaterials.matWallSide.color.setHex(ink2);
+        window.roomMaterials.matFloor.color.setHex(surface);
+        window.roomMaterials.matCeil.color.setHex(ink3);
+        
+        window.roomMaterials.matDarkWood.color.setHex(ink);
+        window.roomMaterials.matMidWood.color.setHex(ink2);
+        window.roomMaterials.matLightWood.color.setHex(ink3);
+        
+        window.roomMaterials.matCouch.color.setHex(ink2);
+        window.roomMaterials.matCushion.color.setHex(surface);
+        
+        window.roomMaterials.matBedFrame.color.setHex(ink);
+        window.roomMaterials.matBedSheet.color.setHex(ink3);
+        window.roomMaterials.matPillow.color.setHex(surface);
+        window.roomMaterials.matBlanket.color.setHex(ink2);
+        
+        window.roomMaterials.matLamp.color.setHex(teal);
+        window.roomMaterials.matLamp.emissive.setHex(tealDim);
+    }
+
     function applyTheme(name) {
         const theme = COLOR_THEMES.find(t => t.name === name);
         if (!theme) return;
@@ -5591,6 +5629,8 @@
         // Apply every variable in the theme
         Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
         try { localStorage.setItem('marinTheme', name); } catch(e) {}
+        fetch('/api/settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ theme: name }) }).catch(e => {});
+        if (typeof syncRoomTheme === 'function') syncRoomTheme();
         // Refresh card borders so selected card is highlighted
         COLOR_THEMES.forEach(t => {
             const card = document.getElementById('theme-card-' + t.name.replace(/\s/g,'_'));
@@ -5602,7 +5642,7 @@
     }
 
     function restoreSavedTheme() {
-        let saved = null; try { saved = localStorage.getItem('marinTheme'); } catch(e) {}
+        let saved = window.serverTheme || null; try { saved = localStorage.getItem('marinTheme') || saved; } catch(e) {}
         if (saved && saved !== 'Marin Default') applyTheme(saved);
     }
 

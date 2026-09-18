@@ -1135,6 +1135,7 @@ async def get_settings():
         "selected_models": database.get_state("SELECTED_MODELS") or [],
         "fallback_models": database.get_state("FALLBACK_MODELS") or [],
         "active_model": database.get_state("ACTIVE_MODEL") or "",
+        "theme": database.get_state("UI_THEME") or "Marin Default",
         "user_avatar": database.get_state("USER_AVATAR") or "",
         "hf_token": database.get_state("HF_TOKEN") or "",
         # ── Multi-provider fields ──
@@ -1173,6 +1174,7 @@ async def save_settings(request: Request):
     if data.get("selected_models") is not None: database.set_state("SELECTED_MODELS", data.get("selected_models"))
     if data.get("fallback_models") is not None: database.set_state("FALLBACK_MODELS", data.get("fallback_models"))
     if data.get("active_model") is not None: database.set_state("ACTIVE_MODEL", data.get("active_model"))
+    if data.get("theme") is not None: database.set_state("UI_THEME", data.get("theme"))
     if "user_avatar" in data: database.set_state("USER_AVATAR", data.get("user_avatar", ""))
     if data.get("hf_token") is not None: database.set_state("HF_TOKEN", data.get("hf_token", ""))
     # ── Multi-provider fields ──
