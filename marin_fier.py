@@ -86,6 +86,11 @@ def _regex_stage(text: str) -> dict | None:
     if _PLAYGROUND_PAT.search(lower):
         return {"intent": "playground_tool", "params": {"query": lower}, "confidence": 0.95}
 
+    # YouTube URLs specifically (using original text for case-sensitive IDs)
+    yt_match = re.search(r'(https?://(www\.)?(youtube\.com|youtu\.be)[^\s\]\)]+)', text, re.IGNORECASE)
+    if yt_match:
+        return {"intent": "youtube_search_tool", "params": {"query": yt_match.group(1)}, "confidence": 1.0}
+
     # Resource / URL downloader — before code/terminal checks
     if _RESOURCE_PAT.search(lower):
         return {"intent": "resource_tool", "params": {"query": lower}, "confidence": 0.95}

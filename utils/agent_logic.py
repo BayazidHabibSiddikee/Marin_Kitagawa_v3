@@ -15,7 +15,7 @@ from utils.security import log_command
 RAG_URL = f"http://127.0.0.1:{RAG_PORT}"
 
 def fix_spacing(text: str) -> str:
-    \"\"\"Fix missing spaces between words from small models without modifying control tags/base64.\"\"\"
+    """Fix missing spaces between words from small models without modifying control tags/base64."""
     if not text:
         return text
 
@@ -39,55 +39,7 @@ def fix_spacing(text: str) -> str:
     for i, tag in enumerate(protected_tags):
         masked = masked.replace(f"__PROTECTED_TAG_{i}__", tag)
 
-    return masked    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
-    # 2. Punctuation: word,word -> word, word
-    #    '.' and ':' only split before uppercase so decimals/URLs survive
-    text = re.sub(r'([,!?;])([a-zA-Z])', r'\1 \2', text)
-    text = re.sub(r'([.:])([A-Z])', r'\1 \2', text)
-    # 3. Common glued words (aggressive for 0.5B models)
-    glued = [
-        (r'([iI])(don\'?t)', r'\1 \2'),
-        (r'([iI])(can\'?t)', r'\1 \2'),
-        (r'([iI])(am)', r'\1 \2'),
-        (r'([iI])(\'m)', r'\1 \2'),
-        (r'(but)(as)(an)', r'\1 \2 \3'),
-        (r'(but)(an)', r'\1 \2'),
-        (r'(is)(a)', r'\1 \2'),
-        (r'(to)(you)', r'\1 \2'),
-        (r'(for)(you)', r'\1 \2'),
-        (r'(of)(the)', r'\1 \2'),
-        (r'(in)(the)', r'\1 \2'),
-        (r'(it)(is)', r'\1 \2'),
-        (r'(and)(the)', r'\1 \2'),
-        (r'(asan)', r'as an'),
-        (r'(tobe)', r'to be'),
-        (r'(witha)', r'with a'),
-        (r'(operatewitha)', r'operate with a'),
-        (r'(staticlist)', r'static list'),
-        (r'(languagemodel)', r'language model'),
-        (r'(im|I\'m)(sorry)', r"I'm \2"),
-    ]
-    for pattern, repl in glued:
-        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-
-    # 4. Final cleanup
-    return re.sub(r'  +', ' ', text)
-
-async def get_rag_context(query: str, enabled: bool = True) -> str:
-    if not enabled:
-        return ""
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                f"{RAG_URL}/context",
-                json={"query": query, "k": 10},
-                timeout=10.0
-            )
-            if r.status_code == 200:
-                return r.json().get("context", "")
-    except Exception as e:
-        print(f"[RAG] Context fetch error: {e}")
-    return ""
+    return masked
 
 # ── Media Analysis (YouTube / Image) ─────────────────────────────────────────
 

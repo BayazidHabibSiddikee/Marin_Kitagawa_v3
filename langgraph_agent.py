@@ -39,7 +39,7 @@ def log_agent(msg: str):
     except Exception: pass
 
 def fix_spacing(text: str) -> str:
-    \"\"\"Fix missing spaces between words from small models without modifying control tags/base64.\"\"\"
+    """Fix missing spaces between words from small models without modifying control tags/base64."""
     if not text:
         return text
 
@@ -63,39 +63,7 @@ def fix_spacing(text: str) -> str:
     for i, tag in enumerate(protected_tags):
         masked = masked.replace(f"__PROTECTED_TAG_{i}__", tag)
 
-    return masked    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
-    # 2. Punctuation: word,word -> word, word
-    #    '.' and ':' only split before an uppercase letter so decimals (3.14),
-    #    domains (example.com), filenames (file.py) and 'Marin:hello' survive
-    text = re.sub(r'([,!?;])([a-zA-Z])', r'\1 \2', text)
-    text = re.sub(r'([.:])([A-Z])', r'\1 \2', text)
-    # 3. Common glued words (aggressive for 0.5B models)
-    glued = [
-        (r'([iI])(don\'?t)', r'\1 \2'),
-        (r'([iI])(can\'?t)', r'\1 \2'),
-        (r'([iI])(am)', r'\1 \2'),
-        (r'([iI])(\'m)', r'\1 \2'),
-        (r'(but)(as)(an)', r'\1 \2 \3'),
-        (r'(but)(an)', r'\1 \2'),
-        (r'(is)(a)', r'\1 \2'),
-        (r'(to)(you)', r'\1 \2'),
-        (r'(for)(you)', r'\1 \2'),
-        (r'(of)(the)', r'\1 \2'),
-        (r'(in)(the)', r'\1 \2'),
-        (r'(it)(is)', r'\1 \2'),
-        (r'(and)(the)', r'\1 \2'),
-        (r'(asan)', r'as an'),
-        (r'(tobe)', r'to be'),
-        (r'(witha)', r'with a'),
-        (r'(operatewitha)', r'operate with a'),
-        (r'(staticlist)', r'static list'),
-        (r'(languagemodel)', r'language model'),
-        (r'(im|I\'m)(sorry)', r"I'm \2"),
-    ]
-    for pattern, repl in glued:
-        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-    # 4. Final cleanup
-    return re.sub(r'  +', ' ', text)
+    return masked
 
 def strip_tool_schemas(text: str) -> str:
     """
@@ -404,8 +372,9 @@ def binance_tool(action: str = "portfolio") -> str:
 
 @tool
 def youtube_search_tool(query: str, allow_dance: bool = True) -> str:
-    """Search YouTube for a video or music, classify its mood from the transcript,
+    """Search YouTube for a video/music OR play a direct YouTube URL, classify its mood from the transcript,
     and return a timed director animation sequence for Marin to perform.
+    CRITICAL: ALWAYS use this tool for ALL YouTube links/URLs!
     Set allow_dance=True if the user explicitly asked to dance, or if the search is for upbeat music."""
     try:
         import yt_dlp
@@ -523,7 +492,7 @@ def playground_tool(description: str) -> str:
 
 @tool
 def resource_tool(url: str) -> str:
-    """Download or analyze any resource. PDFs are downloaded and indexed. Webpages are fetched and summarized. GitHub repos are cloned. Use for any URL the user provides."""
+    """Download or analyze any resource. PDFs are downloaded and indexed. Webpages are fetched and summarized. GitHub repos are cloned. Use for general URLs. DO NOT use this for YouTube URLs (use youtube_search_tool instead)."""
     try:
         from tools.resource_tool import resource_download_analyze
         return resource_download_analyze(url)
