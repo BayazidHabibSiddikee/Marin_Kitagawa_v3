@@ -2519,7 +2519,7 @@
         // Load monitor wallpaper onto screen face
         (function() {
             const monTx = new THREE.TextureLoader();
-            monTx.load('/static/images/monitor_wallpaper.png', (tex) => {
+            monTx.load('/static/images/user/desktop_bg.jpg', (tex) => {
                 tex.colorSpace = THREE.SRGBColorSpace || THREE.LinearSRGBColorSpace;
                 // Apply only to front face via UV — use MeshBasicMaterial for emissive look
                 const screenMat = new THREE.MeshBasicMaterial({ map: tex });
@@ -2940,12 +2940,8 @@
             if (_wallPhotoRef) _loadWallPhoto(url);
         };
 
-        // Right wall — two decorative landscape frames (colour only)
-        makeFrame(0.58, 0.38, [ W/2-0.03, 1.9, -0.5 ], -Math.PI/2, 0x5a3a1a, 0x3a2510);
-        makeFrame(0.50, 0.35, [ W/2-0.03, 1.9,  1.2 ], -Math.PI/2, 0x1a2a5a, 0x2a1a0e);
-
-        // Left wall — one frame near window
-        makeFrame(0.45, 0.38, [ -W/2+0.03, 2.1, -0.5 ], Math.PI/2, 0x4a2a5a, 0x4a3322);
+        // Left wall — User requested photo
+        makeFrame(0.68, 0.50, [ -W/2+0.03, 1.9, -0.5 ], Math.PI/2, '/static/images/user/wall_photo.jpg', 0x3a2510);
 
 
         // ── LIGHTING ─────────────────────────────────────────────────────────
@@ -3977,32 +3973,14 @@
         if (!val || !val.trim()) return;
         val = val.trim();
 
-        // Ensure VRM panel is visible (TV is inside it)
-        if (!vrmVisible) {
-            vrmVisible = true;
-            const container = document.getElementById('vrm-container');
-            const resizer   = document.getElementById('vrm-resizer');
-            const label     = document.getElementById('vrm-label');
-            const btn       = document.getElementById('vrm-toggle-btn');
-            container.style.display = 'block';
-            resizer.style.display   = 'block';
-            if (label) label.textContent = 'avatar: on';
-            if (btn) { btn.style.color = 'var(--teal)'; btn.style.borderColor = 'var(--teal-dim)'; }
-            if (!vrmRenderer) {
-                requestAnimationFrame(() => { initVRM(); if (typeof initResizer === 'function') initResizer(); });
-                // Delay showProjector until VRM is ready
-                setTimeout(() => _castToTV(val), 1200);
-                const input = document.getElementById('sidebar-tv-input');
-                if (input) input.value = '';
-                return;
-            } else {
-                requestAnimationFrame(() => onWindowResize());
-            }
-        }
-
-        _castToTV(val);
         const input = document.getElementById('sidebar-tv-input');
         if (input) input.value = '';
+
+        // Instead of bypassing Marin and playing dumbly, we send it to her
+        // so she can fetch metadata, decide if it's music or video, and
+        // automatically trigger the correct __DIRECTOR__ choreography (dance vs watch)!
+        document.getElementById('msg-input').value = `Please play this link on the TV: ${val}`;
+        sendMessage();
     };
 
     function _castToTV(val) {
