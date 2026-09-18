@@ -2113,6 +2113,7 @@
 
             document.getElementById('set-name').value = data.user_name || '';
             document.getElementById('set-location').value = data.location || '';
+            document.getElementById('set-active-model').value = data.active_model || '';
             if (data.user_avatar) {
                 document.getElementById('set-avatar-preview').src = data.user_avatar;
                 document.getElementById('set-avatar-preview').style.display = 'block';
@@ -2152,6 +2153,7 @@
         const body = {
             user_name: document.getElementById('set-name').value,
             location: document.getElementById('set-location').value,
+            active_model: document.getElementById('set-active-model').value,
             image_model: document.getElementById('set-image-model').value,
             vision_model: document.getElementById('set-vision-model').value,
             hf_token: document.getElementById('set-hf-token').value,
@@ -5561,7 +5563,7 @@
     function initThemeGrid() {
         const grid = document.getElementById('theme-grid');
         if (!grid) return;
-        const saved = localStorage.getItem('marinTheme') || 'Marin Default';
+        let saved = 'Marin Default'; try { saved = localStorage.getItem('marinTheme') || 'Marin Default'; } catch(e) {}
         grid.innerHTML = COLOR_THEMES.map(t => `
             <div onclick="applyTheme('${t.name}')" id="theme-card-${t.name.replace(/\s/g,'_')}" style="
                 cursor:pointer;
@@ -5583,7 +5585,7 @@
         const root = document.documentElement;
         // Apply every variable in the theme
         Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
-        localStorage.setItem('marinTheme', name);
+        try { localStorage.setItem('marinTheme', name); } catch(e) {}
         // Refresh card borders so selected card is highlighted
         COLOR_THEMES.forEach(t => {
             const card = document.getElementById('theme-card-' + t.name.replace(/\s/g,'_'));
@@ -5595,7 +5597,7 @@
     }
 
     function restoreSavedTheme() {
-        const saved = localStorage.getItem('marinTheme');
+        let saved = null; try { saved = localStorage.getItem('marinTheme'); } catch(e) {}
         if (saved && saved !== 'Marin Default') applyTheme(saved);
     }
 
