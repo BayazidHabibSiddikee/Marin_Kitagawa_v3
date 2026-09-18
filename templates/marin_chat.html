@@ -4914,10 +4914,10 @@
 
                 // ── Director Script ─────────────────────────────────────────
                 if (chunk.includes('__DIRECTOR__')) {
-                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
+                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+\/=\s]+)__END__/);
                     if (dirMatch) {
                         try {
-                            const decoded = atob(dirMatch[1]);
+                            const decoded = atob(dirMatch[1].replace(/\s/g, ''));
                             pendingDirectorScript = JSON.parse(decoded);
                             // If voice is off, play immediately; otherwise wait for audio start
                             if (!shouldSpeak) {
@@ -4925,7 +4925,7 @@
                                 pendingDirectorScript = null;
                             }
                         } catch(e) { console.warn('[Director] Parse error:', e); }
-                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+__END__/, '');
+                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+\/=\s]+__END__/, '');
                     }
                 }
 
@@ -4942,7 +4942,7 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                       .replace(/__ANIM__\w+/g, '')
                                       .replace(/__DANCE__/g, '')
-                                      .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                                      .replace(/__DIRECTOR__[A-Za-z0-9+\/=\s]*(__END__)?/g, '')
                                       .replace(/__YOUTUBE__[\w-]+/g, '')
                                       .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
                                       .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
@@ -4970,7 +4970,7 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                      .replace(/__ANIM__\w+/g, '')
                                      .replace(/__DANCE__/g, '')
-                                     .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                                     .replace(/__DIRECTOR__[A-Za-z0-9+\/=\s]*(__END__)?/g, '')
                                      .replace(/__YOUTUBE__[\w-]+/g, '')
                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
@@ -5296,7 +5296,7 @@
                 } else {
                     content = content
                         .replace(/__VIBE__\w+/g, '')
-                        .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                        .replace(/__DIRECTOR__[A-Za-z0-9+\/=\s]*(__END__)?/g, '')
                         .replace(/__ANIM__\w+/g, '')
                         .replace(/__DANCE__/g, '')
                         .replace(/__YOUTUBE__[\w-]+/g, '')
@@ -5404,7 +5404,7 @@
                     const dirMatch = msg.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
                     if (dirMatch) {
                         try {
-                            const decoded = atob(dirMatch[1]);
+                            const decoded = atob(dirMatch[1].replace(/\s/g, ''));
                             const script = JSON.parse(decoded);
                             playDirectorScript(script);
                         } catch(e) { console.warn('[Director] Pending parse error:', e); }

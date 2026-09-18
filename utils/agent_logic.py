@@ -336,9 +336,17 @@ async def stream_marin_chat(
 
     full_response = ""
 
+    # Clean history of control tags so LLM doesn't learn to generate them
+    clean_history = []
+    for m in history:
+        clean_text = m["content"]
+        clean_text, _ = extract_control_tags(clean_text)
+        clean_text = re.sub(r'__VIBE__\S+', '', clean_text)
+        clean_history.append({"role": m["role"], "content": clean_text.strip()})
+
     fast_msgs = [
         {"role": "system", "content": system + context_instruction},
-        *[{"role": m["role"], "content": m["content"]} for m in history],
+        *[{"role": m["role"], "content": m["content"]} for m in clean_history if m["content"]],
         {"role": "user", "content": prompt}
     ]
 

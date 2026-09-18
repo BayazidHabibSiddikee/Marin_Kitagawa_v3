@@ -2456,12 +2456,9 @@
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
-                    if (chunk.includes('__VIBE__')) continue;
-                    if (chunk.includes('__STRUCTURED__')) continue;
                     reply += chunk;
-                    // Bug 1 fix: use .bubble (not .msg-text)
-                    // Bug 2 fix: use DOMPurify.sanitize + marked.parse (not undefined formatReply)
-                    bubble.innerHTML = DOMPurify.sanitize(marked.parse(reply));
+                    let displayReply = reply.replace(/__(VIBE|STRUCTURED|DIRECTOR|TALK_ON|TALK_OFF)__[A-Za-z0-9+/=\s]*(__END__)?/g, '');
+                    bubble.innerHTML = DOMPurify.sanitize(marked.parse(displayReply));
                 }
                 renderMath(aiMsg);
             } catch (e) {
