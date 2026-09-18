@@ -4840,7 +4840,7 @@
                 // Hold back buffer if a tag might be split across reads
                 let chunk = chunkBuffer;
                 const hasOpenTag = !done && (
-                    (chunk.includes('__DIRECTOR__') && !chunk.match(/__DIRECTOR__[A-Za-z0-9+\/=]{20,}/)) ||
+                    (chunk.includes('__DIRECTOR__') && !chunk.includes('__END__')) ||
                     (chunk.includes('__ANIM__')     && !chunk.match(/__ANIM__\w+/)) ||
                     (chunk.includes('__VIBE__')     && !chunk.match(/__VIBE__\w+/)) ||
                     (chunk.includes('__YOUTUBE__')  && !chunk.match(/__YOUTUBE__[\w-]+/))
@@ -4923,7 +4923,7 @@
 
                 // ── Director Script ─────────────────────────────────────────
                 if (chunk.includes('__DIRECTOR__')) {
-                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)/);
+                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
                     if (dirMatch) {
                         try {
                             const decoded = atob(dirMatch[1]);
@@ -4934,7 +4934,7 @@
                                 pendingDirectorScript = null;
                             }
                         } catch(e) { console.warn('[Director] Parse error:', e); }
-                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+/, '');
+                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+__END__/, '');
                     }
                 }
 
@@ -4951,7 +4951,7 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                       .replace(/__ANIM__\w+/g, '')
                                       .replace(/__DANCE__/g, '')
-                                      .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*/g, '')
+                                      .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
                                       .replace(/__YOUTUBE__[\w-]+/g, '')
                                       .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
                                       .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
@@ -4979,7 +4979,7 @@
                 const cleanText = full.replace(/__VIBE__\w+/g, '')
                                      .replace(/__ANIM__\w+/g, '')
                                      .replace(/__DANCE__/g, '')
-                                     .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*/g, '')
+                                     .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
                                      .replace(/__YOUTUBE__[\w-]+/g, '')
                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
@@ -5305,7 +5305,7 @@
                 } else {
                     content = content
                         .replace(/__VIBE__\w+/g, '')
-                        .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*/g, '')
+                        .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
                         .replace(/__ANIM__\w+/g, '')
                         .replace(/__DANCE__/g, '')
                         .replace(/__YOUTUBE__[\w-]+/g, '')
@@ -5410,14 +5410,14 @@
                     }
 
                     // ── __DIRECTOR__ — play timed animation script ──────────
-                    const dirMatch = msg.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)/);
+                    const dirMatch = msg.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
                     if (dirMatch) {
                         try {
                             const decoded = atob(dirMatch[1]);
                             const script = JSON.parse(decoded);
                             playDirectorScript(script);
                         } catch(e) { console.warn('[Director] Pending parse error:', e); }
-                        msg = msg.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+/, '');
+                        msg = msg.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+__END__/, '');
                     }
 
                     // ── __VIBE__ — set mood avatar ──────────────────────────

@@ -411,7 +411,7 @@ def make_director_tag(response_text: str, base_emotion: str = "neutral") -> str:
     """
     script = build_director_script(response_text, base_emotion)
     encoded = encode_director_script(script)
-    return f"__DIRECTOR__{encoded}"
+    return f"__DIRECTOR__{encoded}__END__"
 
 
 # ── Vibe → base_emotion mapping ─────────────────────────────────────────────
@@ -594,7 +594,7 @@ def make_video_director_script(
         script.append({"t": t, "type": "expr", "value": "relaxed", "dur": 10.0})
 
     encoded = encode_director_script(script)
-    tag = f"__DIRECTOR__{encoded}"
+    tag = f"__DIRECTOR__{encoded}__END__"
     
     # If this is music, unconditionally append __DANCE__ so the frontend triggers the soft-body audio reactivity
     if allow_dance:

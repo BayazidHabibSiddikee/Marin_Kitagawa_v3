@@ -243,7 +243,7 @@ async def preprocess_input(user_input: str, image_path: str | None = None, rag_e
 
 _CONTROL_TAG_PATTERNS = [
     r'__YOUTUBE__[\w-]+',
-    r'__DIRECTOR__[A-Za-z0-9+/=]+',
+    r'__DIRECTOR__[A-Za-z0-9+/=]+(?:__END__)?',
     r'__DANCE__',
     r'__STREAM__\S+',
     r'__BROWSER__\S+',
