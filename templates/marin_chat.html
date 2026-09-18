@@ -2392,42 +2392,42 @@
         const W = 9, H = 3.4, D = 8;
         const deskX = 2.2, deskZ = -1.0;
 
-        // ── Materials ────────────────────────────────────────────────────────
-        // Floor: warm oak planks
-        const matFloor   = new THREE.MeshLambertMaterial({ color: 0x8b6340 });
-        // Walls: soft dusty-rose wallpaper with warm cream
-        const matWallBack = new THREE.MeshLambertMaterial({ color: 0x3a2e38 });
-        const matWallSide = new THREE.MeshLambertMaterial({ color: 0x332833 });
-        // Ceiling: off-white
-        const matCeil    = new THREE.MeshLambertMaterial({ color: 0x2a2230 });
-        // Furniture woods
-        const matDarkWood= new THREE.MeshLambertMaterial({ color: 0x3b2510 });
-        const matMidWood = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
-        const matLightWood=new THREE.MeshLambertMaterial({ color: 0x8a5c30 });
+        // ── Materials (CYBERPUNK) ─────────────────────────────────────────────
+        // Floor: dark metallic grating
+        const matFloor   = new THREE.MeshLambertMaterial({ color: 0x1a1a24 });
+        // Walls: very dark grey / purple neon hue
+        const matWallBack = new THREE.MeshLambertMaterial({ color: 0x121218 });
+        const matWallSide = new THREE.MeshLambertMaterial({ color: 0x0f0f15 });
+        // Ceiling: pitch black
+        const matCeil    = new THREE.MeshLambertMaterial({ color: 0x050508 });
+        // Furniture: dark synthetic metals & matte plastics
+        const matDarkWood= new THREE.MeshLambertMaterial({ color: 0x111111 });
+        const matMidWood = new THREE.MeshLambertMaterial({ color: 0x22222b });
+        const matLightWood=new THREE.MeshLambertMaterial({ color: 0x333340 });
         // Bed
-        const matBedFrame= new THREE.MeshLambertMaterial({ color: 0x2a1a0e });
-        const matBedSheet= new THREE.MeshLambertMaterial({ color: 0x4a3f6b });
-        const matPillow  = new THREE.MeshLambertMaterial({ color: 0x7a6890 });
-        const matBlanket = new THREE.MeshLambertMaterial({ color: 0x6a4a7a });
+        const matBedFrame= new THREE.MeshLambertMaterial({ color: 0x151515 });
+        const matBedSheet= new THREE.MeshLambertMaterial({ color: 0x102030 });
+        const matPillow  = new THREE.MeshLambertMaterial({ color: 0x204060 });
+        const matBlanket = new THREE.MeshLambertMaterial({ color: 0x081820 });
         // Couch
-        const matCouch   = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
-        const matCushion = new THREE.MeshLambertMaterial({ color: 0x3d5166 });
-        // Plants
-        const matPot     = new THREE.MeshLambertMaterial({ color: 0x7a4f28 });
-        const matLeaf    = new THREE.MeshLambertMaterial({ color: 0x2d5a27 });
-        const matLeafDark= new THREE.MeshLambertMaterial({ color: 0x1a3d18 });
+        const matCouch   = new THREE.MeshLambertMaterial({ color: 0x150020 });
+        const matCushion = new THREE.MeshLambertMaterial({ color: 0x250040 });
+        // Plants: artificial synthetic neon flora
+        const matPot     = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const matLeaf    = new THREE.MeshLambertMaterial({ color: 0x00ff88, emissive: 0x002211 });
+        const matLeafDark= new THREE.MeshLambertMaterial({ color: 0x008844 });
         // Screen / lamp
-        const matScreen  = new THREE.MeshBasicMaterial({ color: 0x1a3a4a });
-        const matLamp    = new THREE.MeshBasicMaterial({ color: 0xfff0c0, emissive: 0xfff0c0 });
-        const matMetal   = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        const matScreen  = new THREE.MeshBasicMaterial({ color: 0x00aaff });
+        const matLamp    = new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff });
+        const matMetal   = new THREE.MeshLambertMaterial({ color: 0x555566 });
         // Window / curtain
-        const matCurtain = new THREE.MeshLambertMaterial({ color: 0x4a2a5a, side: THREE.DoubleSide });
-        const matWindowFr= new THREE.MeshLambertMaterial({ color: 0x3a2010 });
+        const matCurtain = new THREE.MeshLambertMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
+        const matWindowFr= new THREE.MeshLambertMaterial({ color: 0x222222 });
         // Wardrobe
-        const matWardrobe= new THREE.MeshLambertMaterial({ color: 0x3b2818 });
-        const matWardDoor= new THREE.MeshLambertMaterial({ color: 0x4a3322 });
+        const matWardrobe= new THREE.MeshLambertMaterial({ color: 0x151515 });
+        const matWardDoor= new THREE.MeshLambertMaterial({ color: 0x222222 });
         // Rug
-        const matRug     = new THREE.MeshLambertMaterial({ color: 0x6b3a5a });
+        const matRug     = new THREE.MeshLambertMaterial({ color: 0x200030 });
         // Wall accent / baseboard
         const matBase    = new THREE.MeshLambertMaterial({ color: 0x2a1e10 });
         const matTVMount = new THREE.MeshLambertMaterial({ color: 0x111111 });
@@ -2525,7 +2525,7 @@
                 const screenMat = new THREE.MeshBasicMaterial({ map: tex });
                 // Replace the front face — build a PlaneGeometry on top of the box
                 const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.40), screenMat);
-                screenPlane.position.set(deskX-0.1, 1.28, deskZ-0.348);
+                screenPlane.position.set(deskX-0.1, 1.28, deskZ-0.345);
                 vrmScene.add(screenPlane);
                 // Add matching glow for the wallpaper colour
                 monGlow.color.setHex(0x2266aa);
@@ -3979,7 +3979,7 @@
         // Instead of bypassing Marin and playing dumbly, we send it to her
         // so she can fetch metadata, decide if it's music or video, and
         // automatically trigger the correct __DIRECTOR__ choreography (dance vs watch)!
-        document.getElementById('msg-input').value = `Please play this link on the TV: ${val}`;
+        document.getElementById('msg-input').value = `[SYSTEM EVENT: User pasted video link to TV: ${val} - Must use youtube_search_tool exactly with this URL]`;
         sendMessage();
     };
 
