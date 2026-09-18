@@ -39,10 +39,31 @@ def log_agent(msg: str):
     except Exception: pass
 
 def fix_spacing(text: str) -> str:
-    """Minimal spacing fix — only collapse double spaces."""
-    if not text: return text
+    \"\"\"Fix missing spaces between words from small models without modifying control tags/base64.\"\"\"
+    if not text:
+        return text
+
+    # Protect all __TAG__... control tags from spacing modifications
+    protected_tags = []
+    def _protect(match):
+        protected_tags.append(match.group(0))
+        return f"__PROTECTED_TAG_{len(protected_tags)-1}__"
+
+    # Mask __DIRECTOR__...__END__, __YOUTUBE__..., etc.
+    masked = re.sub(r'__DIRECTOR__.*?__END__', _protect, text, flags=re.DOTALL)
+    masked = re.sub(r'__[A-Z0-9_]+__\S*', _protect, masked)
+
     # 1. camelCase: wordWord -> word Word
-    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
+    masked = re.sub(r'([a-z,])([A-Z])', r'\1 \2', masked)
+    # 2. Punctuation: word,word -> word, word
+    masked = re.sub(r'([,!?;])([a-zA-Z])', r'\1 \2', masked)
+    masked = re.sub(r'([.:])([A-Z])', r'\1 \2', masked)
+    
+    # 3. Restore protected tags
+    for i, tag in enumerate(protected_tags):
+        masked = masked.replace(f"__PROTECTED_TAG_{i}__", tag)
+
+    return masked    text = re.sub(r'([a-z,])([A-Z])', r'\1 \2', text)
     # 2. Punctuation: word,word -> word, word
     #    '.' and ':' only split before an uppercase letter so decimals (3.14),
     #    domains (example.com), filenames (file.py) and 'Marin:hello' survive
@@ -466,7 +487,7 @@ def youtube_search_tool(query: str, allow_dance: bool = True) -> str:
                 
                 # Add dance tag for music
                 encoded = encode_director_script(script)
-                director_tag = f"__DIRECTOR__{encoded} __DANCE__"
+                director_tag = f"__DIRECTOR__{encoded}__END__ __DANCE__"
                 return f"Playing music '{title}'. I am acting out the lyrics! __YOUTUBE__{video_id} {director_tag}"
             else:
                 # Music with no lyrics
