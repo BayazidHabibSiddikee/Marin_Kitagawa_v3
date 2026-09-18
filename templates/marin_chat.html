@@ -4246,21 +4246,22 @@
         'default': 'neutral_idle',
     };
 
-    // One-shot animations that should return to idle when done
-    const _ONESHOT_ANIMS = new Set([
-        'action_greeting','love','gratitude','joy2','action_pat','action_laydown',
-        'action_standup','action_attention_seeking','action_crawling','action_crouch',
-        'admiration','anger','caring','confusion','curiosity','desire','disappointment',
-        'disapproval','disgust','embarrassment','excitement','fear','grief','optimism',
-        'pride','relief','remorse','sadness','surprise','love','joy',
-        'dance_dab','dance_headdrop',
-    ]);
-
-    // Non-looping animations — played once then idle
+    // Non-looping one-shot animations — played once then crossfade back to idle (or resume dance)
     const _LOOP_ONCE_ANIMS = new Set([
-        'action_greeting','love','gratitude','joy2','action_pat',
-        'action_laydown','action_standup','action_attention_seeking',
-        'dance_dab','dance_headdrop',
+        'action_greeting', 'action_greeting1', 'love', 'love2', 'love3', 'gratitude', 
+        'joy', 'joy2', 'joy3', 'action_pat', 'action_laydown', 'action_standup', 
+        'action_attention_seeking', 'action_crawling', 'action_crouch', 'action_jump',
+        'action_pickingup', 'admiration', 'admiration2', 'admiration3', 'amusement', 
+        'amusement2', 'amusement3', 'anger', 'anger2', 'anger3', 'annoyance', 'annoyance1', 
+        'approval', 'approval2', 'approval3', 'caring', 'caring1', 'confusion', 'confusion2', 
+        'confusion3', 'curiosity', 'curiosity2', 'curiosity3', 'desire', 'desire1', 'desire2', 
+        'disappointment', 'disappointment2', 'disapproval', 'disaproval1', 'disgust', 
+        'disgust1', 'disgust2', 'embarrassment', 'excitement', 'excitement2', 'excitement3', 
+        'fear', 'fear2', 'fear3', 'grief', 'hitarea_butt', 'hitarea_chest', 'hitarea_foot', 
+        'hitarea_groin', 'hitarea_hands', 'hitarea_head', 'hitarea_leg', 'nervousness', 
+        'nervousness2', 'nervousnes3', 'optimism', 'pride', 'pride2', 'reaction_groinhit', 
+        'reaction_headshot', 'realization', 'relief', 'relief1', 'remorse', 'remorse2', 
+        'remorse3', 'sadness', 'sadness2', 'surprise', 'surprise2', 'dance_dab', 'dance_headdrop'
     ]);
 
     async function playAnimation(name) {
