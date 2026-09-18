@@ -36,7 +36,7 @@ _BUSINESS_PAT = re.compile(r'\b(trade|buy|sell|portfolio|binance|arena|judge|fin
 _STUDY_PAT   = re.compile(r'\b(learn|teach|study|master|become\s+expert|start\s+learning|tutorial|how\s+to|course)\b')
 _PDF_PAT     = re.compile(r'\b(pdf|document|paper|analyzer|batch|convert)\b')
 _BOOK_PAT    = re.compile(r'\b(book|textbook|epub|novel)\b')
-_YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play)\b')
+_YOUTUBE_PAT = re.compile(r'\b(youtube|yt|video|videos|watch|song|music|play|documentary|movie|show|episode)\b')
 # Dance ONLY triggers on explicit dance words — NOT on generic play/music
 _DANCE_PAT   = re.compile(r'\b(dance|dancing|twerk|boogie|groove)\b|let\'?s dance|start dancing')
 # Telegram: "send telegram", "message me on telegram", "notify me via tg"
@@ -163,7 +163,7 @@ def _regex_stage(text: str) -> dict | None:
     # YouTube / Video — only when NOT a dance request
     if _YOUTUBE_PAT.search(lower):
         # Remove action words to get a cleaner query
-        query = re.sub(r'\b(search|find|play|watch|youtube|video|videos|song|music|for)\b', '', lower).strip()
+        query = re.sub(r'\b(search|find|play|watch|youtube|video|videos|song|music|for|documentary|movie|show|episode)\b', '', lower).strip()
         return {"intent": "youtube_search_tool", "params": {"query": query or lower}, "confidence": 0.95}
 
     # PDF / Documents

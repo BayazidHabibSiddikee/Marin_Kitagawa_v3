@@ -296,7 +296,11 @@ async def stream_marin_chat(
             # If the tool provided a fully crafted response (like youtube_search_tool), skip the LLM
             if tool_result and intent in ["youtube_search_tool"]:
                 yield tool_result
-                database.save_message("marin", "user", prompt, user_id=user_id, session_id=session_id)
+                # Don't leak system event tool instructions into the LLM's chat history
+                save_prompt = prompt
+                if "[SYSTEM EVENT" in prompt:
+                    save_prompt = "(User quietly pasted a link to the TV)"
+                database.save_message("marin", "user", save_prompt, user_id=user_id, session_id=session_id)
                 database.save_message("marin", "assistant", tool_result, user_id=user_id, session_id=session_id)
                 return
 
