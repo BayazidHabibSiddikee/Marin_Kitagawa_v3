@@ -1,12 +1,12 @@
-<p align="center">
-  <img src="images/banner.png" alt="SwordFish Banner" width="100%"/>
-</p>
-
-<h1 align="center">SwordFish</h1>
+<h1 align="center">Marin</h1>
 
 <p align="center">
   <strong>The Cybernetic Sentinel & System Orchestrator</strong><br/>
   <em>A production-grade AI operating system built for high-stakes tool orchestration and technical intelligence.</em>
+</p>
+
+<p align="center">
+  <img src="media/marin-demo.gif" alt="Marin Demo" width="100%"/>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ## Overview
 
-SwordFish is powered by the **Marin Cognitive Architecture** — a unified intent classifier and 4-node LangGraph cycle that ensures every tool call is verified, accurate, and safe. It merges local LLMs (Ollama) with cloud frontier models (OpenRouter) into a single, secure, user-isolated environment — and now includes a dual-agent coding layer via **opencode**.
+Marin is powered by the **Marin Cognitive Architecture** — a unified intent classifier and 4-node LangGraph cycle that ensures every tool call is verified, accurate, and safe. It merges local LLMs (Ollama) with cloud frontier models (OpenRouter) into a single, secure, user-isolated environment — and now includes a dual-agent coding layer via **opencode**.
 
 ```
 User Input
@@ -234,7 +234,7 @@ Request
 
 ## Knowledge & Memory
 
-SwordFish maintains two types of persistent knowledge:
+Marin maintains two types of persistent knowledge:
 
 **RAG Knowledge Base** (port `5080`) — a FAISS vector store that indexes your documents, PDFs, and research threads. Marin queries it automatically on every relevant message.
 
@@ -437,5 +437,6 @@ MIT License (Free for Personal Use) | **Enterprise Support Available**
   <br/>
   <em>Built with obsession by <strong>Bayazid HS</strong></em>
   <br/>
-  <small>© 2025 SwordFish AI. All rights reserved.</small>
+  <a href="mailto:bayazid@med.com.bd">📧 Contact Developer</a>
+  <small>© 2025 Marin AI. All rights reserved.</small>
 </p>
