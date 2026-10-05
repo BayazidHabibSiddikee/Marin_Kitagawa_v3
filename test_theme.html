@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    :root {
+        --ink: #fff;
+        --teal: #000;
+    }
+    body { background: var(--ink); color: var(--teal); }
+</style>
+</head>
+<body>
+    <div id="theme-grid"></div>
+<script>
+    const COLOR_THEMES = [
+        { name: 'A', vars: { '--ink': '#f00', '--teal': '#0f0' } },
+        { name: 'B', vars: { '--ink': '#00f', '--teal': '#ff0' } }
+    ];
+    function applyTheme(name) {
+        const theme = COLOR_THEMES.find(t => t.name === name);
+        const root = document.documentElement;
+        Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    }
+    const grid = document.getElementById('theme-grid');
+    grid.innerHTML = COLOR_THEMES.map(t => `<button onclick="applyTheme('${t.name}')">${t.name}</button>`).join('');
+</script>
+</body>
+</html>

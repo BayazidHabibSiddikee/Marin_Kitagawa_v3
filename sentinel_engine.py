@@ -112,9 +112,10 @@ stats = {
 # ── App ─────────────────────────────────────────────────────────────────────────
 sentinel_app = FastAPI(title="Marin Sentinel Proxy")
 
-# ── Shared HTTP Client ──────────────────────────────────────────────────────────
+from typing import Optional
+
 # Using a single AsyncClient pool dramatically speeds up proxying by reusing connections
-_http_client: httpx.AsyncClient | None = None
+_http_client: Optional[httpx.AsyncClient] = None
 
 @sentinel_app.on_event("startup")
 async def startup_event():
@@ -304,7 +305,7 @@ def get_langchain_model(model_name: str, bind_tools: list | None = None, **kwarg
 
     # ── Last resort: local Ollama ──────────────────────────────────────────────
     if "/" in model_name:
-        model_name = DEFAULT_LOCAL_MODEL
+        return None  # Do not fallback to ollama for remote models
     llm = ChatOllama(model=model_name, base_url=OLLAMA_BASE_URL, timeout=120, **kwargs)
 
     if pool.or_keys:

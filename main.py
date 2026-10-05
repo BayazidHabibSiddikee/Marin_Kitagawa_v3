@@ -805,15 +805,16 @@ async def list_documents():
 
 @app.post("/api/documents/upload")
 async def upload_document(file: UploadFile = File(...)):
-    if not file.filename:
+    filename = file.filename
+    if filename is None:
         return {"error": "Filename is required"}
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in (".pdf", ".docx", ".txt", ".md"):
         return {"error": "Unsupported file type. Use PDF, DOCX, TXT, or MD."}
     content = await file.read()
     uploads_dir = os.path.join(BASE_DIR, "static", "downloads")
     os.makedirs(uploads_dir, exist_ok=True)
-    safe_filename = os.path.basename(file.filename.replace('\\', '/'))
+    safe_filename = os.path.basename(filename.replace('\\', '/'))
     filepath = os.path.join(uploads_dir, safe_filename)
     with open(filepath, "wb") as f:
         f.write(content)
@@ -826,7 +827,7 @@ async def upload_document(file: UploadFile = File(...)):
         except Exception:
             pass
     asyncio.create_task(_trigger_reindex())
-    return {"success": True, "filename": file.filename, "size": f"{upload_size_mb:.1f}MB"}
+    return {"success": True, "filename": filename, "size": f"{upload_size_mb:.1f}MB"}
 
 @app.delete("/api/documents/{filename}")
 async def delete_document(filename: str):
@@ -844,10 +845,11 @@ async def delete_document(filename: str):
 @app.post("/upload")
 async def upload_image(image: UploadFile = File(...)):
     import re
-    if not image.filename:
+    filename = image.filename
+    if filename is None:
         return JSONResponse({"error": "No filename"}, status_code=400)
-    filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', image.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    safe_filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+    filepath = os.path.join(UPLOAD_FOLDER, safe_filename)
     with open(filepath, "wb") as buf:
         buf.write(await image.read())
     return {"ok": True, "path": f"/{filepath}"}
@@ -1172,9 +1174,10 @@ async def get_settings():
 
 @app.post("/api/settings/avatar")
 async def upload_avatar(avatar: UploadFile = File(...)):
-    if not avatar.filename:
+    filename = avatar.filename
+    if filename is None:
         return {"error": "Filename is required"}
-    ext = os.path.splitext(avatar.filename)[1].lower()
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
         return {"error": "Unsupported image type"}
     content = await avatar.read()

@@ -1,0 +1,4405 @@
+
+    let currentMode   = 'chat';
+    let currentDepth  = 'standard';
+    const depths      = ['standard', 'detailed', 'cascade'];
+    let attachedImage = null;
+    let isStreaming   = false;
+    let currentAgent  = 'marin';
+    let voiceOn       = false;
+    let ragEnabled    = false;
+    let sessionStart  = null;
+    let sessionTask   = null;
+    let timerInterval = null;
+    let termVisible   = false;
+    let currentWordLimit = 0;
+    let pendingProactive = [];
+    // Session ID — unique per page-load; lets the backend separate conversation threads
+    const currentSessionId = 'main';  // fixed session — history persists across page loads
+
+    let vrmVisible   = false;
+    let vrmModel     = null;
+    let vrmRenderer  = null;
+    let vrmScene     = null;
+    let vrmCamera    = null;
+    let vrmClock     = new THREE.Clock();
+
+    let vrmControls  = null;
+    let vrmMixer, vrmAction;
+    let projectorObject = null;
+    let vrmCssRenderer = null;
+    let currentAction = null;
+
+    let audioContext = null;
+    let audioAnalyser = null;
+    let audioSource = null;
+    let pendingDirectorScript = null;  // shared between sendMessage and playVoiceAudio
+
+    // ── Settings ──────────────────────────────────────────────────
+    const FREE_MODELS = [
+        { id: "google/gemma-4-31b-it:free", name: "Google Gemma 4 31B", ctx: "256K", vision: false },
+        { id: "google/gemma-4-26b-a4b-it:free", name: "Google Gemma 4 26B MoE", ctx: "262K", vision: true },
+        { id: "qwen/qwen3-coder:free", name: "Qwen3 Coder", ctx: "256K", vision: false },
+        { id: "qwen/qwen-2.5-72b-instruct:free", name: "Qwen 2.5 72B", ctx: "131K", vision: false },
+        { id: "qwen/qwen3-next-80b-a3b-instruct:free", name: "Qwen3 Next 80B MoE", ctx: "262K", vision: false },
+        { id: "qwen/qwen3-coder-480b-a35b:free", name: "Qwen3 Coder 480B MoE", ctx: "1M", vision: false },
+        { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", ctx: "131K", vision: false },
+        { id: "meta-llama/llama-3.2-3b-instruct:free", name: "Llama 3.2 3B", ctx: "131K", vision: false },
+        { id: "nousresearch/hermes-3-llama-3.1-405b:free", name: "Hermes 3 405B", ctx: "131K", vision: false },
+        { id: "venice/uncensored:free", name: "Venice Uncensored", ctx: "33K", vision: false },
+        { id: "liquid/lfm-40b:free", name: "Liquid LFM 40B", ctx: "33K", vision: false },
+        { id: "nvidia/nemotron-nano-9b-v2:free", name: "NVIDIA Nemotron Nano 9B", ctx: "131K", vision: false },
+        { id: "openrouter/free", name: "OpenRouter Free Router", ctx: "200K", vision: false },
+        { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B", ctx: "131K", vision: false },
+        { id: "google/gemma-2-9b-it:free", name: "Google Gemma 2 9B", ctx: "8K", vision: false },
+        { id: "mistralai/mistral-7b-instruct:free", name: "Mistral 7B Instruct", ctx: "33K", vision: false },
+    ];
+
+    const GEMINI_MODELS = [
+        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", ctx: "1M", vision: true },
+        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", ctx: "2M", vision: true },
+        { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", ctx: "1M", vision: true },
+        { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", ctx: "2M", vision: true }
+    ];
+
+    const OPENAI_MODELS = [
+        { id: "gpt-4o-mini", name: "GPT-4o Mini", ctx: "128K", vision: true },
+        { id: "gpt-4o", name: "GPT-4o", ctx: "128K", vision: true },
+        { id: "o1-mini", name: "o1-mini", ctx: "128K", vision: false },
+        { id: "o1-preview", name: "o1-preview", ctx: "128K", vision: false },
+        { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", ctx: "16K", vision: false }
+    ];
+
+    const OLLAMA_MODELS = [
+        { id: "gemma4:31b-cloud", name: "Gemma 4 31B Cloud", ctx: "256K", vision: false },
+        { id: "llama3.2", name: "Llama 3.2 3B", ctx: "128K", vision: false },
+        { id: "qwen2.5", name: "Qwen 2.5 7B", ctx: "32K", vision: false },
+        { id: "mistral", name: "Mistral 7B", ctx: "32K", vision: false },
+        { id: "deepseek-r1", name: "DeepSeek R1", ctx: "128K", vision: false },
+        { id: "phi3", name: "Phi-3 Mini", ctx: "128K", vision: false }
+    ];
+
+    const HF_MODELS = [
+        { id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B Instruct", ctx: "128K", vision: false },
+        { id: "Qwen/Qwen2.5-7B-Instruct", name: "Qwen 2.5 7B Instruct", ctx: "32K", vision: false },
+        { id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B Instruct v0.3", ctx: "32K", vision: false },
+        { id: "google/gemma-2-2b-it", name: "Gemma 2 2B IT", ctx: "8K", vision: false },
+        { id: "microsoft/Phi-3.5-mini-instruct", name: "Phi 3.5 Mini Instruct", ctx: "128K", vision: false }
+    ];
+
+    const FREELLMAPI_MODELS = [
+        { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", ctx: "1M", vision: true },
+        { id: "meta-llama/llama-3.3-70b-instruct:free", name: "Llama 3.3 70B", ctx: "131K", vision: false },
+        { id: "qwen/qwen-2.5-72b-instruct:free", name: "Qwen 2.5 72B", ctx: "131K", vision: false },
+        { id: "nousresearch/hermes-3-llama-3.1-405b:free", name: "Hermes 3 405B", ctx: "131K", vision: false },
+        { id: "nvidia/llama-3.1-nemotron-70b-instruct:free", name: "Nemotron 70B", ctx: "131K", vision: false },
+    ];
+
+    const PRESET_MODELS = {
+        openrouter: FREE_MODELS,
+        gemini: GEMINI_MODELS,
+        openai: OPENAI_MODELS,
+        ollama: OLLAMA_MODELS,
+        hf: HF_MODELS,
+        freellmapi: FREELLMAPI_MODELS
+    };
+
+    const PROVIDER_PRESETS = {
+        openrouter: { name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", hasPresetModels: true },
+        openai:     { name: "OpenAI", base_url: "https://api.openai.com/v1", hasPresetModels: true },
+        gemini:     { name: "Google Gemini", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/", hasPresetModels: true },
+        ollama:     { name: "Ollama Cloud", base_url: "https://api.ollama.ai/v1", hasPresetModels: true },
+        hf:         { name: "HuggingFace", base_url: "https://api-inference.huggingface.co/v1", hasPresetModels: true },
+        freellmapi: { name: "FreeLLMAPI", base_url: "http://localhost:3001/v1", hasPresetModels: true },
+        custom:     { name: "Custom", base_url: "", hasPresetModels: false },
+    };
+
+    let _providers = [];  // live state
+    let _deepModels = []; // live state
+    let _pendingAvatar = null; // pending avatar file for settings save
+
+    // ── Utility ───────────────────────────────────────────────
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // ── Avatar preview ──────────────────────────────────────────
+    function previewUserAvatar(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        _pendingAvatar = file;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            document.getElementById('set-avatar-preview').src = ev.target.result;
+            document.getElementById('set-avatar-preview').style.display = 'block';
+            document.getElementById('set-avatar-clear').style.display = 'inline-block';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function clearUserAvatar() {
+        _pendingAvatar = null;
+        document.getElementById('set-avatar-preview').style.display = 'none';
+        document.getElementById('set-avatar-clear').style.display = 'none';
+        document.getElementById('set-avatar-file').value = '';
+    }
+
+    // ── Tab switching ──────────────────────────────────────────
+    function switchSettingsTab(tab) {
+        document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+        document.getElementById(`stab-${tab}`).classList.add('active');
+        document.querySelectorAll('.stab-content').forEach(c => {
+            c.style.display = 'none';
+        });
+        const content = document.getElementById(`stab-content-${tab}`);
+        if (content) {
+            content.style.display = 'flex';
+            content.style.flexDirection = 'column';
+        }
+    }
+
+    // ── Provider card builder ─────────────────────────────────
+    function renderProviders() {
+        const list = document.getElementById('providers-list');
+        list.innerHTML = '';
+        _providers.forEach((p, idx) => renderProviderCard(p, idx, list));
+    }
+
+    function renderProviderCard(p, idx, container) {
+        const card = document.createElement('div');
+        card.className = `provider-card${p.enabled ? ' enabled' : ''}`;
+        card.dataset.idx = idx;
+
+        // Auto-select matching preset based on base_url
+        let matchedPreset = 'custom';
+        for (const [k, v] of Object.entries(PROVIDER_PRESETS)) {
+            if (p.base_url && v.base_url && p.base_url.includes(v.base_url)) {
+                matchedPreset = k;
+                break;
+            }
+        }
+
+        // Build model checkboxes for matched preset
+        let modelsHtml = '';
+        if (PROVIDER_PRESETS[matchedPreset] && PROVIDER_PRESETS[matchedPreset].hasPresetModels && PRESET_MODELS[matchedPreset]) {
+            const presetModels = PRESET_MODELS[matchedPreset];
+            modelsHtml = presetModels.map(m => {
+                const checked = (p.models || []).includes(m.id) ? 'checked' : '';
+                return `<label class="model-cb-row">
+                    <input type="checkbox" class="prov-model-cb" value="${escapeHtml(m.id)}" ${checked}>
+                    <span class="m-name">${escapeHtml(m.name)}</span>
+                    <span class="m-ctx">${m.ctx}</span>
+                    ${m.vision ? '<span style="font-size:.5rem;color:var(--gold);border:1px solid var(--gold);padding:1px 3px;border-radius:2px;">VIS</span>' : ''}
+                </label>`;
+            }).join('');
+        } else {
+            const customModels = (p.models || []).join('\n');
+            modelsHtml = `<textarea class="prov-custom-models" rows="3" placeholder="One model ID per line\ne.g. gemini-1.5-flash" style="width:100%;padding:5px 8px;background:var(--ink2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:.7rem;resize:vertical;">${escapeHtml(customModels)}</textarea>`;
+        }
+
+        // Build keys list
+        const keysHtml = (p.api_keys || []).map(k => `
+            <div style="display:flex;gap:4px;">
+                <input type="password" class="prov-key-input" value="${escapeHtml(k)}" placeholder="API key..." style="flex:1;">
+                <button onclick="testProviderKey(this)" style="background:var(--ink2);border:1px solid var(--border);color:var(--text);padding:0 8px;border-radius:var(--radius-sm);cursor:pointer;font-size:.65rem;flex-shrink:0;">Test</button>
+                <button onclick="this.parentElement.remove()" style="background:none;border:1px solid var(--border);color:var(--danger);width:26px;height:26px;border-radius:var(--radius-sm);cursor:pointer;font-size:.65rem;flex-shrink:0;">×</button>
+            </div>`).join('');
+
+        card.innerHTML = `
+            <div class="provider-header" onclick="toggleProviderBody(this)">
+                <div class="provider-dot${p.enabled ? ' on' : ''}" onclick="event.stopPropagation();toggleProviderEnabled(${idx})"></div>
+                <span class="provider-name">#${idx+1} ${escapeHtml(p.name || 'Provider')}</span>
+                <div class="provider-actions" onclick="event.stopPropagation()">
+                    <button onclick="moveProvider(${idx},-1)" title="Move up">↑</button>
+                    <button onclick="moveProvider(${idx},1)" title="Move down">↓</button>
+                    <button class="btn-del" onclick="removeProvider(${idx})" title="Delete">🗑</button>
+                </div>
+            </div>
+            <div class="provider-body collapsed">
+                <div>
+                    <div class="provider-field-label">PRESET</div>
+                    <select class="prov-preset" onchange="applyProviderPreset(this, ${idx})" style="margin-bottom:4px;">
+                        ${Object.entries(PROVIDER_PRESETS).map(([k,v]) => `<option value="${k}"${k === matchedPreset ? ' selected' : ''}>${v.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <div class="provider-field-label">BASE URL</div>
+                    <input type="text" class="prov-base-url" value="${escapeHtml(p.base_url || '')}" placeholder="https://...">
+                </div>
+                <div>
+                    <div class="provider-field-label">NAME</div>
+                    <input type="text" class="prov-name" value="${escapeHtml(p.name || '')}" placeholder="My Provider">
+                </div>
+                <div>
+                    <div class="provider-field-label">API KEYS</div>
+                    <div class="provider-keys-list">${keysHtml}</div>
+                    <button onclick="addProviderKey(this)" class="set-dashed-btn" style="margin-top:4px;">+ add key</button>
+                </div>
+                <div>
+                    <div class="provider-field-label">MODELS</div>
+                    <div class="provider-models-list">${modelsHtml}</div>
+                </div>
+            </div>`;
+
+        container.appendChild(card);
+    }
+
+    function toggleProviderBody(header) {
+        const body = header.nextElementSibling;
+        body.classList.toggle('collapsed');
+    }
+
+    // Sync _providers from current DOM inputs so re-renders don't lose unsaved changes
+    function syncProvidersFromDOM() {
+        document.querySelectorAll('.provider-card').forEach((card, idx) => {
+            if (!_providers[idx]) return;
+            const nameInput = card.querySelector('.prov-name');
+            const urlInput = card.querySelector('.prov-base-url');
+            if (nameInput) _providers[idx].name = nameInput.value.trim() || _providers[idx].name;
+            if (urlInput) _providers[idx].base_url = urlInput.value.trim() || _providers[idx].base_url;
+            
+            // Sync API keys
+            const keys = Array.from(card.querySelectorAll('.prov-key-input')).map(i => i.value.trim()).filter(Boolean);
+            _providers[idx].api_keys = keys;
+            
+            // Sync Models
+            let matchedPreset = 'custom';
+            const curBaseUrl = _providers[idx].base_url;
+            for (const [k, v] of Object.entries(PROVIDER_PRESETS)) {
+                if (curBaseUrl && v.base_url && curBaseUrl.includes(v.base_url)) {
+                    matchedPreset = k;
+                    break;
+                }
+            }
+
+            const hasPreset = PROVIDER_PRESETS[matchedPreset] && PROVIDER_PRESETS[matchedPreset].hasPresetModels;
+            if (hasPreset) {
+                _providers[idx].models = Array.from(card.querySelectorAll('.prov-model-cb:checked')).map(cb => cb.value);
+            } else {
+                const ta = card.querySelector('.prov-custom-models');
+                if (ta) {
+                    _providers[idx].models = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+                }
+            }
+        });
+    }
+
+    function toggleProviderEnabled(idx) {
+        syncProvidersFromDOM();
+        _providers[idx].enabled = !_providers[idx].enabled;
+        renderProviders();
+    }
+
+    function moveProvider(idx, dir) {
+        syncProvidersFromDOM();
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= _providers.length) return;
+        [_providers[idx], _providers[newIdx]] = [_providers[newIdx], _providers[idx]];
+        _providers.forEach((p, i) => p.priority = i + 1);
+        renderProviders();
+    }
+
+    function removeProvider(idx) {
+        syncProvidersFromDOM();
+        _providers.splice(idx, 1);
+        _providers.forEach((p, i) => p.priority = i + 1);
+        renderProviders();
+    }
+
+    function addProviderKey(btn) {
+        syncProvidersFromDOM();
+        const card = btn.closest('.provider-card');
+        const idx = parseInt(card.dataset.idx, 10);
+        _providers[idx].api_keys.push("");
+        renderProviders();
+        
+        // Focus the newly added input
+        setTimeout(() => {
+            const newCards = document.querySelectorAll('.provider-card');
+            if (newCards[idx]) {
+                const inputs = newCards[idx].querySelectorAll('.prov-key-input');
+                if (inputs.length > 0) inputs[inputs.length - 1].focus();
+            }
+        }, 50);
+    }
+
+    async function testProviderKey(btn) {
+        const input = btn.parentElement.querySelector('.prov-key-input');
+        const key = input.value.trim();
+        const card = btn.closest('.provider-card');
+        const baseUrl = card.querySelector('.prov-base-url').value.trim();
+        
+        if (!key) return;
+        
+        const oldText = btn.textContent;
+        btn.textContent = '...';
+        btn.disabled = true;
+        
+        // Remove old result span if exists
+        const oldSpan = btn.parentElement.querySelector('.test-result-msg');
+        if (oldSpan) oldSpan.remove();
+
+        const msgSpan = document.createElement('span');
+        msgSpan.className = 'test-result-msg';
+        msgSpan.style.fontSize = '0.65rem';
+        msgSpan.style.alignSelf = 'center';
+        msgSpan.style.marginLeft = '5px';
+        btn.parentElement.appendChild(msgSpan);
+
+        try {
+            const res = await fetch('/api/validate-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key, base_url: baseUrl })
+            });
+            const data = await res.json();
+            if (data.valid) {
+                btn.textContent = '✓';
+                btn.style.color = '#4caf50';
+                btn.title = data.error || 'Valid';
+                msgSpan.style.color = '#4caf50';
+                msgSpan.textContent = data.error || 'Valid';
+            } else {
+                btn.textContent = '✗';
+                btn.style.color = 'var(--danger)';
+                btn.title = data.error || 'Invalid';
+                msgSpan.style.color = 'var(--danger)';
+                msgSpan.textContent = data.error || 'Invalid';
+            }
+        } catch (e) {
+            btn.textContent = '!';
+            btn.style.color = 'var(--danger)';
+            btn.title = 'Network error';
+            msgSpan.style.color = 'var(--danger)';
+            msgSpan.textContent = 'Network error';
+        }
+        
+        btn.disabled = false;
+        setTimeout(() => {
+            if (btn.textContent === '✓' || btn.textContent === '✗' || btn.textContent === '!') {
+                btn.textContent = 'Test';
+                btn.style.color = 'var(--text)';
+            }
+        }, 3000);
+    }
+
+    function applyProviderPreset(select, idx) {
+        const preset = PROVIDER_PRESETS[select.value];
+        if (!preset) return;
+        syncProvidersFromDOM();
+        if (_providers[idx]) {
+            _providers[idx].base_url = preset.base_url;
+            _providers[idx].name = preset.name;
+        }
+        renderProviders();
+        const cards = document.querySelectorAll('.provider-card');
+        if (cards[idx]) {
+            cards[idx].querySelector('.provider-body').classList.remove('collapsed');
+        }
+    }
+
+    function addProvider() {
+        syncProvidersFromDOM();
+        _providers.push({
+            name: 'OpenRouter',
+            base_url: 'https://openrouter.ai/api/v1',
+            api_keys: [],
+            models: [],
+            enabled: true,
+            priority: _providers.length + 1,
+        });
+        renderProviders();
+        // Expand the new card
+        setTimeout(() => {
+            const cards = document.querySelectorAll('.provider-card');
+            if (cards.length) {
+                const last = cards[cards.length - 1];
+                last.querySelector('.provider-body').classList.remove('collapsed');
+            }
+        }, 50);
+    }
+
+    // ── Deep models list ───────────────────────────────────────
+    function renderDeepModels() {
+        const list = document.getElementById('deep-models-list');
+        list.innerHTML = '';
+        _deepModels.forEach((m, i) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:4px;align-items:center;';
+            row.innerHTML = `
+                <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--text-muted);min-width:24px;">${i+1}.</span>
+                <input type="text" value="${escapeHtml(m)}" placeholder="model/id:free" style="flex:1;padding:5px 8px;background:var(--ink);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:.75rem;font-family:'JetBrains Mono',monospace;">
+                <button onclick="this.parentElement.remove()" style="background:none;border:1px solid var(--border);color:var(--danger);width:24px;height:24px;border-radius:var(--radius-sm);cursor:pointer;font-size:.6rem;flex-shrink:0;">×</button>`;
+            list.appendChild(row);
+        });
+    }
+
+    function addDeepModelRow() {
+        const list = document.getElementById('deep-models-list');
+        const i = list.children.length;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:4px;align-items:center;';
+        row.innerHTML = `
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--text-muted);min-width:24px;">${i+1}.</span>
+            <input type="text" placeholder="model/id:free" style="flex:1;padding:5px 8px;background:var(--ink);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:.75rem;font-family:'JetBrains Mono',monospace;">
+            <button onclick="this.parentElement.remove()" style="background:none;border:1px solid var(--border);color:var(--danger);width:24px;height:24px;border-radius:var(--radius-sm);cursor:pointer;font-size:.6rem;flex-shrink:0;">×</button>`;
+        list.appendChild(row);
+    }
+
+    // ── Collect provider state from DOM ────────────────────────
+    function collectProvidersFromDOM() {
+        return Array.from(document.querySelectorAll('.provider-card')).map((card, idx) => {
+            const keys = Array.from(card.querySelectorAll('.prov-key-input')).map(i => i.value.trim()).filter(Boolean);
+            const isOR = (card.querySelector('.prov-base-url')?.value || '').includes('openrouter');
+            let models;
+            if (isOR) {
+                models = Array.from(card.querySelectorAll('.prov-model-cb:checked')).map(cb => cb.value);
+            } else {
+                const ta = card.querySelector('.prov-custom-models');
+                models = ta ? ta.value.split('\n').map(s => s.trim()).filter(Boolean) : [];
+            }
+            return {
+                name: card.querySelector('.prov-name')?.value?.trim() || 'Provider',
+                base_url: card.querySelector('.prov-base-url')?.value?.trim() || '',
+                api_keys: keys,
+                models,
+                enabled: _providers[idx]?.enabled ?? true,
+                priority: idx + 1,
+            };
+        });
+    }
+
+    function collectDeepModelsFromDOM() {
+        return Array.from(document.querySelectorAll('#deep-models-list input[type="text"]'))
+            .map(i => i.value.trim()).filter(Boolean);
+    }
+
+    // ── Uninstall ──────────────────────────────────────────────
+    async function runUninstall(flags) {
+        const resultEl = document.getElementById('uninstall-result');
+        resultEl.textContent = 'Working...';
+        resultEl.style.color = 'var(--text-muted)';
+        try {
+            const res = await fetch('/api/settings/uninstall', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(flags)
+            });
+            const data = await res.json();
+            const parts = Object.entries(data.results || {}).map(([k, v]) => `${k}: ${v}`);
+            resultEl.textContent = parts.length ? parts.join(' | ') : 'Done.';
+            resultEl.style.color = 'var(--success)';
+            if (flags.clear_all_state && data.status === "ok") {
+                setTimeout(() => window.location.href = '/', 1000);
+            }
+        } catch (e) {
+            resultEl.textContent = 'Failed: ' + e.message;
+            resultEl.style.color = 'var(--danger)';
+        }
+    }
+
+    // ── Open / Close / Save ────────────────────────────────────
+    async function openSettings() {
+        document.getElementById('settings-modal').classList.add('open');
+        document.getElementById('settings-msg').textContent = '';
+        switchSettingsTab('general');
+        initThemeGrid();
+        loadMemoryTab();
+        try {
+            const [res, tgRes, emailRes] = await Promise.all([
+                fetch('/api/settings?_=' + Date.now()),
+                fetch('/telegram'),
+                fetch('/email'),
+            ]);
+            const data      = await res.json();
+            const tgData    = await tgRes.json();
+            const emailData = await emailRes.json();
+
+            document.getElementById('set-name').value = data.user_name || '';
+            document.getElementById('set-location').value = data.location || '';
+            if (data.user_avatar) {
+                document.getElementById('set-avatar-preview').src = data.user_avatar;
+                document.getElementById('set-avatar-preview').style.display = 'block';
+                document.getElementById('set-avatar-clear').style.display = 'inline-block';
+            }
+            document.getElementById('set-image-model').value = data.image_model || '';
+            document.getElementById('set-vision-model').value = data.vision_model || '';
+            document.getElementById('set-hf-token').value = data.hf_token || '';
+
+            // Communications
+            document.getElementById('set-tg-token').value  = tgData.bot_token   || '';
+            document.getElementById('set-tg-chat').value   = tgData.chat_id     || '';
+            document.getElementById('set-gmail-addr').value = emailData.gmail_address  || '';
+            document.getElementById('set-gmail-pass').value = emailData.gmail_password || '';
+
+            // Providers
+            _providers = Array.isArray(data.providers) && data.providers.length > 0
+                ? data.providers
+                : [{ name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', api_keys: [], models: [], enabled: true, priority: 1 }];
+            renderProviders();
+
+            // Deep models
+            _deepModels = Array.isArray(data.deep_models) ? data.deep_models : [];
+            renderDeepModels();
+        } catch (e) {
+            document.getElementById('settings-msg').textContent = 'Error loading settings.';
+            document.getElementById('settings-msg').style.color = 'var(--danger)';
+        }
+    }
+
+    function closeSettings() {
+        document.getElementById('settings-modal').classList.remove('open');
+    }
+
+    async function saveSettings() {
+        const msg = document.getElementById('settings-msg');
+        const body = {
+            user_name: document.getElementById('set-name').value,
+            location: document.getElementById('set-location').value,
+            image_model: document.getElementById('set-image-model').value,
+            vision_model: document.getElementById('set-vision-model').value,
+            hf_token: document.getElementById('set-hf-token').value,
+            providers: collectProvidersFromDOM(),
+            deep_models: collectDeepModelsFromDOM(),
+        };
+
+        if (_pendingAvatar) {
+            const fd = new FormData();
+            fd.append('avatar', _pendingAvatar);
+            try {
+                const upRes = await fetch('/api/settings/avatar', { method: 'POST', body: fd });
+                const upData = await upRes.json();
+                if (upData.url) body.user_avatar = upData.url;
+            } catch {}
+        } else if (document.getElementById('set-avatar-preview').style.display === 'none') {
+            body.user_avatar = '';
+        }
+
+        try {
+            // Save main settings + communications credentials in parallel
+            const tgToken  = document.getElementById('set-tg-token').value.trim();
+            const tgChat   = document.getElementById('set-tg-chat').value.trim();
+            const gmailAddr = document.getElementById('set-gmail-addr').value.trim();
+            const gmailPass = document.getElementById('set-gmail-pass').value.trim();
+
+            const saves = [
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }),
+            ];
+            if (tgToken || tgChat) {
+                saves.push(fetch('/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_token: tgToken, chat_id: tgChat })
+                }));
+            }
+            if (gmailAddr || gmailPass) {
+                saves.push(fetch('/email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gmail_address: gmailAddr, gmail_password: gmailPass })
+                }));
+            }
+
+            const [res] = await Promise.all(saves);
+            const data = await res.json();
+            if (data.status === 'success') {
+                msg.textContent = 'Saved!';
+                msg.style.color = 'var(--success)';
+                setTimeout(() => closeSettings(), 800);
+            } else {
+                msg.textContent = 'Error saving.';
+                msg.style.color = 'var(--danger)';
+            }
+        } catch (e) {
+            msg.textContent = 'Error saving settings.';
+            msg.style.color = 'var(--danger)';
+        }
+    }
+
+    // ── Kept for backward compat (no longer used in modal) ────
+    function addKeyField(value = '') {}
+    function renderModelCheckboxes(selectedIds) {}
+    function updateActiveModelDropdown() {}
+
+    // ── Flashcards ─────────────────────────────────────────────────
+    // ── ON LOAD ────────────────────────────────────────────────────────────
+    if (localStorage.getItem('marinNightMode') === 'true') {
+        document.body.classList.add('night-mode');
+    }
+
+    function toggleNightMode() {
+        document.body.classList.toggle('night-mode');
+        localStorage.setItem('marinNightMode', document.body.classList.contains('night-mode'));
+    }
+
+    function toggleSidebarDropdown(id) {
+        const target = document.getElementById(id);
+        if (!target) return;
+        const willOpen = !target.classList.contains('active');
+        document.querySelectorAll('.dropdown-wrapper.active').forEach(el => el.classList.remove('active'));
+        if (willOpen) target.classList.add('active');
+    }
+
+    function updateSidebarOffset() {
+        const sidebar = document.querySelector('.sidebar');
+        if (!sidebar) return;
+        sidebar.style.left = '0px'; // Fixed UI overlapping bug by pinning to left edge
+    }
+
+
+    // ── VRM VIEWER ──────────────────────────────────────────────────────────
+    function toggleVRM() {
+        vrmVisible = !vrmVisible;
+        const container = document.getElementById('vrm-container');
+        const resizer = document.getElementById('vrm-resizer');
+        const label = document.getElementById('vrm-label');
+        const btn = document.getElementById('vrm-toggle-btn');
+
+        container.style.display = vrmVisible ? 'block' : 'none';
+        resizer.style.display = vrmVisible ? 'block' : 'none';
+
+        label.textContent = vrmVisible ? 'avatar: on' : 'avatar: off';
+        btn.style.color = vrmVisible ? 'var(--teal)' : '';
+        btn.style.borderColor = vrmVisible ? 'var(--teal-dim)' : '';
+
+        updateSidebarOffset();
+
+        if (vrmVisible && !vrmRenderer) {
+            requestAnimationFrame(() => {
+                initVRM();
+                initResizer();
+            });
+        } else if (vrmVisible) {
+            requestAnimationFrame(() => {
+                onWindowResize();
+            });
+        }
+    }
+
+    function initResizer() {
+        const resizer = document.getElementById('vrm-resizer');
+        const leftSide = document.getElementById('vrm-container');
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none'; // Disable selection
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', stopResizing);
+        });
+
+        function handleMouseMove(e) {
+            if (!isResizing) return;
+            const container = document.querySelector('.main-area');
+            const containerRect = container.getBoundingClientRect();
+
+            // Calculate new width based on mouse position
+            let newWidth = e.clientX - containerRect.left;
+
+            // Constraints
+            const minWidth = 200;
+            const maxWidth = containerRect.width - 300; // Leave space for chat
+
+            if (newWidth < minWidth) newWidth = minWidth;
+            if (newWidth > maxWidth) newWidth = maxWidth;
+
+            leftSide.style.width = newWidth + 'px';
+            updateSidebarOffset();
+            onWindowResize();
+        }
+
+        function stopResizing() {
+            isResizing = false;
+            resizer.classList.remove('resizing');
+            document.body.style.cursor = 'default';
+            document.body.style.userSelect = 'auto'; // Re-enable selection
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', stopResizing);
+        }
+    }
+
+    async function initVRM() {
+        const canvas = document.getElementById('vrm-canvas');
+        const container = document.getElementById('vrm-container');
+
+        canvas.addEventListener("webglcontextcreationerror", function(e) {
+            console.error("WebGL context error:", e.statusMessage);
+            // Keep panel visible but show diagnostic message
+            if (!window._webglErrorShown) {
+                window._webglErrorShown = true;
+                const msg = document.createElement('div');
+                msg.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;'
+                    + 'background:rgba(13,10,8,0.95);color:#e07b6a;font-family:JetBrains Mono,sans-serif;'
+                    + 'font-size:.7rem;text-align:center;padding:20px;z-index:50;line-height:1.8;';
+                msg.innerHTML = `<strong>WebGL unavailable</strong><br>`
+                    + `Browser sandbox blocked the 3D context.<br>`
+                    + `The chat works fine — physics run server-side.<br>`
+                    + `Launch Chromium with: <code style="color:#4db8a4">chromium --disable-webgl-sandbox</code>`;
+                container.appendChild(msg);
+            }
+        }, false);
+
+        vrmScene = new THREE.Scene();
+
+        // Ensure width and height are valid (minimum 100px) in case layout hasn't finished
+        let cWidth = canvas.clientWidth || container.clientWidth || 300;
+        let cHeight = canvas.clientHeight || container.clientHeight || 500;
+        if (cWidth < 10) cWidth = 300;
+        if (cHeight < 10) cHeight = 500;
+
+        vrmCamera = new THREE.PerspectiveCamera(35.0, cWidth / cHeight, 0.1, 50.0);
+        vrmCamera.position.set(0.3, 1.5, 3.2);
+
+        vrmRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        // We must clear to transparent so the CSS3D TV shows through the punched hole
+        vrmRenderer.setClearColor(0x000000, 0);
+        vrmRenderer.setSize(cWidth, cHeight, false); // false prevents style override if already 100%
+        vrmRenderer.setPixelRatio(window.devicePixelRatio);
+        vrmRenderer.outputEncoding = THREE.sRGBEncoding;
+        vrmRenderer.shadowMap.enabled = false;
+        // vrmRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // CSS3DRenderer sits behind WebGL canvas for DOM elements
+        vrmCssRenderer = new THREE.CSS3DRenderer();
+        vrmCssRenderer.setSize(cWidth, cHeight);
+        vrmCssRenderer.domElement.style.position = 'absolute';
+        vrmCssRenderer.domElement.style.top = '0';
+        vrmCssRenderer.domElement.style.left = '0';
+        vrmCssRenderer.domElement.style.pointerEvents = 'none';
+        vrmCssRenderer.domElement.style.zIndex = '1';
+        container.style.position = 'relative';
+        container.appendChild(vrmCssRenderer.domElement);
+
+        // WebGL canvas on top (pointer-events:none so OrbitControls work via CSS layer)
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0'; canvas.style.left = '0';
+        canvas.style.zIndex = '2';
+        canvas.style.pointerEvents = 'none';
+        canvas.style.background = 'transparent';
+        vrmRenderer.setClearColor(0x000000, 0); // transparent so CSS bg shows
+
+        vrmControls = new THREE.OrbitControls(vrmCamera, vrmCssRenderer.domElement);
+        vrmCssRenderer.domElement.style.pointerEvents = 'auto';
+        vrmControls.screenSpacePanning = true;
+        vrmControls.target.set(0.0, 1.1, 0.0);
+        vrmControls.minDistance = 0.8;
+        vrmControls.maxDistance = 8.0;
+        vrmControls.update();
+
+        // ── COZY BEDROOM GEOMETRY ─────────────────────────────────────────────
+        const W = 9, H = 3.4, D = 8;
+        const deskX = 2.2, deskZ = -1.0;
+
+        // ── Materials (CYBERPUNK) ─────────────────────────────────────────────
+        // Floor: dark metallic grating
+        const matFloor   = new THREE.MeshLambertMaterial({ color: 0x1a1a24 });
+        // Walls: very dark grey / purple neon hue
+        const matWallBack = new THREE.MeshLambertMaterial({ color: 0x121218 });
+        const matWallSide = new THREE.MeshLambertMaterial({ color: 0x0f0f15 });
+        // Ceiling: pitch black
+        const matCeil    = new THREE.MeshLambertMaterial({ color: 0x050508 });
+        // Furniture: dark synthetic metals & matte plastics
+        const matDarkWood= new THREE.MeshLambertMaterial({ color: 0x111111 });
+        const matMidWood = new THREE.MeshLambertMaterial({ color: 0x22222b });
+        const matLightWood=new THREE.MeshLambertMaterial({ color: 0x333340 });
+        // Bed
+        const matBedFrame= new THREE.MeshLambertMaterial({ color: 0x151515 });
+        const matBedSheet= new THREE.MeshLambertMaterial({ color: 0x102030 });
+        const matPillow  = new THREE.MeshLambertMaterial({ color: 0x204060 });
+        const matBlanket = new THREE.MeshLambertMaterial({ color: 0x081820 });
+        // Couch
+        const matCouch   = new THREE.MeshLambertMaterial({ color: 0x150020 });
+        const matCushion = new THREE.MeshLambertMaterial({ color: 0x250040 });
+        // Plants: artificial synthetic neon flora
+        const matPot     = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const matLeaf    = new THREE.MeshLambertMaterial({ color: 0x00ff88, emissive: 0x002211 });
+        const matLeafDark= new THREE.MeshLambertMaterial({ color: 0x008844 });
+        // Screen / lamp
+        const matScreen  = new THREE.MeshBasicMaterial({ color: 0x00aaff });
+        const matLamp    = new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff });
+        const matMetal   = new THREE.MeshLambertMaterial({ color: 0x555566 });
+        // Window / curtain
+        const matCurtain = new THREE.MeshLambertMaterial({ color: 0x0a0a0a, side: THREE.DoubleSide });
+        const matWindowFr= new THREE.MeshLambertMaterial({ color: 0x222222 });
+        // Wardrobe
+        const matWardrobe= new THREE.MeshLambertMaterial({ color: 0x151515 });
+        const matWardDoor= new THREE.MeshLambertMaterial({ color: 0x222222 });
+        // Rug
+        const matRug     = new THREE.MeshLambertMaterial({ color: 0x200030 });
+        // Wall accent / baseboard
+        const matBase    = new THREE.MeshLambertMaterial({ color: 0x2a1e10 });
+        const matTVMount = new THREE.MeshLambertMaterial({ color: 0x111111 });
+
+        // ── Floor with plank pattern (alternating brightness strips) ─────────
+        const floorBase = new THREE.Mesh(new THREE.PlaneGeometry(W, D),
+            new THREE.MeshLambertMaterial({ color: 0x7a5230 }));
+        floorBase.rotation.x = -Math.PI / 2;
+        floorBase.position.y = 0;
+        vrmScene.add(floorBase);
+        // Plank strips
+        for (let i = -4; i <= 4; i++) {
+            const plank = new THREE.Mesh(new THREE.PlaneGeometry(0.14, D),
+                new THREE.MeshLambertMaterial({ color: i % 2 === 0 ? 0x8b6340 : 0x7a5230 }));
+            plank.rotation.x = -Math.PI / 2;
+            plank.position.set(i * 0.14 * 2, 0.001, 0);
+            vrmScene.add(plank);
+        }
+
+        // ── Walls ─────────────────────────────────────────────────────────────
+        // Back wall
+        const backWall = new THREE.Mesh(new THREE.PlaneGeometry(W, H), matWallBack);
+        backWall.position.set(0, H/2, -D/2);
+        vrmScene.add(backWall);
+        // Left wall
+        const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWallSide);
+        leftWall.position.set(-W/2, H/2, 0);
+        leftWall.rotation.y = Math.PI / 2;
+        vrmScene.add(leftWall);
+        // Right wall
+        const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(D, H), matWallSide);
+        rightWall.position.set(W/2, H/2, 0);
+        rightWall.rotation.y = -Math.PI / 2;
+        vrmScene.add(rightWall);
+        // Ceiling
+        const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), matCeil);
+        ceil.rotation.x = Math.PI / 2;
+        ceil.position.y = H;
+        vrmScene.add(ceil);
+        // Baseboard trim on all walls
+        [
+            [new THREE.BoxGeometry(W, 0.08, 0.04), [0, 0.04, -D/2+0.02], 0],
+            [new THREE.BoxGeometry(D, 0.08, 0.04), [-W/2+0.02, 0.04, 0], Math.PI/2],
+            [new THREE.BoxGeometry(D, 0.08, 0.04), [W/2-0.02, 0.04, 0], -Math.PI/2],
+        ].forEach(([geo, pos, ry]) => {
+            const b = new THREE.Mesh(geo, matBase);
+            b.position.set(...pos); b.rotation.y = ry;
+            vrmScene.add(b);
+        });
+        // ── Ceiling beams ──────────────────────────────────────────────────────
+        [-2, 0, 2].forEach(bx => {
+            const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, D), matDarkWood);
+            beam.position.set(bx, H - 0.08, 0);
+            vrmScene.add(beam);
+        });
+        // Ceiling center light fixture
+        const ceilFixture = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.08, 12), matMidWood);
+        ceilFixture.position.set(0, H - 0.04, 0);
+        vrmScene.add(ceilFixture);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), matLamp);
+        bulb.position.set(0, H - 0.22, 0);
+        vrmScene.add(bulb);
+
+        // ── Desk (L-shaped corner desk) ───────────────────────────────────────
+        const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, 1.0), matMidWood);
+        deskTop.position.set(deskX, 0.78, deskZ);
+        vrmScene.add(deskTop);
+        // Side extension
+        const deskSide = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.7), matMidWood);
+        deskSide.position.set(deskX + 0.75, 0.78, deskZ + 0.85);
+        vrmScene.add(deskSide);
+        // Legs
+        [[1.1,0.45],[1.1,-0.45],[-1.1,0.45],[-1.1,-0.45]].forEach(([lx,lz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.78,0.06), matDarkWood);
+            leg.position.set(deskX+lx, 0.39, deskZ+lz);
+            vrmScene.add(leg);
+        });
+        // Monitor (ultrawide)
+        const monStand = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.32,0.12), matMetal);
+        monStand.position.set(deskX-0.1, 0.97, deskZ-0.35);
+        vrmScene.add(monStand);
+        const monBase2 = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.03,0.18), matMetal);
+        monBase2.position.set(deskX-0.1, 0.815, deskZ-0.35);
+        vrmScene.add(monBase2);
+        const monScr = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.42,0.025),
+            new THREE.MeshBasicMaterial({ color: 0x0a1a2a }));
+        monScr.position.set(deskX-0.1, 1.28, deskZ-0.36);
+        vrmScene.add(monScr);
+        // Load monitor wallpaper onto screen face
+        (function() {
+            const monTx = new THREE.TextureLoader();
+            monTx.load('/static/images/user/desktop_bg.jpg', (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace || THREE.LinearSRGBColorSpace;
+                // Apply only to front face via UV — use MeshBasicMaterial for emissive look
+                const screenMat = new THREE.MeshBasicMaterial({ map: tex });
+                // Replace the front face — build a PlaneGeometry on top of the box
+                const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.40), screenMat);
+                screenPlane.position.set(deskX-0.1, 1.28, deskZ-0.345);
+                vrmScene.add(screenPlane);
+                // Add matching glow for the wallpaper colour
+                monGlow.color.setHex(0x2266aa);
+            }, undefined, () => {
+                // fallback: keep the dark screen as-is
+            });
+        })();
+        // Screen glow
+        const monGlow = new THREE.PointLight(0x4db8a4, 0.5, 1.5);
+        monGlow.position.set(deskX-0.1, 1.28, deskZ-0.1);
+        vrmScene.add(monGlow);
+        // Keyboard on desk
+        const kbd = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.02,0.16), matDarkWood);
+        kbd.position.set(deskX-0.1, 0.81, deskZ+0.1);
+        vrmScene.add(kbd);
+        // Desk lamp (gooseneck style)
+        const lpBase = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.05,0.03,8), matMetal);
+        lpBase.position.set(deskX+0.9, 0.815, deskZ-0.35);
+        vrmScene.add(lpBase);
+        const lpArm  = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.5,6), matMetal);
+        lpArm.position.set(deskX+0.9, 1.065, deskZ-0.35);
+        vrmScene.add(lpArm);
+        const lpHead = new THREE.Mesh(new THREE.SphereGeometry(0.055,8,6), matLamp);
+        lpHead.position.set(deskX+0.9, 1.32, deskZ-0.35);
+        vrmScene.add(lpHead);
+        const deskLampLight = new THREE.PointLight(0xffd580, 1.1, 2.2);
+        deskLampLight.position.set(deskX+0.9, 1.32, deskZ-0.1);
+        vrmScene.add(deskLampLight);
+        // Small items: mug, notebook
+        const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.035,0.09,10), new THREE.MeshLambertMaterial({color:0xd4a0a0}));
+        mug.position.set(deskX+0.6, 0.835, deskZ-0.1);
+        vrmScene.add(mug);
+        const notebook = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.015,0.16), new THREE.MeshLambertMaterial({color:0x334466}));
+        notebook.position.set(deskX+0.3, 0.81, deskZ+0.15);
+        vrmScene.add(notebook);
+
+        // ── Bookshelf (right wall, tall) ──────────────────────────────────────
+        const shelfX = W/2 - 0.14;
+        const shelfZ = -2.2;
+        const shelfBody = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.2, 1.2), matDarkWood);
+        shelfBody.position.set(shelfX, 1.1, shelfZ);
+        vrmScene.add(shelfBody);
+        // Shelf planks
+        [0.28, 0.73, 1.18, 1.63].forEach(sy => {
+            const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 1.14), matMidWood);
+            shelf.position.set(shelfX, sy, shelfZ);
+            vrmScene.add(shelf);
+        });
+        // Books standing upright on each shelf level
+        const bookColors = [0xc0392b,0x2980b9,0x27ae60,0xf39c12,0x8e44ad,0xe74c3c,0x16a085,0xe67e22,0x1abc9c,0xd35400,0x7f8c8d,0x2c3e50];
+        [0.28, 0.73, 1.18, 1.63].forEach((sy, lvl) => {
+            const booksOnShelf = bookColors.slice(lvl * 3, lvl * 3 + 3);
+            booksOnShelf.forEach((col, bi) => {
+                const bh = 0.28 + Math.random() * 0.1;
+                const bw = 0.06 + Math.random() * 0.03;
+                const book = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.26, bh, bw),
+                    new THREE.MeshLambertMaterial({color: col})
+                );
+                // Protrude slightly left of the shelf body so they are visible
+                book.position.set(shelfX - 0.05, sy + bh/2 + 0.02, shelfZ - 0.38 + bi * 0.28);
+                vrmScene.add(book);
+            });
+        });
+        // Plant on top of shelf
+        const shelfPot = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.06,0.12,8), matPot);
+        shelfPot.position.set(shelfX, 2.26, shelfZ + 0.35);
+        vrmScene.add(shelfPot);
+        const shelfLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.14,8,6), matLeaf);
+        shelfLeaf.position.set(shelfX, 2.44, shelfZ + 0.35);
+        vrmScene.add(shelfLeaf);
+        // Small decorative item on top shelf
+        const deco = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.08), new THREE.MeshLambertMaterial({color:0xf1c40f}));
+        deco.position.set(shelfX, 1.85, shelfZ - 0.3);
+        vrmScene.add(deco);
+
+        // ── Bed (left wall) ───────────────────────────────────────────────────
+        const bedX = -W/2 + 1.25;
+        const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.28,2.2), matBedFrame);
+        bedFrame.position.set(bedX, 0.14, 1.5);
+        vrmScene.add(bedFrame);
+        // Mattress
+        const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.5,0.2,2.0), new THREE.MeshLambertMaterial({color:0xe8ddd0}));
+        mattress.position.set(bedX, 0.38, 1.5);
+        vrmScene.add(mattress);
+        // Sheet
+        const sheet = new THREE.Mesh(new THREE.BoxGeometry(1.48,0.04,1.4), matBedSheet);
+        sheet.position.set(bedX, 0.5, 1.7);
+        vrmScene.add(sheet);
+        // Blanket (bunched up)
+        const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.46,0.1,0.6), matBlanket);
+        blanket.position.set(bedX, 0.53, 2.2);
+        vrmScene.add(blanket);
+        // Pillows
+        [-0.3,0.3].forEach(px => {
+            const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.1,0.35), matPillow);
+            pillow.position.set(bedX+px, 0.52, 0.65);
+            vrmScene.add(pillow);
+        });
+        // Headboard
+        const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,0.1), matBedFrame);
+        headboard.position.set(bedX, 0.63, 0.52);
+        vrmScene.add(headboard);
+        // Headboard panel detail
+        const hbPanel = new THREE.Mesh(new THREE.BoxGeometry(1.4,0.5,0.05), matWardDoor);
+        hbPanel.position.set(bedX, 0.65, 0.48);
+        vrmScene.add(hbPanel);
+        // Bedside table
+        const bstX = -W/2 + 0.25;
+        const bst = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.55,0.4), matDarkWood);
+        bst.position.set(bstX, 0.275, 0.65);
+        vrmScene.add(bst);
+        const bstTop = new THREE.Mesh(new THREE.BoxGeometry(0.44,0.04,0.44), matMidWood);
+        bstTop.position.set(bstX, 0.57, 0.65);
+        vrmScene.add(bstTop);
+        // Bedside lamp
+        const bslPost = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.28,6), matMetal);
+        bslPost.position.set(bstX, 0.73, 0.65);
+        vrmScene.add(bslPost);
+        const bslShade = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.07,0.12,8), new THREE.MeshLambertMaterial({color:0xd4b896}));
+        bslShade.position.set(bstX, 0.87, 0.65);
+        vrmScene.add(bslShade);
+        const bslLight = new THREE.PointLight(0xffcc88, 0.8, 2.5);
+        bslLight.position.set(bstX, 0.87, 0.65);
+        vrmScene.add(bslLight);
+
+        // ── Wardrobe (back-left corner) ────────────────────────────────────────
+        // ── Wardrobe (back-left corner, flush to left wall) ────────────────────
+        const wdX = -W/2 + 0.78;   // center: 0.78 from left wall (body is 1.5 wide → edge at -4.5+0.03 ✓)
+        const wdZ = -D/2 + 0.38;   // flush to back wall
+        // Main body
+        const wdBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.6), matWardrobe);
+        wdBody.position.set(wdX, 1.25, wdZ);
+        vrmScene.add(wdBody);
+        // Top cap (slightly wider for crown detail)
+        const wdCap = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.08, 0.66), matDarkWood);
+        wdCap.position.set(wdX, 2.54, wdZ);
+        vrmScene.add(wdCap);
+        // Base plinth
+        const wdPlinth = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.08, 0.62), matDarkWood);
+        wdPlinth.position.set(wdX, 0.04, wdZ);
+        vrmScene.add(wdPlinth);
+        // Two doors — flush to front face of body
+        [-0.36, 0.36].forEach(dx => {
+            const door = new THREE.Mesh(new THREE.BoxGeometry(0.70, 2.32, 0.05), matWardDoor);
+            door.position.set(wdX + dx, 1.26, wdZ + 0.325);
+            vrmScene.add(door);
+            // Door panel inset
+            const panel = new THREE.Mesh(new THREE.BoxGeometry(0.56, 1.0, 0.03), matWardrobe);
+            panel.position.set(wdX + dx, 1.55, wdZ + 0.345);
+            vrmScene.add(panel);
+            const panel2 = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.7, 0.03), matWardrobe);
+            panel2.position.set(wdX + dx, 0.75, wdZ + 0.345);
+            vrmScene.add(panel2);
+            // Handle — small round knob
+            const knob = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), matMetal);
+            knob.position.set(wdX + dx * 0.42, 1.25, wdZ + 0.36);
+            vrmScene.add(knob);
+        });
+        // Center divider line
+        const wdDiv = new THREE.Mesh(new THREE.BoxGeometry(0.03, 2.34, 0.05), matDarkWood);
+        wdDiv.position.set(wdX, 1.26, wdZ + 0.325);
+        vrmScene.add(wdDiv);
+
+        // ── Couch (right-front, facing TV) ────────────────────────────────────
+        const sofaX = 1.0, sofaZ = 2.3;
+        // Seat base — thicker and deeper
+        const couchBase = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 1.0), matCouch);
+        couchBase.position.set(sofaX, 0.35, sofaZ);
+        vrmScene.add(couchBase);
+        // Seat cushion platform under
+        const couchSeat = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.12, 0.96), new THREE.MeshLambertMaterial({color:0x253545}));
+        couchSeat.position.set(sofaX, 0.22, sofaZ);
+        vrmScene.add(couchSeat);
+        // Backrest — tall and angled back slightly
+        const couchBack = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.62, 0.22), matCouch);
+        couchBack.position.set(sofaX, 0.67, sofaZ + 0.42);
+        couchBack.rotation.x = 0.12;   // slight recline
+        vrmScene.add(couchBack);
+        // Left armrest
+        const armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 1.0), matCouch);
+        armL.position.set(sofaX - 1.31, 0.52, sofaZ);
+        vrmScene.add(armL);
+        // Right armrest
+        const armR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 1.0), matCouch);
+        armR.position.set(sofaX + 1.31, 0.52, sofaZ);
+        vrmScene.add(armR);
+        // Legs (4 stubby dark wood)
+        [[-1.0,-0.38],[1.0,-0.38],[-1.0,0.38],[1.0,0.38]].forEach(([lx,lz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.08), matDarkWood);
+            leg.position.set(sofaX+lx, 0.09, sofaZ+lz);
+            vrmScene.add(leg);
+        });
+        // Seat cushions (3 separate panels)
+        [-0.72, 0, 0.72].forEach(cx => {
+            const cush = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.16, 0.82), matCushion);
+            cush.position.set(sofaX+cx, 0.49, sofaZ - 0.04);
+            vrmScene.add(cush);
+        });
+        // Decorative throw pillow on right armrest — tucked in, not floating
+        const throwP = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 0.26), matPillow);
+        throwP.position.set(sofaX + 1.1, 0.58, sofaZ - 0.1);
+        vrmScene.add(throwP);
+        // Small coffee table in front of couch
+        const ctTop = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.04, 0.55), matMidWood);
+        ctTop.position.set(sofaX, 0.42, sofaZ - 0.75);
+        vrmScene.add(ctTop);
+        [[-0.42,-0.2],[0.42,-0.2],[-0.42,0.2],[0.42,0.2]].forEach(([lx,lz]) => {
+            const ctl = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.38,0.05), matDarkWood);
+            ctl.position.set(sofaX+lx, 0.22, sofaZ-0.75+lz);
+            vrmScene.add(ctl);
+        });
+        // Book + mug on coffee table
+        const ctBook = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.025,0.16), new THREE.MeshLambertMaterial({color:0x8833aa}));
+        ctBook.position.set(sofaX-0.2, 0.455, sofaZ-0.75);
+        vrmScene.add(ctBook);
+        const ctMug = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.03,0.07,8), new THREE.MeshLambertMaterial({color:0xc8a090}));
+        ctMug.position.set(sofaX+0.3, 0.455, sofaZ-0.75);
+        vrmScene.add(ctMug);
+
+        // ── Floor rug (large, under couch+avatar area) ─────────────────────────
+        const rug = new THREE.Mesh(new THREE.PlaneGeometry(3.5,2.5), matRug);
+        rug.rotation.x = -Math.PI/2;
+        rug.position.set(0.8, 0.002, 1.5);
+        vrmScene.add(rug);
+        // Rug border
+        const rugBorder = new THREE.Mesh(new THREE.PlaneGeometry(3.7,2.7), new THREE.MeshLambertMaterial({color:0x9966aa}));
+        rugBorder.rotation.x = -Math.PI/2;
+        rugBorder.position.set(0.8, 0.001, 1.5);
+        vrmScene.add(rugBorder);
+
+        // ── Window on left wall ────────────────────────────────────────────────
+        const winY = 1.8, winW = 1.5, winH = 1.4;
+        // Night-sky glass pane
+        const winGlass = new THREE.Mesh(new THREE.PlaneGeometry(winW, winH), new THREE.MeshBasicMaterial({color:0x0a0e2a, transparent:true, opacity:0.85, side:THREE.DoubleSide}));
+        winGlass.rotation.y = Math.PI/2;
+        winGlass.position.set(-W/2+0.02, winY, 1.5);
+        vrmScene.add(winGlass);
+        // Stars in window
+        for(let s=0; s<18; s++){
+            const star = new THREE.Mesh(new THREE.PlaneGeometry(0.03,0.03), new THREE.MeshBasicMaterial({color:0xffffff}));
+            star.rotation.y = Math.PI/2;
+            star.position.set(-W/2+0.03, winY-0.5+Math.random()*1.0, 1.5-0.6+Math.random()*1.2);
+            vrmScene.add(star);
+        }
+        // Window frame
+        [[winW,0.05,winY+winH/2,1.5],[winW,0.05,winY-winH/2,1.5],[0.05,winH,winY,1.5-winW/2],[0.05,winH,winY,1.5+winW/2]].forEach(([fw,fh,fy,fz]) => {
+            const fr = new THREE.Mesh(new THREE.BoxGeometry(0.07,fh,fw), matWindowFr);
+            fr.position.set(-W/2+0.04, fy, fz);
+            fr.rotation.y = Math.PI/2;
+            vrmScene.add(fr);
+        });
+        // Curtains on both sides
+        [-0.9,0.9].forEach(cz => {
+            const curtain = new THREE.Mesh(new THREE.PlaneGeometry(0.5,winH+0.3), matCurtain);
+            curtain.rotation.y = Math.PI/2;
+            curtain.position.set(-W/2+0.05, winY, 1.5+cz);
+            vrmScene.add(curtain);
+        });
+        // Moon glow through window
+        const moonLight = new THREE.PointLight(0x6688cc, 0.7, 5);
+        moonLight.position.set(-W/2+0.6, winY, 1.5);
+        vrmScene.add(moonLight);
+
+        // ── Plants ─────────────────────────────────────────────────────────────
+        // Tall floor plant (back-right corner)
+        const fpPot = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.11,0.28,8), matPot);
+        fpPot.position.set(W/2-0.4, 0.14, -D/2+0.5);
+        vrmScene.add(fpPot);
+        const fpStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.9,6), matLeafDark);
+        fpStem.position.set(W/2-0.4, 0.73, -D/2+0.5);
+        vrmScene.add(fpStem);
+        [[-0.15,0.5],[0.12,0.65],[-0.08,0.8],[0.18,0.82],[-0.2,0.95]].forEach(([lx,ly]) => {
+            const leaf = new THREE.Mesh(new THREE.PlaneGeometry(0.28,0.12), matLeaf);
+            leaf.position.set(W/2-0.4+lx, ly, -D/2+0.5);
+            leaf.rotation.z = lx>0 ? -0.5 : 0.5;
+            leaf.rotation.y = Math.random()*0.8;
+            vrmScene.add(leaf);
+        });
+        // Small pot on desk corner
+        const dPot = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.035,0.07,8), matPot);
+        dPot.position.set(deskX-1.0, 0.825, deskZ-0.35);
+        vrmScene.add(dPot);
+        const dLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,5), matLeaf);
+        dLeaf.position.set(deskX-1.0, 0.92, deskZ-0.35);
+        vrmScene.add(dLeaf);
+
+        // ── Desk Chair ────────────────────────────────────────────────────────
+        const chairX = deskX - 0.1, chairZ = deskZ + 0.7;
+        const matChair = new THREE.MeshLambertMaterial({ color: 0x1a1a2a });
+        const matChairBase = new THREE.MeshLambertMaterial({ color: 0x222222 });
+        // Seat
+        const chSeat = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.07, 0.50), matChair);
+        chSeat.position.set(chairX, 0.50, chairZ);
+        vrmScene.add(chSeat);
+        // Backrest
+        const chBack = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.58, 0.07), matChair);
+        chBack.position.set(chairX, 0.84, chairZ + 0.22);
+        chBack.rotation.x = -0.08;
+        vrmScene.add(chBack);
+        // Lumbar support strip
+        const chLumbar = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.05), matChairBase);
+        chLumbar.position.set(chairX, 0.65, chairZ + 0.245);
+        vrmScene.add(chLumbar);
+        // Armrests
+        [-0.22, 0.22].forEach(ax => {
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.30), matChairBase);
+            arm.position.set(chairX + ax, 0.62, chairZ + 0.05);
+            vrmScene.add(arm);
+            const armPost = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.15, 0.04), matChairBase);
+            armPost.position.set(chairX + ax, 0.54, chairZ + 0.05);
+            vrmScene.add(armPost);
+        });
+        // Gas cylinder + base
+        const chPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 8), matMetal);
+        chPole.position.set(chairX, 0.27, chairZ);
+        vrmScene.add(chPole);
+        // 5-star base spokes
+        for (let i = 0; i < 5; i++) {
+            const ang = (i / 5) * Math.PI * 2;
+            const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.03, 0.06), matChairBase);
+            spoke.position.set(chairX + Math.cos(ang)*0.16, 0.06, chairZ + Math.sin(ang)*0.16);
+            spoke.rotation.y = ang;
+            vrmScene.add(spoke);
+            // Wheel
+            const wheel = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), matChairBase);
+            wheel.position.set(chairX + Math.cos(ang)*0.32, 0.04, chairZ + Math.sin(ang)*0.32);
+            vrmScene.add(wheel);
+        }
+
+        // ── Photo Frames ───────────────────────────────────────────────────────
+        // Helper: make a framed picture — supports both solid colour and texture URL
+        const _txLoader = new THREE.TextureLoader();
+        function makeFrame(fw, fh, pos, rotY, imgColorOrUrl, frameColor=0x2a1a0e) {
+            const frameOuter = new THREE.Mesh(
+                new THREE.BoxGeometry(fw+0.06, fh+0.06, 0.04),
+                new THREE.MeshLambertMaterial({ color: frameColor })
+            );
+            frameOuter.position.set(...pos);
+            frameOuter.rotation.y = rotY;
+            vrmScene.add(frameOuter);
+
+            let mat;
+            if (typeof imgColorOrUrl === 'string' && imgColorOrUrl.startsWith('/')) {
+                // Load from URL — show a dark placeholder until loaded
+                mat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+                _txLoader.load(
+                    imgColorOrUrl,
+                    (tex) => {
+                        tex.colorSpace = THREE.SRGBColorSpace || THREE.LinearSRGBColorSpace;
+                        mat.map   = tex;
+                        mat.color = new THREE.Color(0xffffff);
+                        mat.needsUpdate = true;
+                    },
+                    undefined,
+                    (err) => console.warn('[Frame] Texture load failed:', err)
+                );
+            } else {
+                mat = new THREE.MeshLambertMaterial({ color: imgColorOrUrl, emissive: imgColorOrUrl, emissiveIntensity: 0.08 });
+            }
+
+            const photo = new THREE.Mesh(new THREE.PlaneGeometry(fw, fh), mat);
+            photo.position.set(pos[0], pos[1], pos[2]);
+            if (rotY === 0)           photo.position.z += 0.025;
+            if (rotY === Math.PI/2)   photo.position.x += 0.025;
+            if (rotY === -Math.PI/2)  photo.position.x -= 0.025;
+            photo.rotation.y = rotY;
+            vrmScene.add(photo);
+            return { frameMesh: frameOuter, photoMesh: photo, mat };
+        }
+
+        // ── Back wall photo frame (beside TV, upper-right of TV) ──────────────
+        // This is the USER PHOTO frame — shows whatever is in static/images/user/
+        // or frame_couple.png as default. Hot-swappable via sidebar picker.
+        let _wallPhotoRef = null;
+
+        function _loadWallPhoto(url) {
+            if (!_wallPhotoRef) return;
+            const mat = _wallPhotoRef.mat;
+            mat.color = new THREE.Color(0x111111);
+            mat.map   = null;
+            mat.needsUpdate = true;
+            _txLoader.load(
+                url + '?t=' + Date.now(),
+                (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace || THREE.LinearSRGBColorSpace;
+                    mat.map   = tex;
+                    mat.color = new THREE.Color(0xffffff);
+                    mat.needsUpdate = true;
+                },
+                undefined,
+                () => {}
+            );
+        }
+
+        // Fetch the first available user photo then display it
+        fetch('/api/room/wall-photos')
+            .then(r => r.json())
+            .then(d => {
+                const photos  = d.photos || [];
+                const initial = photos[0] ? photos[0].url : '/static/images/frame_couple.png';
+                // Place frame on back wall, to the RIGHT of the TV — at ~4/5ths of wall width
+                // W/2 ≈ 3.5, so 4/5th position ≈ x = +1.5 (upper-right corner beside TV)
+                _wallPhotoRef = makeFrame(0.68, 0.50, [W*0.38, 1.80, -D/2+0.03], 0, initial, 0x3a2510);
+            })
+            .catch(() => {
+                _wallPhotoRef = makeFrame(0.68, 0.50, [W*0.38, 1.80, -D/2+0.03], 0, 0x5a3a1a, 0x3a2510);
+            });
+
+        // Expose swap function so sidebar picker can call it
+        window._swapWallPhoto = function(url) {
+            if (_wallPhotoRef) _loadWallPhoto(url);
+        };
+
+        // Left wall — User requested photo
+        makeFrame(0.68, 0.50, [ -W/2+0.03, 1.9, -0.5 ], Math.PI/2, '/static/images/user/wall_photo.jpg', 0x3a2510);
+
+
+        // ── LIGHTING ─────────────────────────────────────────────────────────
+        // ── LIGHTING ─────────────────────────────────────────────────────────
+        // Cool night ambient
+        vrmScene.add(new THREE.AmbientLight(0x1a1530, 0.6));
+        // Ceiling pendant warm fill
+        const ceilLight = new THREE.PointLight(0xffd580, 1.1, 9);
+        ceilLight.position.set(0, H - 0.25, 0);
+        vrmScene.add(ceilLight);
+        // Soft rim light from left (simulates moonlight through window)
+        const rimLight = new THREE.DirectionalLight(0x8899cc, 0.55);
+        rimLight.position.set(-5, 3, 2);
+        vrmScene.add(rimLight);
+        // Warm key light from top-right (main character light)
+        const keyLight = new THREE.DirectionalLight(0xffeedd, 0.8);
+        keyLight.position.set(3, 4, 3);
+        vrmScene.add(keyLight);
+        // Bedside lamp glow (already added above with bslLight)
+        // TV screen glow (colour matches CSS3D TV)
+        const tvGlow = new THREE.PointLight(0x2244aa, 0.4, 3.5);
+        tvGlow.position.set(0, 0.82, -D/2+0.5);
+        vrmScene.add(tvGlow);
+        // Couch area warm bounce
+        const couchFill = new THREE.PointLight(0xffaa66, 0.25, 3);
+        couchFill.position.set(1.0, 0.8, 2.2);
+        vrmScene.add(couchFill);
+
+
+        // ── TV MOUNT on back wall ──────────────────────────────────────────────
+        // TV stand (low furniture piece on the floor)
+        const tvStand = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.55), matDarkWood);
+        tvStand.position.set(0, 0.06, -D/2 + 0.28);
+        vrmScene.add(tvStand);
+        // Stand legs
+        [[-0.9, 0.1], [0.9, 0.1]].forEach(([sx, sz]) => {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.45), matMetal);
+            leg.position.set(sx, 0.025, -D/2 + 0.28);
+            vrmScene.add(leg);
+        });
+        // TV bezel sitting on stand
+        const tvFrame = new THREE.Mesh(new THREE.BoxGeometry(2.14, 1.28, 0.055), matTVMount);
+        tvFrame.position.set(0, 0.82, -D/2 + 0.025);
+        vrmScene.add(tvFrame);
+
+        // ── PROJECTOR SCREEN — CSS3DObject (lives inside TV bezel) ───────────
+        const projDiv = document.createElement('div');
+        projDiv.id = 'vrm-projector';
+        projDiv.style.cssText = [
+            'width:1280px', 'height:720px',
+            'background:#050810',
+            'border-radius:3px',
+            'overflow:hidden',
+            'position:relative',
+            'display:flex',
+            'align-items:center',
+            'justify-content:center',
+        ].join(';');
+
+        // Standby screen shown when no video is loaded
+        projDiv.innerHTML = `
+            <div id="vrm-projector-standby" style="
+                display:flex; flex-direction:column; align-items:center;
+                justify-content:center; width:100%; height:100%;
+                background:linear-gradient(160deg,#0d1a22 0%,#111 100%);
+            ">
+                <div style="font-size:52px;color:rgba(77,184,164,0.55);font-family:'JetBrains Mono',monospace;margin-bottom:18px;">Marin OS</div>
+                <div style="font-size:22px;color:rgba(255,255,255,0.3);font-family:'JetBrains Mono',monospace;">Paste a YouTube link in the sidebar →</div>
+            </div>
+            <iframe id="vrm-tv-iframe"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+                style="
+                    position:absolute; inset:0;
+                    width:100%; height:100%;
+                    border:none; display:none;
+                    border-radius:8px;
+                "
+                src=""></iframe>
+        `;
+
+        projectorObject = new THREE.CSS3DObject(projDiv);
+        projectorObject.scale.set(0.00148, 0.00148, 0.00148);
+        // Push CSS3D slightly forward of bezel so nothing clips in front of it
+        projectorObject.position.set(0, 0.82, -D/2 + 0.06);
+        projectorObject.rotation.y = 0;
+        vrmScene.add(projectorObject);
+
+        // ── EMOTION PHOTO FRAME (Top-right of TV) ───────────
+        const frameDiv = document.createElement('div');
+        frameDiv.id = 'vrm-photoframe';
+        frameDiv.style.cssText = [
+            'width:200px', 'height:240px',
+            'background:#1c1814',
+            'border:10px solid #c9965a', // Wooden frame
+            'border-radius:12px',
+            'box-shadow: 0 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.5)',
+            'display:flex', 'align-items:center', 'justify-content:center',
+            'overflow:hidden'
+        ].join(';');
+        frameDiv.innerHTML = `<img id="photoframe-img" src="/static/avatars/neutral.png" style="width:100%;height:100%;object-fit:cover;opacity:0.85;">`;
+        
+        const frameObj = new THREE.CSS3DObject(frameDiv);
+        frameObj.scale.set(0.003, 0.003, 0.003); // Slightly larger scale
+        // Position at right wall
+        frameObj.position.set(W / 2 - 0.06, 1.50, 0);
+        frameObj.rotation.y = -Math.PI / 2;
+        vrmScene.add(frameObj);
+
+        // Hole mesh: transparent + NoBlending punches a see-through window
+        // in the WebGL canvas so the CSS3D iframe shows through underneath.
+        const holeGeo = new THREE.PlaneGeometry(1280 * 0.00148, 720 * 0.00148);
+        const holeMat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            opacity: 0,
+            transparent: true,
+            blending: THREE.NoBlending,
+        });
+        const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+        holeMesh.position.set(0, 0.82, -D/2 + 0.065);
+        holeMesh.renderOrder = 999;
+        vrmScene.add(holeMesh);
+
+        // Hole for Emotion Photo Frame
+        const frameHoleGeo = new THREE.PlaneGeometry(200 * 0.003, 240 * 0.003);
+        const frameHoleMesh = new THREE.Mesh(frameHoleGeo, holeMat);
+        frameHoleMesh.position.set(W / 2 - 0.065, 1.50, 0);
+        frameHoleMesh.rotation.y = -Math.PI / 2;
+        frameHoleMesh.renderOrder = 999;
+        vrmScene.add(frameHoleMesh);
+
+        // ── VRM MODEL ─────────────────────────────────────────────────────────
+        window.loadVRMModel = function(filename) {
+            console.log('[VRM] Loading model: ' + filename + '...');
+            if (typeof stopAnimation === 'function') stopAnimation();
+            if (typeof vrmModel !== 'undefined' && vrmModel) {
+                if (typeof vrmScene !== 'undefined') vrmScene.remove(vrmModel.scene);
+                // Dispose geometries, materials AND textures to prevent WebGL leaks
+                vrmModel.scene.traverse((obj) => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach(m => {
+                            // Dispose all texture slots
+                            ['map','normalMap','roughnessMap','metalnessMap','emissiveMap',
+                             'aoMap','alphaMap','envMap','lightMap'].forEach(slot => {
+                                if (m[slot]) { m[slot].dispose(); }
+                            });
+                            m.dispose();
+                        });
+                    }
+                });
+                // Clear the BVH clip cache — clips reference the old model's bone nodes
+                _bvhCache.clear();
+                _bvhLoading.clear();
+            }
+
+            // Guard: don't attempt to load if the renderer isn't initialised yet
+            if (!vrmRenderer) {
+                console.warn('[VRM] loadVRMModel called before renderer is ready. Will retry after initVRM.');
+                setTimeout(() => { if (vrmRenderer) window.loadVRMModel(filename); }, 1500);
+                return;
+            }
+
+            const loader = new THREE.GLTFLoader();
+            loader.crossOrigin = 'anonymous';
+            loader.register((parser) => {
+                return new THREE.VRMLoaderPlugin(parser);
+            });
+
+            loader.load(
+                '/static/models/' + filename,
+                (gltf) => {
+                    const vrm = gltf.userData.vrm;
+                    if (!vrm) return;
+
+                    vrmModel = vrm;
+                    vrmScene.add(vrm.scene);
+                    // Move the avatar to the middle of the room
+                    vrm.scene.position.set(0, 0, 0);
+                    vrm.scene.rotation.y = Math.PI;
+                    vrm.scene.traverse((obj) => {
+                        if (obj.isMesh) { obj.castShadow = false; obj.receiveShadow = false; }
+                    });
+                    
+                    const head = vrm.humanoid.getNormalizedBoneNode('head');
+                    if (head) {
+                        const hp = new THREE.Vector3();
+                        head.getWorldPosition(hp);
+                        vrmCamera.lookAt(hp);
+                    }
+                    const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                    const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                    if (lArm) lArm.rotation.z = 1.35;
+                    if (rArm) rArm.rotation.z = -1.35;
+                    const lLower = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
+                    const rLower = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
+                    if (lLower) lLower.rotation.z = 0.1;
+                    if (rLower) rLower.rotation.z = -0.1;
+                    
+                    if (typeof vrmClock !== 'undefined') vrmClock.start();
+                    setTimeout(() => playAnimation('neutral_idle'), 800);
+                },
+                undefined,
+                (error) => console.error('VRM Load Error:', error)
+            );
+        };
+        
+        loadVRMModel('7931905149146643613.vrm');  // Lynx — only model
+        window.addEventListener('resize', onWindowResize);
+        animateVRM();
+    }
+
+    // ── YOUTUBE OVERLAY (outside Three.js — avoids iframe/CSP issues) ─────────
+    window.openYTOverlay = function openYTOverlay() {
+        // The TV now lives inside the 3D room — just focus the sidebar input
+        const input = document.getElementById('sidebar-tv-input');
+        if (input) {
+            input.focus();
+            input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        // Also open sidebar if it's closed
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && sidebar.style.display === 'none') {
+            sidebar.style.display = '';
+        }
+    };
+
+    window.loadYTVideo = function loadYTVideo() {
+        const input = document.getElementById('yt-url-input').value.trim();
+        if (!input) return;
+        // Close the overlay and cast to the in-room TV
+        closeYTOverlay();
+        handleSidebarTV(input);
+    };
+
+    window.closeYTOverlay = function closeYTOverlay() {
+        const overlay = document.getElementById('yt-overlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.style.display = 'none';
+        }
+        const frame = document.getElementById('yt-iframe');
+        if (frame) frame.src = '';
+    };
+
+    function onWindowResize() {
+        if (vrmVisible && vrmRenderer) {
+            const container = document.getElementById('vrm-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (width > 0 && height > 0) {
+                vrmCamera.aspect = width / height;
+                vrmCamera.updateProjectionMatrix();
+                vrmRenderer.setSize(width, height);
+                if (vrmCssRenderer) vrmCssRenderer.setSize(width, height);
+            }
+        }
+        updateSidebarOffset();
+    }
+
+    // ── three.ws-inspired FPS auto-degradation ─────────────────────────────────
+    // Samples frame times over ~1.5s; auto-halves pixel ratio on slow devices.
+    let _vrmFpsWindow = [];
+    let _vrmDegraded  = false;
+    let _vrmLastFrame = 0;
+    function _sampleVrmFps(now) {
+        if (_vrmDegraded || !_vrmLastFrame) { _vrmLastFrame = now; return; }
+        _vrmFpsWindow.push(now - _vrmLastFrame);
+        _vrmLastFrame = now;
+        if (_vrmFpsWindow.length < 90) return;        // ~1.5s at 60fps
+        const avg = _vrmFpsWindow.reduce((a, b) => a + b, 0) / _vrmFpsWindow.length;
+        _vrmFpsWindow = [];
+        if (avg > 41.6 && vrmRenderer) {              // <24fps sustained
+            _vrmDegraded = true;
+            const cur = vrmRenderer.getPixelRatio();
+            vrmRenderer.setPixelRatio(Math.max(1, cur * 0.75));
+            console.log('[VRM] FPS too low — reducing pixel ratio for smooth render');
+        }
+    }
+
+    function animateVRM() {
+        requestAnimationFrame(animateVRM);
+        const now = performance.now();
+        _sampleVrmFps(now);
+        const delta = Math.min(vrmClock.getDelta(), 0.05);  // clamp delta to avoid physics explosion on tab switch
+        if (vrmControls) vrmControls.update();
+        if (vrmMixer) vrmMixer.update(delta);
+        
+        if (window.testCube) {
+            window.testCube.rotation.x += 0.01;
+            window.testCube.rotation.y += 0.02;
+        }
+        
+        try {
+            if (vrmModel) {
+                vrmModel.update(delta);
+
+                // ── Soft-body physics step (runs every frame when VRM is visible) ──
+                if (vrmVisible) {
+                    const ph = _stepPhys(delta, vrmClock.elapsedTime);
+                    _applyPhysToVRM(ph);
+                    // Update emotion indicator chip
+                    const chip = document.getElementById('physics-emotion-chip');
+                    if (chip && ph.emotion) {
+                        const colors = {neutral:'var(--text-muted)',joy:'var(--teal)',excited:'var(--gold)',sad:'var(--coral)',angry:'#c0392b',thinking:'#8e44ad',surprised:'#e67e22',fear:'#7f8c8d',love:'#e84393',confident:'var(--teal)'};
+                        chip.textContent = '● ' + ph.emotion;
+                        chip.style.color = colors[ph.emotion] || 'var(--text-muted)';
+                        chip.style.borderColor = colors[ph.emotion] || 'var(--border)';
+                        chip.style.display = '';
+                    }
+                }
+
+                if (vrmModel.expressionManager) {
+                    // ── Smooth blinking ──────────────────────────────────────
+                    // Blink cycle: ~4s open, quick close (0.1s), slower open (0.2s)
+                    const blinkCycle = 4.5; // seconds per blink cycle
+                    const blinkT = (vrmClock.elapsedTime % blinkCycle) / blinkCycle; // 0..1
+                    let blinkStrength = 0;
+                    if (blinkT > 0.95) {
+                        // Closing phase: 0.95→0.975 of cycle (≈0.11s)
+                        const closeT = (blinkT - 0.95) / 0.025;
+                        blinkStrength = Math.min(1.0, closeT * 2);
+                    } else if (blinkT > 0.975) {
+                        // Fully closed at peak
+                        blinkStrength = 1.0;
+                    } else if (blinkT > 0.975 - 0.04) {
+                        // Already handled above; opening phase: 0.975→end (≈0.11s)
+                        const openT = (blinkT - 0.975) / 0.025;
+                        blinkStrength = Math.max(0, 1.0 - openT * 2);
+                    }
+                    vrmModel.expressionManager.setValue('blink', blinkStrength);
+
+                    // Lip sync simulation if talking
+                    if (document.getElementById('logo-wrap') && (
+                        document.getElementById('logo-wrap').classList.contains('avatar-talking') ||
+                        (typeof _directorTalkActive !== 'undefined' && _directorTalkActive)
+                    )) {
+                        let mouthOpen = 0;
+
+                        if (window._lipSyncSchedule && window._lipSyncStartTime !== undefined && audioContext) {
+                            // ── Schedule-driven lipsync (TTS mode with pre-computed timing) ──
+                            // Each entry: { t: float, open: float } — time in seconds from audio start
+                            const elapsed = audioContext.currentTime - window._lipSyncStartTime;
+                            const sched = window._lipSyncSchedule;
+                            // Binary search for current keyframe
+                            let lo = 0, hi = sched.length - 1;
+                            while (lo < hi - 1) {
+                                const mid = (lo + hi) >> 1;
+                                if (sched[mid].t <= elapsed) lo = mid; else hi = mid;
+                            }
+                            const kfA = sched[lo];
+                            const kfB = sched[Math.min(lo + 1, sched.length - 1)];
+                            // Lerp between keyframes
+                            const span = kfB.t - kfA.t;
+                            const alpha = span > 0 ? Math.min(1, (elapsed - kfA.t) / span) : 1;
+                            const raw = kfA.open + (kfB.open - kfA.open) * alpha;
+                            // Blend with real FFT amplitude for micro-variations
+                            let fftAmp = 0;
+                            if (audioAnalyser) {
+                                const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                                audioAnalyser.getByteFrequencyData(dataArray);
+                                const binStart = Math.floor(300 / (audioContext.sampleRate / audioAnalyser.fftSize));
+                                const binEnd   = Math.min(dataArray.length, Math.floor(3000 / (audioContext.sampleRate / audioAnalyser.fftSize)));
+                                let sum = 0, cnt = 0;
+                                for (let i = binStart; i < binEnd; i++) { sum += dataArray[i]; cnt++; }
+                                fftAmp = Math.min(1.0, (cnt > 0 ? sum / cnt : 0) / 90.0);
+                            }
+                            // 70% schedule timing, 30% live FFT for naturalness
+                            const target = Math.max(0, Math.min(1, raw * 0.7 + fftAmp * 0.3));
+                            mouthOpen = (window._prevMouthOpen || 0) * 0.35 + target * 0.65;
+
+                        } else if (typeof audioAnalyser !== 'undefined' && audioAnalyser) {
+                            // ── Fallback: pure FFT lipsync (no schedule available) ──────────
+                            const dataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                            audioAnalyser.getByteFrequencyData(dataArray);
+                            let sum = 0;
+                            const binStart = Math.floor(300 / (audioContext.sampleRate / audioAnalyser.fftSize));
+                            const binEnd   = Math.min(dataArray.length, Math.floor(3000 / (audioContext.sampleRate / audioAnalyser.fftSize)));
+                            let count = 0;
+                            for (let i = binStart; i < binEnd; i++) { sum += dataArray[i]; count++; }
+                            const avg = count > 0 ? sum / count : 0;
+                            const target = Math.min(1.0, avg / 80.0);
+                            mouthOpen = (window._prevMouthOpen || 0) * 0.4 + target * 0.6;
+
+                        } else {
+                            // ── Text-chunk-based lipsync (no TTS) ───────────────────────────
+                            // Use word-timed schedule if available (set when talking starts)
+                            if (window._textLipSyncSchedule && window._textLipSyncStart !== undefined) {
+                                const elapsed = (performance.now() / 1000) - window._textLipSyncStart;
+                                const sched = window._textLipSyncSchedule;
+                                let lo = 0;
+                                for (let i = 0; i < sched.length - 1; i++) {
+                                    if (sched[i].t <= elapsed) lo = i;
+                                }
+                                const kfA = sched[lo];
+                                const kfB = sched[Math.min(lo + 1, sched.length - 1)];
+                                const span = kfB.t - kfA.t;
+                                const alpha = span > 0 ? Math.min(1, (elapsed - kfA.t) / span) : 1;
+                                const raw = kfA.open + (kfB.open - kfA.open) * alpha;
+                                mouthOpen = (window._prevMouthOpen || 0) * 0.4 + Math.max(0, raw) * 0.6;
+                            } else {
+                                const now = performance.now() / 1000;
+                                const syllableRate = 4.2;
+                                const phase = (now * syllableRate) % 1.0;
+                                mouthOpen = Math.max(0, Math.sin(phase * Math.PI * 2) * 0.55 + 0.1);
+                            }
+                        }
+                        window._prevMouthOpen = mouthOpen;
+                        vrmModel.expressionManager.setValue('aa', mouthOpen);
+                    } else {
+                        // Smoothly close mouth when not talking
+                        const prevOpen = window._prevMouthOpen || 0;
+                        if (prevOpen > 0.01) {
+                            const closing = prevOpen * 0.85;
+                            window._prevMouthOpen = closing;
+                            vrmModel.expressionManager.setValue('aa', closing);
+                        } else {
+                            window._prevMouthOpen = 0;
+                            vrmModel.expressionManager.setValue('aa', 0);
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("VRM Animation Error:", e);
+        }
+
+        if (vrmRenderer) vrmRenderer.render(vrmScene, vrmCamera);
+        if (vrmCssRenderer) vrmCssRenderer.render(vrmScene, vrmCamera);
+    }
+
+    // ── SOFT-BODY PHYSICS ENGINE ───────────────────────────────────────────────
+    // Three modes: idle (emotion-based), talk-reactive (voice amplitude drives bounce),
+    // beat-reactive (mic picks up music bass and bounces on beat).
+
+    const EMOTION_PHYSICS_JS = {
+        neutral:   { hair:{k:0.0016,c:0.06,amp:0.02,freq:1.8}, spine:{k:0.002,c:0.08,amp:0.005,freq:1.2}, chest:{k:0.001,c:0.05,amp:0.003,freq:1.5}, headTilt:0, shoulderDrop:0 },
+        joy:       { hair:{k:0.0012,c:0.04,amp:0.08,freq:2.4}, spine:{k:0.0015,c:0.05,amp:0.015,freq:1.6}, chest:{k:0.0008,c:0.04,amp:0.01,freq:2.0}, headTilt:0.05, shoulderDrop:-0.02 },
+        excited:   { hair:{k:0.0008,c:0.03,amp:0.15,freq:3.2}, spine:{k:0.001,c:0.04,amp:0.03,freq:2.4}, chest:{k:0.0006,c:0.03,amp:0.02,freq:2.8}, headTilt:0.08, shoulderDrop:-0.04 },
+        sad:       { hair:{k:0.0025,c:0.12,amp:0.01,freq:0.8}, spine:{k:0.003,c:0.15,amp:-0.02,freq:0.6}, chest:{k:0.0015,c:0.1,amp:-0.01,freq:0.7}, headTilt:-0.08, shoulderDrop:0.04 },
+        angry:     { hair:{k:0.003,c:0.1,amp:0.03,freq:2.0}, spine:{k:0.004,c:0.12,amp:0.01,freq:1.4}, chest:{k:0.002,c:0.08,amp:0.015,freq:1.8}, headTilt:0.02, shoulderDrop:-0.05 },
+        thinking:  { hair:{k:0.002,c:0.07,amp:0.01,freq:1.0}, spine:{k:0.0025,c:0.09,amp:0.005,freq:0.9}, chest:{k:0.0012,c:0.06,amp:0.004,freq:1.1}, headTilt:0.1, shoulderDrop:0 },
+        surprised: { hair:{k:0.0005,c:0.02,amp:0.2,freq:4.0}, spine:{k:0.0008,c:0.03,amp:0.04,freq:3.0}, chest:{k:0.0005,c:0.02,amp:0.03,freq:3.5}, headTilt:-0.05, shoulderDrop:-0.06 },
+        fear:      { hair:{k:0.0035,c:0.14,amp:0.02,freq:1.2}, spine:{k:0.004,c:0.15,amp:-0.015,freq:0.8}, chest:{k:0.002,c:0.1,amp:-0.01,freq:1.0}, headTilt:-0.06, shoulderDrop:0.06 },
+        love:      { hair:{k:0.001,c:0.035,amp:0.06,freq:2.0}, spine:{k:0.0012,c:0.045,amp:0.01,freq:1.4}, chest:{k:0.0007,c:0.035,amp:0.008,freq:1.6}, headTilt:0.06, shoulderDrop:-0.01 },
+        confident: { hair:{k:0.0014,c:0.05,amp:0.04,freq:2.2}, spine:{k:0.0018,c:0.06,amp:0.01,freq:1.3}, chest:{k:0.0009,c:0.04,amp:0.012,freq:1.7}, headTilt:0, shoulderDrop:-0.03 },
+    };
+
+    function _makeSpring(k, c, amp, freq) {
+        return { k, c, mass: 1.0, disp: 0, vel: 0, target: 0, amp, freq };
+    }
+
+    let _springs = {
+        hair:  _makeSpring(0.0016, 0.06, 0.02, 1.8),
+        spine: _makeSpring(0.002,  0.08, 0.005, 1.2),
+        chest: _makeSpring(0.001,  0.05, 0.003, 1.5),
+    };
+    let _physEmotion  = 'neutral';
+    let _physTrans    = 1.0;
+    let _physHeadTilt = 0;
+    let _physShoulder = 0;
+    let _physPrevP    = null;
+
+    // ── AUDIO / BEAT DETECTION ──────────────────────────────────────────────────
+    // talkMode:  uses audioAnalyser (TTS playback) to drive bounce from voice volume
+    // beatMode:  opens a mic stream and detects bass-energy beats for music response
+    let _audioMode = 'idle'; // 'idle' | 'talk' | 'beat'
+    let _audioEnergy = 0;    // smoothed voice/music energy 0..1
+    let _beatPhase   = 0;    // continuous phase for beat-synced oscillation
+    let _beatFreq    = 1.2;  // inferred beat frequency in Hz
+    let _beatBass    = 0;    // low-freq band energy (bass drum detection)
+    let _lastBeatTime = 0;   // last detected beat timestamp
+    let _beatHistory = [];   // recent beat intervals for BPM tracking
+    let _micStream   = null;
+    let _micAnalyser = null;
+    let _micSource   = null;
+    let _micReady    = false;
+
+    async function startBeatMode() {
+        if (_audioMode === 'beat') return;
+        try {
+            if (!_micStream) {
+                // ── Try system audio first (Glava-style: captures speaker output) ──
+                // getDisplayMedia with audio:true + video:false captures the system
+                // audio output without any microphone — just like Glava does.
+                let stream = null;
+                let sourceLabel = 'system audio';
+                try {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            sampleRate: 44100,
+                        }
+                    });
+                    // Drop the video track since we only want system audio
+                    stream.getVideoTracks().forEach(t => t.stop());
+                } catch (sysErr) {
+                    console.warn('[Physics] System audio unavailable, trying mic:', sysErr.message);
+                    // ── Fallback: microphone ──
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        sourceLabel = 'microphone';
+                    } catch (micErr) {
+                        throw new Error('Both system audio and microphone access denied.');
+                    }
+                }
+
+                _micStream = stream;
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                _micSource = audioContext.createMediaStreamSource(_micStream);
+                _micAnalyser = audioContext.createAnalyser();
+                _micAnalyser.fftSize = 512;
+                _micAnalyser.smoothingTimeConstant = 0.3;
+                _micSource.connect(_micAnalyser);
+                _micReady = true;
+                console.log(`[Physics] Beat mode using: ${sourceLabel}`);
+            }
+            _audioMode = 'beat';
+            _beatHistory = [];
+            document.getElementById('physics-emotion-chip').textContent = '● beat';
+            document.getElementById('physics-emotion-chip').style.color = '#e84393';
+            console.log('[Physics] Beat mode activated — listening for music...');
+        } catch(e) {
+            console.warn('[Physics] Audio capture unavailable:', e.message);
+            // ── Graceful degradation: pulse on a timer instead ──
+            _audioMode = 'beat';
+            _beatHistory = [];
+            _micReady = false;
+            document.getElementById('physics-emotion-chip').textContent = '● beat (visual)';
+            document.getElementById('physics-emotion-chip').style.color = '#e84393';
+        }
+    }
+
+    function stopBeatMode() {
+        _audioMode = 'idle';
+        _audioEnergy = 0;
+        _beatBass = 0;
+        _beatHistory = [];
+        if (_micStream) {
+            _micStream.getTracks().forEach(t => t.stop());
+            _micStream = null;
+        }
+        _micReady = false;
+    }
+
+    window._toggleBeat = function() {
+        const label = document.getElementById('beat-label');
+        const btn = document.getElementById('beat-btn');
+        if (_audioMode === 'beat') {
+            stopBeatMode();
+            label.textContent = 'beat: off';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) chip.textContent = '';
+        } else {
+            startBeatMode();
+            label.textContent = 'beat: on';
+            btn.style.color = 'var(--teal)';
+            btn.style.borderColor = 'var(--teal-dim)';
+        }
+    };
+
+    function _readAudioEnergy() {
+        // talk mode: use existing TTS analyser (audioAnalyser is connected during playback)
+        if (_audioMode === 'talk' && audioAnalyser) {
+            const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+            audioAnalyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            _audioEnergy = Math.min(1, Math.sqrt(sum / data.length) * 6);
+            return;
+        }
+        // beat mode: analyze captured audio (system or mic) for bass energy
+        if (_audioMode === 'beat' && _micAnalyser) {
+            const data = new Uint8Array(_micAnalyser.frequencyBinCount);
+            _micAnalyser.getByteFrequencyData(data);
+            const binCount = data.length;
+            // Bass band: first ~8 bins (0-~750 Hz at 44.1kHz sample rate, fftSize=512)
+            const bassBins = Math.min(8, binCount);
+            let bassSum = 0;
+            let totalSum = 0;
+            for (let i = 0; i < bassBins; i++) bassSum += data[i];
+            for (let i = 0; i < binCount; i++) totalSum += data[i];
+            _beatBass = bassSum / (bassBins * 255);
+            _audioEnergy = Math.min(1, _beatBass * 1.5 + (totalSum / (binCount * 255)) * 0.3);
+            // Beat detection: energy spike vs rolling average
+            const now = performance.now();
+            if (_audioEnergy > 0.15 && now - _lastBeatTime > 280) { // min 214 bpm spacing
+                if (_beatHistory.length > 0) {
+                    const last = _beatHistory[_beatHistory.length - 1];
+                    const interval = now - last;
+                    if (interval > 300 && interval < 2000) {
+                        _beatHistory.push(now);
+                        if (_beatHistory.length > 8) _beatHistory.shift();
+                        if (_beatHistory.length >= 3) {
+                            const avgInterval = _beatHistory.reduce((a,b) => a+b,0) / _beatHistory.length;
+                            _beatFreq = 1000 / avgInterval;
+                            if (_beatFreq > 0.8 && _beatFreq < 4) { /* valid BPM range */ }
+                            else _beatHistory.shift();
+                        }
+                    }
+                }
+                _lastBeatTime = now;
+            }
+            // Decay when no beat
+            _audioEnergy *= 0.88;
+            return;
+        }
+        // beat mode visual-only fallback (no audio access) — pulse at ~72 BPM
+        if (_audioMode === 'beat' && !_micAnalyser) {
+            const now = performance.now();
+            const t = now / 1000;
+            _audioEnergy = 0.5;
+            // Artificial beat trigger
+            if (now - _lastBeatTime > (1000 / _beatFreq)) {
+                _lastBeatTime = now;
+            }
+            return;
+        }
+        // idle: gentle breathing
+        _audioEnergy = 0;
+    }
+
+    function _applyPhysEmotion(emotion) {
+        if (emotion === _physEmotion) return;
+        const prev = EMOTION_PHYSICS_JS[_physEmotion] || EMOTION_PHYSICS_JS.neutral;
+        const curr = EMOTION_PHYSICS_JS[emotion]  || EMOTION_PHYSICS_JS.neutral;
+        _physPrevP = { prev, curr };
+        _physEmotion = emotion;
+        _physTrans   = 0.0;
+        _physHeadTilt    = prev.headTilt;
+        _physShoulder    = prev.shoulderDrop;
+    }
+
+    function _stepPhys(dt, t) {
+        // Emotion parameter transition
+        if (_physTrans < 1.0) {
+            _physTrans = Math.min(1.0, _physTrans + dt / 0.5);
+        }
+        const pp = _physPrevP?.prev || EMOTION_PHYSICS_JS.neutral;
+        const cp = _physPrevP?.curr || EMOTION_PHYSICS_JS[_physEmotion] || EMOTION_PHYSICS_JS.neutral;
+        const tx = _physTrans;
+
+        ['hair','spine','chest'].forEach(part => {
+            const s = _springs[part];
+            const p = pp[part], c = cp[part];
+            s.k = p.k + (c.k - p.k) * tx;
+            s.c = p.c + (c.c - p.c) * tx;
+            s.amp = p.amp + (c.amp - p.amp) * tx;
+            s.freq = p.freq + (c.freq - p.freq) * tx;
+        });
+        _physHeadTilt    = pp.headTilt + (cp.headTilt - pp.headTilt) * tx;
+        _physShoulder    = pp.shoulderDrop + (cp.shoulderDrop - pp.shoulderDrop) * tx;
+
+        if (_physTrans >= 1.0) {
+            ['hair','spine','chest'].forEach(part => {
+                const s = _springs[part];
+                const c = cp[part];
+                s.k += (c.k - s.k) * 0.03;
+                s.c += (c.c - s.c) * 0.03;
+                s.amp += (c.amp - s.amp) * 0.03;
+                s.freq += (c.freq - s.freq) * 0.03;
+            });
+            _physHeadTilt    += (cp.headTilt - _physHeadTilt) * 0.03;
+            _physShoulder    += (cp.shoulderDrop - _physShoulder) * 0.03;
+        }
+
+        // Read audio input every frame
+        _readAudioEnergy();
+
+        // ── MODE-SPECIFIC PHYSICS ─────────────────────────────────────────────────
+        const breath = Math.sin(2 * Math.PI * 1.5 * t) * 0.003;
+        const talking = _isTalking() || _audioEnergy > 0.08;
+
+        function springStep(s, extForce, phaseOffset) {
+            const springF = -s.k * (s.disp - s.target);
+            const dampF   = -s.c * s.vel;
+            const acc = (springF + dampF + extForce) / s.mass;
+            s.vel += acc * dt;
+            s.disp += s.vel * dt;
+            return s.disp + s.amp * Math.sin(2 * Math.PI * s.freq * (t + phaseOffset));
+        }
+
+        let hairX, hairY, spineFwd, chestExp;
+        if (_audioMode === 'beat') {
+            // ── BEAT MODE: bounce on detected beats ───────────────────────────────
+            const beatPulse = Math.max(0, _audioEnergy) * 0.08;
+            const beatPhase = Math.max(0, (performance.now() - _lastBeatTime) / 1000) * _beatFreq;
+            const kick = Math.exp(-beatPhase * 6) * beatPulse; // sharp attack, quick decay
+            const bodyBounce = kick * 0.6;
+            const hairBounce  = kick * 1.4; // hair is lighter, bounces more
+            const spineBounce = kick * 0.4;
+            hairX  = hairBounce * Math.sin(t * Math.PI * 2 * _beatFreq);
+            hairY  = hairBounce * 0.5;
+            spineFwd = spineBounce * (Math.sin(t * Math.PI * _beatFreq) * 0.5 + 0.5);
+            chestExp = bodyBounce * 0.3;
+            _physHeadTilt = Math.sin(t * Math.PI * 2 * _beatFreq) * 0.04 * beatPulse * 5;
+            _physShoulder = -beatPulse * 0.03 * Math.sin(t * Math.PI * _beatFreq);
+            // Update chip to show BPM
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) {
+                chip.textContent = `● ${_beatFreq.toFixed(1)}bpm`;
+                chip.style.color = '#e84393';
+            }
+        } else if (talking) {
+            // ── TALK MODE: bounce driven by voice energy ──────────────────────────
+            const talkAmp = Math.min(1, _audioEnergy * 2.5);
+            // Voice-driven random-looking bounce using deterministic noise
+            const talkPh = t * (3.5 + _audioEnergy * 2);
+            const talkMod = Math.sin(talkPh) * 0.5 + Math.sin(talkPh * 1.7) * 0.3 + Math.sin(talkPh * 2.3) * 0.2;
+            hairX  = talkMod * talkAmp * 0.025;
+            hairY  = Math.sin(talkPh * 0.7) * talkAmp * 0.008;
+            spineFwd = Math.sin(talkPh * 0.5) * talkAmp * 0.01;
+            chestExp = Math.sin(talkPh * 0.8) * talkAmp * 0.006;
+            _physHeadTilt = Math.sin(talkPh * 1.1) * talkAmp * 0.03;
+            _physShoulder = -talkAmp * 0.015;
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) { chip.textContent = '● talking'; chip.style.color = 'var(--teal)'; }
+        } else {
+            // ── IDLE MODE: gentle emotion-based breathing ─────────────────────────
+            _springs.chest.target = breath;
+            const hx = springStep(_springs.hair, 0, 0);
+            const hy = springStep(_springs.hair, 0, 0.5);
+            const sp = springStep(_springs.spine, 0, 0);
+            const ch = springStep(_springs.chest, 0, 0);
+            hairX  = hx * 0.015;
+            hairY  = hy * 0.004;
+            spineFwd = sp * 0.008;
+            chestExp = ch * 0.004;
+            const chip = document.getElementById('physics-emotion-chip');
+            if (chip) {
+                const colors = {neutral:'var(--text-muted)',joy:'var(--teal)',excited:'var(--gold)',sad:'var(--coral)',angry:'#c0392b',thinking:'#8e44ad',surprised:'#e67e22',fear:'#7f8c8d',love:'#e84393',confident:'var(--teal)'};
+                chip.textContent = '● ' + _physEmotion;
+                chip.style.color = colors[_physEmotion] || 'var(--text-muted)';
+                chip.style.borderColor = colors[_physEmotion] || 'var(--border)';
+            }
+        }
+
+        return {
+            hairX, hairY, spineFwd,
+            spineTlt: Math.sin(t * 2.1) * (_springs.spine.amp || 0.005) * 0.4,
+            chestExp, headTilt: _physHeadTilt, shoulder: _physShoulder,
+            emotion: _physEmotion, trans: Math.round(_physTrans * 1000) / 1000,
+        };
+    }
+
+    function _applyPhysToVRM(ph) {
+        if (!vrmModel || !vrmModel.humanoid) return;
+        const h = vrmModel.humanoid;
+        const head = h.getNormalizedBoneNode('head');
+        if (head) head.rotation.x = ph.headTilt;
+        const spine = h.getNormalizedBoneNode('spine');
+        if (spine) spine.rotation.x = ph.spineFwd;
+        const chest = h.getNormalizedBoneNode('chest');
+        if (chest) chest.rotation.x = ph.spineFwd * 1.5;
+        const upperChest = h.getNormalizedBoneNode('upperChest');
+        if (upperChest) upperChest.rotation.x = ph.spineFwd * 0.5;
+        const lArm = h.getNormalizedBoneNode('leftUpperArm');
+        const rArm = h.getNormalizedBoneNode('rightUpperArm');
+        if (lArm) lArm.rotation.z = 1.35 + ph.shoulder;
+        if (rArm) rArm.rotation.z = -1.35 - ph.shoulder;
+        if (vrmModel.scene) {
+            const sc = 1.0 + ph.chestExp * 2;
+            vrmModel.scene.scale.set(sc, 1.0, sc);
+        }
+    }
+    // Usage in animateVRM: const ph = _stepPhys(delta, vrmClock.elapsedTime); _applyPhysToVRM(ph);
+
+    // ── DIRECTOR PLAYBACK ENGINE ───────────────────────────────────────────────
+    // Plays a timed action script from the Director model.
+    // Each action: { t: float (seconds), type: string, value: string, dur: float }
+
+    let _directorTimers = [];   // active setTimeout handles
+    let _directorTalkActive = false;
+    let _directorScriptActive = false;
+
+    // ── BVH animation cache ───────────────────────────────────────────────────
+    // Stores parsed THREE.AnimationClip objects keyed by animation name.
+    // Eliminates redundant HTTP+parse overhead for repeated animations.
+    const _bvhCache = new Map();   // name → THREE.AnimationClip
+    const _bvhLoading = new Map(); // name → Promise<THREE.AnimationClip> (in-flight)
+
+    // Expression name → VRM expression key mappings
+    const _exprMap = {
+        // ── Standard VRM 1.0 presets ──────────────────────────────────────
+        'happy':     'happy',
+        'sad':       'sad',
+        'angry':     'angry',
+        'surprised': 'surprised',
+        'relaxed':   'relaxed',
+        'neutral':   'neutral',
+        // ── Physics emotion names → VRM expression keys ───────────────────
+        'joy':       'happy',
+        'excited':   'happy',
+        'thinking':  'relaxed',
+        'curious':   'relaxed',
+        'fear':      'surprised',
+        'shock':     'surprised',
+        'realization':'surprised',
+        'love':      'happy',
+        'confident': 'relaxed',
+        'grief':     'sad',
+        'remorse':   'sad',
+        'caring':    'relaxed',
+        'embarrassed':'neutral',
+        'annoyed':   'angry',
+        'disgust':   'angry',
+        'explaining':'neutral',
+        'greeting':  'happy',
+        // ── BVH animation names → also valid as expression names ──────────
+        'admiration':'happy', 'amusement':'happy', 'approval':'happy',
+        'curiosity':'relaxed', 'desire':'happy', 'disappointment':'sad',
+        'disapproval':'angry', 'disgust':'angry', 'embarrassment':'neutral',
+        'excitement':'happy', 'fear':'surprised', 'gratitude':'happy',
+        'grief':'sad', 'joy':'happy', 'love':'happy', 'nervousness':'surprised',
+        'optimism':'happy', 'pride':'happy', 'realization':'surprised',
+        'relief':'happy', 'remorse':'sad', 'sadness':'sad',
+        'surprise':'surprised',
+    };
+
+    function setVRMExpression(name, strength = 1.0) {
+        if (!vrmModel || !vrmModel.expressionManager) return;
+        try {
+            // Reset all expressions first (except blink / aa)
+            const allExprs = ['happy', 'sad', 'angry', 'surprised', 'relaxed', 'neutral'];
+            for (const e of allExprs) {
+                try { vrmModel.expressionManager.setValue(e, 0); } catch(_) {}
+            }
+            const vrmKey = _exprMap[name] || name;
+            vrmModel.expressionManager.setValue(vrmKey, strength);
+        } catch(e) { /* ignore unsupported expressions */ }
+    }
+
+    window.playDirectorScript = function playDirectorScript(script) {
+        // Cancel any pending director actions
+        for (const tid of _directorTimers) clearTimeout(tid);
+        _directorTimers = [];
+        _directorScriptActive = false;
+
+        if (!Array.isArray(script) || script.length === 0) return;
+
+        _directorScriptActive = true;
+        const lastT = Math.max(...script.map(a => (a.t || 0) + (a.dur || 1)));
+        const endTid = setTimeout(() => { _directorScriptActive = false; }, (lastT + 2) * 1000);
+        _directorTimers.push(endTid);
+
+        // Track mouth activity for text-driven lipsync
+        let talkSegments = script.filter(a => a.type === 'talk');
+
+        for (const action of script) {
+            const delayMs = Math.max(0, action.t * 1000);
+            const durMs   = (action.dur || 1.0) * 1000;
+
+            const tid = setTimeout(() => {
+                try {
+                    switch (action.type) {
+                        case 'anim':
+                            if (typeof playAnimation === 'function') {
+                                playAnimation(action.value);
+                            }
+                            break;
+
+                        case 'expr':
+                            setVRMExpression(action.value, action.strength !== undefined ? action.strength : 1.0);
+                            // Fade back to neutral after duration
+                            if (action.value !== 'neutral' && durMs < 90000) {
+                                const ftid = setTimeout(() => {
+                                    setVRMExpression('neutral', 0.3);
+                                }, durMs);
+                                _directorTimers.push(ftid);
+                            }
+                            break;
+
+                        case 'talk':
+                            // Mark that mouth should be active for this duration
+                            _directorTalkActive = true;
+                            const endTid = setTimeout(() => {
+                                _directorTalkActive = false;
+                            }, durMs);
+                            _directorTimers.push(endTid);
+                            break;
+
+                        case 'pause':
+                            // Future: could show a thinking pose
+                            break;
+                    }
+                } catch(e) { console.warn('[Director] Action error:', e); }
+            }, delayMs);
+
+            _directorTimers.push(tid);
+        }
+    };
+
+    // ── DANCE MODE ─────────────────────────────────────────────────────────────
+    // When music plays on the TV, Marin loops through dance animations.
+    const DANCE_PLAYLIST = [
+        'dance_1', 'dance_2', 'dance_rumba', 'dance_marachinostep',
+        'dance_northern_soul_spin', 'dance_headdrop', 'dance_gangnam_style',
+        'dance_dab', 'dance_pushback', 'dance_backup', 'dance_ontop',
+    ];
+    let _danceMode = false;
+    let _danceTimer = null;
+    let _danceIdx   = 0;
+
+    window.startDanceMode = function startDanceMode() {
+        if (_danceMode) return;
+        _danceMode = true;
+        _danceIdx  = Math.floor(Math.random() * DANCE_PLAYLIST.length);
+        _nextDance();
+
+        // Always face the user when dancing
+        if (typeof window.setAvatarRotation === 'function') {
+            window.setAvatarRotation(Math.PI);
+        }
+    };
+
+    function _nextDance() {
+        if (!_danceMode) return;
+        const anim = DANCE_PLAYLIST[_danceIdx % DANCE_PLAYLIST.length];
+        _danceIdx++;
+        if (typeof playAnimation === 'function') playAnimation(anim);
+        // Each dance BVH is roughly 4-12s; poll every 8s and switch
+        _danceTimer = setTimeout(_nextDance, 8000);
+    }
+
+    window.stopDanceMode = function stopDanceMode() {
+        _danceMode = false;
+        if (_danceTimer) { clearTimeout(_danceTimer); _danceTimer = null; }
+        if (typeof playAnimation === 'function') playAnimation('neutral_idle');
+
+        // If TV is playing, turn back to it. Otherwise turn to user.
+        if (typeof window.setAvatarRotation === 'function') {
+            const tvIframe = document.getElementById('vrm-tv-iframe');
+            if (tvIframe && tvIframe.style.display === 'block') {
+                window.setAvatarRotation(0);
+            } else {
+                window.setAvatarRotation(Math.PI);
+            }
+        }
+    };
+
+    // ── Director-aware talking state ──────────────────────────────────────────
+    // The lipsync uses avatar-talking class OR _directorTalkActive to drive mouth
+    function _isTalking() {
+        const logoWrap = document.getElementById('logo-wrap');
+        return (logoWrap && logoWrap.classList.contains('avatar-talking')) || _directorTalkActive;
+    }
+
+    // ── Live Director: scan each incoming chunk for emotion keywords ──────────
+    // Fires animations in real-time as Marin's response streams in.
+    const _LIVE_EMOTION_RULES = [
+        // Joy / happiness
+        { words: ['haha','lol','lmao','rofl','hehe','😂','🤣','funny','hilarious','cracking up'], anim: 'amusement',   expr: 'happy',    minGap: 4000 },
+        { words: ['yay','woohoo','amazing','awesome','incredible','yes!','finally!','🎉','🥳','congrats'], anim: 'excitement', expr: 'happy', minGap: 3500 },
+        { words: ['love you','luv','adore','sweetheart','darling','❤','💕','💖','💗','mwah'], anim: 'love', expr: 'happy', minGap: 5000 },
+        { words: ['happy','glad','great','wonderful','fantastic','perfect','nice!','yep!','sure!'], anim: 'approval', expr: 'happy', minGap: 4500 },
+
+        // Thinking / curiosity
+        { words: ['hmm','hm,','let me think','actually','well,','interesting','consider','wonder'], anim: 'curiosity', expr: 'relaxed', minGap: 4000 },
+        { words: ['i think','i believe','in my opinion','perhaps','maybe','probably','likely'], anim: 'curiosity', expr: 'relaxed', minGap: 5000 },
+        { words: ['let me explain','basically','so,','the reason','because','therefore','thus'], anim: 'neutral2',  expr: 'neutral',  minGap: 5000 },
+
+        // Surprise / shock
+        { words: ['wow','whoa','wait','really?','seriously?','no way','oh my','omg','what?!','!?'], anim: 'surprise', expr: 'surprised', minGap: 3500 },
+        { words: ['i did not expect','shocking','unbelievable','incredible','mind-blowing','wait what'], anim: 'surprise', expr: 'surprised', minGap: 4000 },
+
+        // Sadness / empathy
+        { words: ['sorry','i apologize','unfortunately','that is sad','sad','miss you','miss','😢','😭','hurts'], anim: 'sadness', expr: 'sad', minGap: 7000 },
+        { words: ['difficult','hard time','struggling','lost','gone','passed away','heartbroken'], anim: 'sadness', expr: 'sad', minGap: 8000 },
+
+        // Confidence / pride
+        { words: ['absolutely','definitely','of course','100%','for sure','no doubt','trust me'], anim: 'approval', expr: 'happy', minGap: 4000 },
+        { words: ['i can do','i will','let me handle','leave it to me','i got this','i know'], anim: 'action_confidence', expr: 'happy', minGap: 5000 },
+
+        // Greetings
+        { words: ['hello','hi','hey','welcome','good morning','good evening','nice to meet'], anim: 'action_greeting', expr: 'happy', minGap: 10000 },
+
+        // Embarrassed / shy
+        { words: ['ehehe','hehe~','um,','uh,','w-well','i-i','blush','shy','embarrass','teehee','kyaa'], anim: 'neutral2', expr: 'neutral', minGap: 5000 },
+
+        // Anger / frustration (Marin mild)
+        { words: ['ugh','argh','not again','frustrating','come on','really now','seriously?!'], anim: 'amusement', expr: 'angry', minGap: 6000 },
+    ];
+    let _lastLiveAnimTime = 0;
+
+    function liveDirectorScan(chunk) {
+        // Don't fight the director script, dance mode, or scripted playback
+        if (_danceMode || _directorScriptActive || _directorTimers.length > 2) return;
+        const now = Date.now();
+        const lower = chunk.toLowerCase();
+        for (const rule of _LIVE_EMOTION_RULES) {
+            if (now - _lastLiveAnimTime < rule.minGap) continue;
+            if (rule.words.some(w => lower.includes(w))) {
+                if (typeof playAnimation === 'function') playAnimation(rule.anim);
+                if (typeof setVRMExpression === 'function') {
+                    setVRMExpression(rule.expr || rule.anim, 0.85);
+                    // Fade back to neutral after 3.5 seconds
+                    setTimeout(() => {
+                        try { 
+                            setVRMExpression('neutral', 1.0); 
+                            if (typeof _applyPhysEmotion === 'function') _applyPhysEmotion('neutral');
+                        } catch(e) {}
+                    }, 3500);
+                }
+                // Also drive soft-body physics for this emotion
+                const emotionMap = {
+                    excitement: 'excited', amusement: 'joy', curiosity: 'thinking',
+                    sadness: 'sad', surprise: 'surprised', love: 'love',
+                    approval: 'confident',
+                };
+                const physEmotion = emotionMap[rule.anim] || rule.anim;
+                _applyPhysEmotion(physEmotion);
+                _lastLiveAnimTime = now;
+                return;
+            }
+        }
+    }
+
+    window.handleSidebarTV = function(val) {
+        if (!val || !val.trim()) return;
+        val = val.trim();
+
+        const input = document.getElementById('sidebar-tv-input');
+        if (input) input.value = '';
+
+        // Instead of bypassing Marin and playing dumbly, we send it to her
+        // so she can fetch metadata, decide if it's music or video, and
+        // automatically trigger the correct __DIRECTOR__ choreography (dance vs watch)!
+        document.getElementById('msg-input').value = `[SYSTEM EVENT: User pasted video link to TV: ${val} - Must use youtube_search_tool exactly with this URL]`;
+        sendMessage();
+    };
+
+    function _castToTV(val) {
+        // Extract YouTube video ID from any URL format
+        const ytPatterns = [
+            /(?:youtube\.com\/watch\?v=)([\w-]+)/,
+            /(?:youtu\.be\/)([\w-]+)/,
+            /(?:youtube\.com\/shorts\/)([\w-]+)/,
+            /(?:youtube\.com\/embed\/)([\w-]+)/,
+        ];
+        for (const pat of ytPatterns) {
+            const m = val.match(pat);
+            if (m) {
+                showProjector(m[1], 'youtube');
+                return;
+            }
+        }
+        // Check for src="..." embed code
+        const srcMatch = val.match(/src="([^"]+)"/);
+        if (srcMatch) {
+            showProjector(srcMatch[1], 'youtube');
+            return;
+        }
+        // Raw 11-char video ID
+        if (/^[\w-]{11}$/.test(val)) {
+            showProjector(val, 'youtube');
+            return;
+        }
+        // Fallback: treat as a generic URL
+        showProjector(val, 'stream');
+    }
+
+    let _avatarTurnInterval = null;
+    window.setAvatarRotation = function(targetRot) {
+        if (typeof vrmModel === 'undefined' || !vrmModel) return;
+        if (_avatarTurnInterval) clearInterval(_avatarTurnInterval);
+        _avatarTurnInterval = setInterval(() => {
+            if (Math.abs(vrmModel.scene.rotation.y - targetRot) < 0.05) {
+                vrmModel.scene.rotation.y = targetRot;
+                clearInterval(_avatarTurnInterval);
+            } else {
+                vrmModel.scene.rotation.y += (targetRot - vrmModel.scene.rotation.y) * 0.1;
+            }
+        }, 16);
+    };
+
+    function showProjector(url, type='stream', _retries) {
+        if (typeof stopDanceMode === 'function') stopDanceMode();
+        _retries = (_retries || 0);
+        if (!projectorObject) {
+            if (_retries >= 8) { console.warn('[showProjector] VRM failed to initialize'); return; }
+            if (_retries === 0) {
+                const vrmContainer = document.getElementById('vrm-container');
+                if (vrmContainer && vrmContainer.style.display === 'none') {
+                    toggleVRM();
+                }
+            }
+            setTimeout(() => showProjector(url, type, _retries + 1), 800);
+            return;
+        }
+
+        const standby  = document.getElementById('vrm-projector-standby');
+        const tvIframe = document.getElementById('vrm-tv-iframe');
+
+        if (type === 'youtube') {
+            let videoId = '';
+            const embedMatch = url.match(/\/embed\/([\w-]+)/);
+            const rawMatch   = url.match(/^([\w-]{11})$/);
+            if (embedMatch) videoId = embedMatch[1];
+            else if (rawMatch) videoId = rawMatch[1];
+            else if (url.includes('v=')) videoId = url.split('v=')[1].split('&')[0];
+            else if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1].split('?')[0];
+            else videoId = url;
+            
+            if (tvIframe && videoId) {
+                tvIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+                tvIframe.style.display = 'block';
+            }
+        } else {
+            if (tvIframe) {
+                tvIframe.src = url;
+                tvIframe.style.display = 'block';
+            }
+        }
+        if (standby) standby.style.display = 'none';
+
+        // Turn around to face the TV (z = -4), unless we are in dance mode!
+        if (typeof window.setAvatarRotation === 'function' && !_danceMode) {
+            window.setAvatarRotation(0); // Face TV
+        }
+    }
+
+    function hideProjector() {
+        const standby  = document.getElementById('vrm-projector-standby');
+        const tvIframe = document.getElementById('vrm-tv-iframe');
+        if (tvIframe) { tvIframe.src = ''; tvIframe.style.display = 'none'; }
+        if (standby)  standby.style.display = 'flex';
+        // Stop dancing when TV turns off
+        if (typeof stopDanceMode === 'function') stopDanceMode();
+
+        // Turn back to face the camera (+Z)
+        if (typeof window.setAvatarRotation === 'function') {
+            window.setAvatarRotation(Math.PI);
+        }
+    }
+
+    // ── Watching Together Animation ───────────────────────────────────────────
+    // Plays a relaxed "co-watching" sequence when a video/stream starts.
+    // Only fires if no director script is currently running.
+    let _watchingTimeout = null;
+    function _triggerWatchingAnimation() {
+        // Don't interrupt an active director script
+        if (typeof _directorActive !== 'undefined' && _directorActive) return;
+
+        if (_watchingTimeout) { clearTimeout(_watchingTimeout); _watchingTimeout = null; }
+
+        // Build a gentle watching sequence: sit → subtle reactions → idle loop
+        const watchingScript = [
+            { t: 0.0,  type: "anim", value: "sit_idle",      dur: 20.0 },
+            { t: 0.0,  type: "expr", value: "neutral",        dur: 20.0 },
+            { t: 20.0, type: "anim", value: "neutral_idle",   dur: 20.0 },
+            { t: 40.0, type: "anim", value: "curiosity",      dur: 10.0 },
+            { t: 40.0, type: "expr", value: "thinking",       dur: 10.0 },
+            { t: 50.0, type: "anim", value: "sit_idle2",      dur: 20.0 },
+            { t: 50.0, type: "expr", value: "neutral",        dur: 20.0 },
+            { t: 70.0, type: "anim", value: "neutral_idle2",  dur: 20.0 },
+            { t: 90.0, type: "anim", value: "approval",       dur: 8.0  },
+            { t: 90.0, type: "expr", value: "happy",          dur: 5.0  },
+            { t: 98.0, type: "anim", value: "sit_idle",       dur: 999.0 },
+            { t: 98.0, type: "expr", value: "neutral",        dur: 999.0 },
+        ];
+
+        if (typeof playDirectorScript === 'function') {
+            playDirectorScript(watchingScript);
+        }
+    }
+
+    // ── BVH clip loader (returns a Promise, deduplicates in-flight loads) ────
+    function _loadBVHClip(name) {
+        // Return from cache if already parsed
+        if (_bvhCache.has(name)) {
+            return Promise.resolve(_bvhCache.get(name));
+        }
+        // Deduplicate simultaneous loads of the same animation
+        if (_bvhLoading.has(name)) {
+            return _bvhLoading.get(name);
+        }
+
+        const promise = new Promise((resolve, reject) => {
+            const loader = new THREE.BVHLoader();
+            loader.load(
+                `/static/vrm/animation/${name}.bvh`,
+                (result) => {
+                    const clip = result.clip;
+                    if (!clip) { reject(new Error(`No clip in BVH: ${name}`)); return; }
+
+                    const tracks = [];
+                    const boneMap = {
+                        'Hips': 'hips', 'Spine': 'spine', 'Spine1': 'chest', 'Spine2': 'upperChest',
+                        'Neck': 'neck', 'Head': 'head',
+                        'LeftArm': 'leftUpperArm', 'LeftForeArm': 'leftLowerArm', 'LeftHand': 'leftHand',
+                        'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
+                        'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot',
+                        'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot'
+                    };
+
+                    const restRotationInverse = new THREE.Quaternion();
+                    const parentRestWorldRotation = new THREE.Quaternion();
+                    const _quatA = new THREE.Quaternion();
+
+                    if (result.skeleton.bones[0]) {
+                        result.skeleton.bones[0].updateMatrixWorld(true);
+                    }
+
+                    const hipsBone = result.skeleton.bones.find(b => b.name.toLowerCase() === 'hips');
+                    const motionHipsHeight = hipsBone ? hipsBone.position.y : 1.0;
+                    const vrmHipsHeight = 1.0;
+                    const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
+
+                    clip.tracks.forEach((track) => {
+                        const match = track.name.match(/\.bones\[(.*?)\]\.(.*)/) || track.name.match(/(.*?)\.(.*)/);
+                        if (!match) return;
+                        const boneName = match[1];
+                        const type = match[2];
+                        const vrmName = boneMap[boneName] || boneName;
+                        const vrmNode = vrmModel.humanoid.getNormalizedBoneNode(vrmName);
+                        const bvhRigNode = result.skeleton.bones.find(b => b.name === boneName);
+
+                        if (vrmNode && bvhRigNode) {
+                            const vrmNodeName = vrmNode.name;
+                            bvhRigNode.getWorldQuaternion(restRotationInverse).invert();
+                            if (bvhRigNode.parent) {
+                                bvhRigNode.parent.getWorldQuaternion(parentRestWorldRotation);
+                            } else {
+                                parentRestWorldRotation.identity();
+                            }
+
+                            if (track instanceof THREE.QuaternionKeyframeTrack) {
+                                for (let i = 0; i < track.values.length; i += 4) {
+                                    const flatQuaternion = track.values.slice(i, i + 4);
+                                    _quatA.fromArray(flatQuaternion);
+                                    _quatA.premultiply(parentRestWorldRotation).multiply(restRotationInverse);
+                                    _quatA.toArray(flatQuaternion);
+                                    flatQuaternion.forEach((v, index) => { track.values[index + i] = v; });
+                                }
+                                tracks.push(
+                                    new THREE.QuaternionKeyframeTrack(
+                                        `${vrmNodeName}.${type}`,
+                                        track.times,
+                                        track.values.map((v, i) => (vrmModel.meta?.metaVersion === '0' && i % 2 === 0 ? -v : v))
+                                    )
+                                );
+                            } else if (track instanceof THREE.VectorKeyframeTrack) {
+                                const value = track.values.map((v, i) =>
+                                    (vrmModel.meta?.metaVersion === '0' && i % 3 !== 1 ? -v : v) * hipsPositionScale
+                                );
+                                tracks.push(new THREE.VectorKeyframeTrack(`${vrmNodeName}.${type}`, track.times, value));
+                            }
+                        }
+                    });
+
+                    const finalClip = new THREE.AnimationClip(name, clip.duration, tracks);
+                    _bvhCache.set(name, finalClip);
+                    _bvhLoading.delete(name);
+                    resolve(finalClip);
+                },
+                undefined, // progress
+                (err) => {
+                    _bvhLoading.delete(name);
+                    reject(err);
+                }
+            );
+        });
+
+        _bvhLoading.set(name, promise);
+        return promise;
+    }
+
+    // Fallback chain — try primary name, then a safe neutral on failure
+    const _ANIM_FALLBACKS = {
+        'default': 'neutral_idle',
+    };
+
+    // Non-looping one-shot animations — played once then crossfade back to idle (or resume dance)
+    const _LOOP_ONCE_ANIMS = new Set([
+        'action_greeting', 'action_greeting1', 'love', 'love2', 'love3', 'gratitude', 
+        'joy', 'joy2', 'joy3', 'action_pat', 'action_laydown', 'action_standup', 
+        'action_attention_seeking', 'action_crawling', 'action_crouch', 'action_jump',
+        'action_pickingup', 'admiration', 'admiration2', 'admiration3', 'amusement', 
+        'amusement2', 'amusement3', 'anger', 'anger2', 'anger3', 'annoyance', 'annoyance1', 
+        'approval', 'approval2', 'approval3', 'caring', 'caring1', 'confusion', 'confusion2', 
+        'confusion3', 'curiosity', 'curiosity2', 'curiosity3', 'desire', 'desire1', 'desire2', 
+        'disappointment', 'disappointment2', 'disapproval', 'disaproval1', 'disgust', 
+        'disgust1', 'disgust2', 'embarrassment', 'excitement', 'excitement2', 'excitement3', 
+        'fear', 'fear2', 'fear3', 'grief', 'hitarea_butt', 'hitarea_chest', 'hitarea_foot', 
+        'hitarea_groin', 'hitarea_hands', 'hitarea_head', 'hitarea_leg', 'nervousness', 
+        'nervousness2', 'nervousnes3', 'optimism', 'pride', 'pride2', 'reaction_groinhit', 
+        'reaction_headshot', 'realization', 'relief', 'relief1', 'remorse', 'remorse2', 
+        'remorse3', 'sadness', 'sadness2', 'surprise', 'surprise2', 'dance_dab', 'dance_headdrop'
+    ]);
+
+    async function playAnimation(name) {
+        if (!vrmModel) { console.warn("[VRM] playAnimation: model not ready, queuing."); return; }
+        
+        // Stop dance mode if explicitly commanded to enter an idle state
+        if ((name.includes('idle') || name.includes('neutral')) && typeof stopDanceMode === 'function') {
+            // Only stop if we are actually in dance mode and the user explicitly requested idle
+            if (window._danceMode) {
+                window.stopDanceMode();
+            }
+        }
+
+        // Ensure mixer exists
+        if (!vrmMixer) vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
+
+        let clipName = name;
+        try {
+            const clip = await _loadBVHClip(clipName);
+
+            // Fade out current action smoothly (0.3s crossfade)
+            const prevAction = currentAction;
+            currentAction = vrmMixer.clipAction(clip);
+            currentAction.setLoop(
+                _LOOP_ONCE_ANIMS.has(clipName) ? THREE.LoopOnce : THREE.LoopRepeat,
+                Infinity
+            );
+            currentAction.clampWhenFinished = _LOOP_ONCE_ANIMS.has(clipName);
+            currentAction.reset();
+            currentAction.play();
+
+            if (prevAction && prevAction !== currentAction) {
+                prevAction.crossFadeTo(currentAction, 0.3, true);
+            }
+
+            console.log(`[VRM] Playing: ${clipName}`);
+
+            // For one-shot animations, return to idle (or resume dance) when done
+            if (_LOOP_ONCE_ANIMS.has(clipName)) {
+                const FADE = 0.3;
+                const dur = clip.duration;
+                setTimeout(() => {
+                    if (currentAction && currentAction._clip === clip) {
+                        if (window._danceMode && typeof DANCE_PLAYLIST !== 'undefined') {
+                            const resumeDance = DANCE_PLAYLIST[(window._danceIdx === 0 ? 0 : window._danceIdx - 1) % DANCE_PLAYLIST.length];
+                            playAnimation(resumeDance);
+                        } else {
+                            playAnimation('neutral_idle');
+                        }
+                    }
+                }, (dur - FADE) * 1000);
+            }
+
+        } catch (err) {
+            const fallback = 'neutral_idle';
+            if (clipName !== fallback) {
+                console.warn(`[VRM] '${clipName}' failed. Falling back to '${fallback}'.`);
+                try {
+                    const fbClip = await _loadBVHClip(fallback);
+                    if (!vrmMixer) vrmMixer = new THREE.AnimationMixer(vrmModel.scene);
+                    const prev = currentAction;
+                    currentAction = vrmMixer.clipAction(fbClip);
+                    currentAction.setLoop(THREE.LoopRepeat, Infinity);
+                    currentAction.reset();
+                    currentAction.play();
+                    if (prev && prev !== currentAction) prev.crossFadeTo(currentAction, 0.3, true);
+                } catch (fbErr) {
+                    console.error(`[VRM] Fallback '${fallback}' also failed:`, fbErr);
+                }
+            } else {
+                console.error(`[VRM] '${clipName}' failed:`, err);
+            }
+        }
+    }
+
+    function stopAnimation() {
+        if (currentAction) {
+            currentAction.fadeOut(0.3);
+            setTimeout(() => { if (vrmMixer) vrmMixer.stopAllAction(); currentAction = null; }, 350);
+        } else if (vrmMixer) {
+            vrmMixer.stopAllAction();
+        }
+        vrmMixer = null;
+
+        if (vrmModel && vrmModel.humanoid) {
+            const humanoid = vrmModel.humanoid;
+            const boneNames = [
+                'hips', 'spine', 'chest', 'upperChest', 'neck', 'head',
+                'leftUpperArm', 'leftLowerArm', 'leftHand',
+                'rightUpperArm', 'rightLowerArm', 'rightHand',
+                'leftUpperLeg', 'leftLowerLeg', 'leftFoot',
+                'rightUpperLeg', 'rightLowerLeg', 'rightFoot',
+            ];
+            for (const boneName of boneNames) {
+                const node = humanoid.getNormalizedBoneNode(boneName);
+                if (!node) continue;
+                node.quaternion.set(0, 0, 0, 1);
+                if (boneName === 'hips') node.position.set(0, 0, 0);
+            }
+
+            // Apply the model's own A-pose arm angles (avoids ugly T-pose with arms straight)
+            const lArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+            const rArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+            const lLow = humanoid.getNormalizedBoneNode('leftLowerArm');
+            const rLow = humanoid.getNormalizedBoneNode('rightLowerArm');
+            if (lArm) lArm.rotation.z =  1.35;
+            if (rArm) rArm.rotation.z = -1.35;
+            if (lLow) lLow.rotation.z =  0.1;
+            if (rLow) rLow.rotation.z = -0.1;
+        }
+    }
+    // ── TALKING ANIMATION ──────────────────────────────────────────────────
+    function toggleTalking(on) {
+        document.getElementById('logo-wrap').classList.toggle('avatar-talking', on);
+    }
+    function toggleThinking(on) {
+        document.getElementById('logo-wrap').classList.toggle('avatar-thinking', on);
+    }
+    toggleTalking(false);
+    toggleThinking(false);
+
+    // ── AGENT INIT ─────────────────────────────────────────────────────────
+    function initAgent() {
+        document.body.style.setProperty('--accent', 'var(--teal)');
+        document.getElementById('agent-name').textContent  = 'Marin';
+        document.getElementById('agent-badge').textContent = 'HS-02 · online';
+        const msgs = document.getElementById('messages');
+        msgs.innerHTML = `<div class="msg ai">
+            <div class="avatar ai"><img src="/static/images/profile.png" alt="M"></div>
+            <div class="bubble" style="color:var(--text-muted);font-style:italic;font-size:.85rem">Loading session...</div>
+        </div>`;
+        loadRecentHistory().then(() => {
+            scrollToBottom();
+            startProactiveListener();
+        });
+    }
+
+    // ── MODES ──────────────────────────────────────────────────────────────
+    function setMode(mode) {
+        currentMode = mode;
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+        document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.toggle('active', b.id === 'btn-'+mode));
+        document.getElementById('msg-input').placeholder = 'Ask anything...';
+    }
+
+    function cycleDepth() {
+        const i = depths.indexOf(currentDepth);
+        currentDepth = depths[(i+1) % depths.length];
+        document.getElementById('depth-btn').textContent = `depth: ${currentDepth}`;
+    }
+
+    function insertCommand(cmd) {
+        const inp = document.getElementById('msg-input');
+        inp.value = cmd; inp.focus();
+        inp.setSelectionRange(cmd.length, cmd.length);
+    }
+
+    // ── ATTACH ─────────────────────────────────────────────────────────────
+    function handleAttach(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        attachedImage = file;
+        document.getElementById('attach-preview').textContent = `↳ ${file.name}`;
+    }
+
+    // ── SCROLL ─────────────────────────────────────────────────────────────
+    function scrollToBottom() {
+        const m = document.getElementById('messages');
+        m.scrollTop = m.scrollHeight;
+    }
+
+    // ── APPEND MESSAGE ──────────────────────────────────────────────────────
+    function appendMessage(role, content, raw=false) {
+        const msgs = document.getElementById('messages');
+        const wrap = document.createElement('div');
+        wrap.className = `msg ${role}`;
+
+        const av = document.createElement('div');
+        av.className = `avatar ${role === 'ai' ? 'ai' : 'user-av'}`;
+        if (role === 'ai') {
+            av.innerHTML = `<img src="/static/images/profile.png" alt="M">`;
+        } else {
+            av.textContent = 'you';
+            av.style.fontSize = '.58rem';
+            av.style.letterSpacing = '.04em';
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        if (raw) {
+            bubble.innerHTML = content;
+        } else {
+            try { bubble.innerHTML = renderWithLatex(content); }
+            catch { bubble.textContent = content; }
+        }
+
+        wrap.appendChild(av);
+        wrap.appendChild(bubble);
+        msgs.appendChild(wrap);
+        scrollToBottom();
+        return bubble;
+    }
+
+        // ── MARKDOWN + LATEX RENDER ──────────────────────────────────────────
+        function renderWithLatex(text) {
+            if (!text) return '';
+            
+            // Fix missing spaces between words (common in small models).
+            // '.' and ':' only split before an uppercase letter so decimals
+            // (3.14), URLs (example.com) and filenames (file.py) survive.
+            text = text.replace(/([a-z,])([A-Z])/g, '$1 $2');
+            text = text.replace(/([,!?;])([a-zA-Z])/g, '$1 $2');
+            text = text.replace(/([.:])([A-Z])/g, '$1 $2');
+            
+            // Stash display math $$...$$ and inline math $...$
+            const latexBlocks = [];
+            text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+                latexBlocks.push({ math, display: true });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+            text = text.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
+                latexBlocks.push({ math, display: false });
+                return `%%LATEX${latexBlocks.length - 1}%%`;
+            });
+
+            // Markdown processing
+            let html = marked.parse(text);
+
+            // Restore LaTeX placeholders as rendered KaTeX HTML
+            html = html.replace(/%%LATEX(\d+)%%/g, (_, idx) => {
+                const { math, display } = latexBlocks[parseInt(idx)];
+                try {
+                    return katex.renderToString(math, { displayMode: display, throwOnError: false });
+                } catch (e) {
+                    return display ? `$$${math}$$` : `$${math}$`;
+                }
+            });
+
+            return html;
+        }
+
+        // ── MOOD AVATAR ─────────────────────────────────────────────────────────
+    const MOOD_RULES = [
+        { mood:'angry',     words:['angry','how dare','stupid','hate you','💢','😠','😡'] },
+        { mood:'excited',   words:['yay','omg','!!!','🥳','woah','amazing','incredible'] },
+        { mood:'sad',       words:['sad','sorry','😢','😭'] },
+        { mood:'flirty',    words:['hehe','tease','😉','🤭','naughty'] },
+        { mood:'lovely',    words:['love you','mwah','ummaaah','miss you','❤','❤️','💕','💋','😘','🥰','sweetie','honey','darling','kiss'] },
+        { mood:'eating',    words:['eat','food','hungry','yum','delicious','cooking','meal'] },
+        { mood:'confident', words:['i can','strong','ready','success','win','trust me','got this'] },
+        { mood:'laugh',     words:['haha','lmao','funny','lol','🤣','😂','hehehe'] },
+        { mood:'shock',     words:['what?!','no way','shocking','surprise','😱','oh my god'] },
+        { mood:'normal',    words:["here's",'let me explain','step','formula','algorithm','definition','**'] },
+    ];
+    let _lastMood = null, avatarHideTimer = null, lastMoodTime = 0;
+
+    function detectMoodFromChunk(text) {
+        const now = Date.now();
+        if (now - lastMoodTime < 2000) return; // Throttle: only change mood every 2s
+
+        const lower = text.toLowerCase();
+        for (const rule of MOOD_RULES) {
+            if (rule.words.some(w => lower.includes(w))) {
+                if (_lastMood !== rule.mood) {
+                    _lastMood = rule.mood;
+                    lastMoodTime = now;
+                    setMoodAvatar(rule.mood);
+                    // Map mood to physics emotion
+                    const moodToPhys = {
+                        angry: 'angry', excited: 'excited', sad: 'sad',
+                        flirty: 'love', lovely: 'love', confident: 'confident',
+                        laugh: 'joy', shock: 'surprised', thinking: 'thinking',
+                    };
+                    const physE = moodToPhys[rule.mood];
+                    if (physE) _applyPhysEmotion(physE);
+                }
+                return;
+            }
+        }
+    }
+
+    const VIBE_MAP = {
+        affectionate: 'lovely', hostile: 'angry', low: 'sad',
+        energetic: 'excited', focused: 'thinking', neutral: 'normal'
+    };
+    function setMoodAvatar(vibe, persist=false) {
+        vibe = VIBE_MAP[vibe] || vibe;
+        const el = document.getElementById('mood-avatar');
+        const pf = document.getElementById('photoframe-img'); // New 3D photo frame
+        const img = new Image();
+        img.onload = () => {
+            if (el && typeof vrmVisible !== 'undefined' && !vrmVisible) {
+                el.src = `/static/avatars/${vibe}.png`;
+                el.classList.remove('hidden'); el.classList.add('visible');
+                clearTimeout(avatarHideTimer);
+                if (!persist) {
+                    avatarHideTimer = setTimeout(() => {
+                        el.classList.remove('visible'); el.classList.add('hidden');
+                    }, 10000); // Stay for 10s as requested
+                }
+            } else if (el) {
+                el.classList.remove('visible'); el.classList.add('hidden');
+            }
+            if (pf) pf.src = `/static/avatars/${vibe}.png`;
+        };
+        img.onerror = () => {};
+        img.src = `/static/avatars/${vibe}.png`;
+    }
+
+    // ── SEND ───────────────────────────────────────────────────────────────
+    async function sendAction(cmd) {
+        document.getElementById('msg-input').value = cmd;
+        sendMessage();
+    }
+
+    // ── LIPSYNC SCHEDULE BUILDER ────────────────────────────────────────────
+    // Converts text into a time-keyframed mouth-open schedule matched to a
+    // given audio duration (seconds). Returns an array of {t, open} objects.
+    // When audioDuration is null, uses a generic 150ms-per-syllable estimate.
+    function buildLipSyncSchedule(text, audioDuration) {
+        // 1. Crude syllable counter — count vowel clusters per word
+        function countSyllables(word) {
+            word = word.toLowerCase().replace(/[^a-z]/g, '');
+            if (!word.length) return 0;
+            const matches = word.match(/[aeiouy]+/g);
+            let n = matches ? matches.length : 1;
+            // Final silent-e rule
+            if (word.length > 2 && word.endsWith('e') && !/[aeiouy]e/.test(word.slice(-2))) n = Math.max(1, n - 1);
+            return Math.max(1, n);
+        }
+
+        // 2. Split into words, compute per-word syllable counts and vowel classes
+        //    Vowel class decides max mouth opening: 'a/o' → wide, 'e/i/u' → narrow
+        function vowelClass(word) {
+            const w = word.toLowerCase();
+            const first = (w.match(/[aeiouy]/) || ['a'])[0];
+            if ('ao'.includes(first)) return 0.75;    // wide open
+            if ('eiuy'.includes(first)) return 0.45;  // narrow
+            return 0.55;                               // default
+        }
+
+        const words = text.replace(/[^\w\s']/g, ' ').split(/\s+/).filter(Boolean);
+        if (!words.length) return [{ t: 0, open: 0 }];
+
+        // 3. Map each syllable to a slot
+        const syllables = [];
+        for (const word of words) {
+            const n = countSyllables(word);
+            const maxOpen = vowelClass(word);
+            for (let s = 0; s < n; s++) {
+                syllables.push({ maxOpen, isFirst: s === 0 });
+            }
+        }
+
+        const totalSyllables = syllables.length;
+        // 4. Determine actual per-syllable duration
+        const secPerSyllable = audioDuration
+            ? (audioDuration / totalSyllables)
+            : 0.15;  // fallback: ~150ms/syllable (normal speech)
+
+        // 5. Build keyframes: open on onset, peak at 30%, close at 80%, rest at 100%
+        const kf = [{ t: 0, open: 0.05 }];  // slight parted-lips at start
+        let t = 0;
+        for (const syl of syllables) {
+            const d = secPerSyllable;
+            kf.push({ t: t,           open: syl.isFirst ? 0.08 : 0.04 }); // brief close between words
+            kf.push({ t: t + d * 0.1, open: syl.maxOpen });               // peak open at onset
+            kf.push({ t: t + d * 0.5, open: syl.maxOpen * 0.65 });        // sustained
+            kf.push({ t: t + d * 0.85, open: 0.05 });                     // closing
+            t += d;
+        }
+        kf.push({ t: t,          open: 0.03 });
+        kf.push({ t: t + 0.08,   open: 0 });  // fully closed after last syllable
+
+        return kf;
+    }
+
+    async function playVoiceAudio(text) {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioAnalyser = audioContext.createAnalyser();
+            audioAnalyser.fftSize = 256;
+        }
+
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+
+        try {
+            // ── Fetch WAV + amplitude-based lipsync schedule from server ──────
+            const response = await fetch(`/audio/speak?text=${encodeURIComponent(text)}&lipsync=true`);
+            if (!response.ok) throw new Error("Audio fetch failed");
+
+            const data = await response.json();
+            // Decode base64 WAV
+            const wavBinary = atob(data.wav);
+            const wavBytes  = new Uint8Array(wavBinary.length);
+            for (let i = 0; i < wavBinary.length; i++) wavBytes[i] = wavBinary.charCodeAt(i);
+            const audioBuffer = await audioContext.decodeAudioData(wavBytes.buffer);
+
+            // ── Lipsync schedule: real amplitude keyframes from server ─────────
+            // Each entry: { t: seconds, open: 0–1 }
+            window._lipSyncSchedule  = data.lipsync || [];
+            window._lipSyncStartTime = null;  // set just before audioSource.start()
+
+            if (audioSource) {
+                try { audioSource.stop(); audioSource.disconnect(); } catch(_) {}
+            }
+
+            audioSource = audioContext.createBufferSource();
+            audioSource.buffer = audioBuffer;
+            audioSource.connect(audioAnalyser);
+            audioAnalyser.connect(audioContext.destination);
+
+            audioSource.onended = () => {
+                window._lipSyncSchedule  = null;
+                window._lipSyncStartTime = undefined;
+                toggleTalking(false);
+            };
+
+            toggleTalking(true);
+            // Set start time THEN start — so the schedule offset is accurate
+            window._lipSyncStartTime = audioContext.currentTime;
+            audioSource.start();
+
+            // Fire director animations aligned with speech start
+            if (typeof pendingDirectorScript !== 'undefined' && pendingDirectorScript) {
+                playDirectorScript(pendingDirectorScript);
+                pendingDirectorScript = null;
+            }
+        } catch (err) {
+            console.error("Failed to play audio:", err);
+            toggleTalking(false);
+            if (typeof pendingDirectorScript !== 'undefined' && pendingDirectorScript) {
+                playDirectorScript(pendingDirectorScript);
+                pendingDirectorScript = null;
+            }
+        }
+    }
+
+    // ── MIC / SPEECH-TO-TEXT ────────────────────────────────────────────────────
+    // Priority 1: Web Speech API (real-time, no upload, works offline)
+    // Priority 2: MediaRecorder → /audio/transcribe (faster-whisper on server)
+    let mediaRecorder = null;
+    let micChunks = [];
+    let isRecording = false;
+    let _speechRec = null;
+    let _usingSpeechAPI = false;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    async function toggleMic() {
+        if (isRecording) { stopMic(); return; }
+        const btn = document.getElementById('mic-btn');
+
+        // Force MediaRecorder → server Whisper (more reliable than Web Speech API)
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Microphone blocked by browser. You must access Marin via http://localhost:5069 or http://127.0.0.1:5069 (not a raw IP network address) for the microphone to work over HTTP.');
+            return;
+        }
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+            alert('Microphone access denied. Please allow microphone permission.');
+            return;
+        }
+        micChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(micChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            await transcribeBlob(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        btn.classList.add('recording');
+        btn.title = 'Click to stop recording';
+        btn.textContent = '⏹';
+    }
+
+    function stopMic() {
+        const btn = document.getElementById('mic-btn');
+        if (_usingSpeechAPI && _speechRec) {
+            _speechRec.stop();
+            _speechRec = null;
+            return;
+        }
+        if (mediaRecorder && isRecording) {
+            isRecording = false;
+            btn.classList.remove('recording');
+            btn.textContent = '⋯';
+            btn.title = 'Transcribing…';
+            btn.disabled = true;
+            mediaRecorder.stop();
+        }
+    }
+
+    async function transcribeBlob(blob) {
+        const btn = document.getElementById('mic-btn');
+        try {
+            const fd = new FormData();
+            fd.append('audio', blob, 'speech.webm');
+            const r = await fetch('/audio/transcribe', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const d = await r.json();
+            const text = (d.text || '').trim();
+            if (text) {
+                const inp = document.getElementById('msg-input');
+                inp.value = inp.value ? `${inp.value} ${text}` : text;
+                inp.focus();
+                inp.style.height = 'auto';
+                inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
+            } else {
+                btn.textContent = '—';
+                await new Promise(r => setTimeout(r, 800));
+            }
+        } catch (e) {
+            console.error('[STT] transcribe failed', e);
+            btn.textContent = '✗';
+            await new Promise(r => setTimeout(r, 800));
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🎤';
+            btn.title = 'Hold to speak';
+        }
+    }
+
+    window.streamAbortController = null;
+
+    async function sendMessage() {
+        const inp  = document.getElementById('msg-input');
+        const text = inp.value.trim();
+        if (!text || isStreaming) return;
+
+        appendMessage('user', text);
+        inp.value = ''; inp.style.height = 'auto';
+
+        const typingBubble = appendMessage('ai', `<div class="typing-dots"><span></span><span></span><span></span></div>`, true);
+
+        isStreaming = true;
+        document.getElementById('send-btn').disabled = true;
+        document.getElementById('stop-speech-btn').style.display = 'inline-flex';
+        toggleThinking(true);
+        _lastMood = null;
+        setMoodAvatar('thinking', true);
+
+        const fd = new FormData();
+        fd.append('message', buildMessageWithMode(text));
+        fd.append('agent', currentAgent);
+        fd.append('session_id', currentSessionId);
+        if (attachedImage) { fd.append('image', attachedImage); attachedImage = null; document.getElementById('attach-preview').textContent = ''; }
+
+        window.streamAbortController = new AbortController();
+
+        try {
+            const resp = await fetch('/message', { 
+                method:'POST', 
+                body:fd,
+                signal: window.streamAbortController.signal
+            });
+            if (!resp.ok) throw new Error(resp.statusText);
+            const reader = resp.body.getReader();
+            const dec    = new TextDecoder();
+            let   full   = '';
+            let   shouldSpeak = false;
+            let   chunkBuffer = '';   // accumulates partial tags across reads
+            pendingDirectorScript = null;
+            typingBubble.innerHTML = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (value) chunkBuffer += dec.decode(value, { stream: !done });
+                if (done && !chunkBuffer.trim()) break;
+
+                // Hold back buffer if a tag might be split across reads
+                let chunk = chunkBuffer;
+                const hasOpenTag = !done && (
+                    (chunk.includes('__DIRECTOR__') && !chunk.includes('__END__')) ||
+                    (chunk.includes('__ANIM__')     && !chunk.match(/__ANIM__\w+/)) ||
+                    (chunk.includes('__VIBE__')     && !chunk.match(/__VIBE__\w+/)) ||
+                    (chunk.includes('__YOUTUBE__')  && !chunk.match(/__YOUTUBE__[\w-]+/))
+                );
+                if (hasOpenTag) continue;
+                chunkBuffer = '';  // consumed
+
+                if (done) break;  // processed last buffer, now exit
+
+                // Handle Animation and Projector Tags
+                if (chunk.includes('__ANIM__')) {
+                    const match = chunk.match(/__ANIM__(\w+)/);
+                    if (match) {
+                        playAnimation(match[1]);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+
+                const isPySide = navigator.userAgent.includes('QtWebEngine');
+                
+                const youtubeMatch = chunk.match(/__YOUTUBE__([\w-]+)/);
+                const streamMatch = chunk.match(/__STREAM__(https?:\/\/[^\s<]+)/);
+                const browserMatch = chunk.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
+
+                if (isPySide && youtubeMatch) {
+                    showProjector(youtubeMatch[1], 'youtube');
+                } else if (isPySide && streamMatch) {
+                    // Route through backend proxy so <video> loads from same-origin
+                    showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
+                } else if (!isPySide && streamMatch) {
+                    showProjector(streamMatch[1], 'stream');
+                } else if (youtubeMatch) {
+                    showProjector(youtubeMatch[1], 'youtube');
+                } else if (streamMatch) {
+                    showProjector(streamMatch[1], 'stream');
+                } else if (browserMatch) {
+                    showProjector(browserMatch[1], 'youtube');
+                }
+
+                if (youtubeMatch) chunk = chunk.replace(youtubeMatch[0], '');
+                if (streamMatch) chunk = chunk.replace(streamMatch[0], '');
+                if (browserMatch) chunk = chunk.replace(browserMatch[0], '');
+
+                // __DANCE__ tag — marks that music is playing; start looping dance
+                if (chunk.includes('__DANCE__')) {
+                    startDanceMode();
+                    chunk = chunk.replace(/__DANCE__/g, '');
+                }
+
+                if (chunk.includes('__SEARCH__')) {
+                    const match = chunk.match(/__SEARCH__(https?:\/\/[^\s<]+)/);
+                    if (match) {
+                        showProjector(match[1]);
+                        chunk = chunk.replace(match[0], '');
+                    }
+                }
+
+                if (chunk.includes('__PROJECTOR_OFF__')) {
+                    hideProjector();
+                    chunk = chunk.replace('__PROJECTOR_OFF__', '');
+                }
+
+                // Handle Voice Tags
+                if (chunk.includes('__TALK_ON__')) {
+                    shouldSpeak = true;
+                    toggleThinking(false);
+                    chunk = chunk.replace('__TALK_ON__', '');
+                }
+                if (chunk.includes('__TALK_OFF__')) {
+                    toggleTalking(false);
+                    chunk = chunk.replace('__TALK_OFF__', '');
+                }
+                if (chunk.includes('__VIBE__')) {
+                    const vibeMatch = chunk.match(/__VIBE__(\w+)/);
+                    if (vibeMatch) {
+                        setMoodAvatar(vibeMatch[1]);
+                        chunk = chunk.replace(/__VIBE__\w+/, '');
+                    }
+                }
+
+                // ── Director Script ─────────────────────────────────────────
+                if (chunk.includes('__DIRECTOR__')) {
+                    const dirMatch = chunk.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
+                    if (dirMatch) {
+                        try {
+                            const decoded = atob(dirMatch[1]);
+                            pendingDirectorScript = JSON.parse(decoded);
+                            // If voice is off, play immediately; otherwise wait for audio start
+                            if (!shouldSpeak) {
+                                playDirectorScript(pendingDirectorScript);
+                                pendingDirectorScript = null;
+                            }
+                        } catch(e) { console.warn('[Director] Parse error:', e); }
+                        chunk = chunk.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+__END__/, '');
+                    }
+                }
+
+                if (!chunk.trim()) continue;
+
+                // Always start talking animation when text arrives (voice or not)
+                if (!document.getElementById('logo-wrap').classList.contains('avatar-talking')) {
+                    toggleThinking(false);
+                    toggleTalking(true);
+                }
+
+                full += chunk;
+                // Clean all tags from full text
+                const cleanText = full.replace(/__VIBE__\w+/g, '')
+                                      .replace(/__ANIM__\w+/g, '')
+                                      .replace(/__DANCE__/g, '')
+                                      .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                                      .replace(/__YOUTUBE__[\w-]+/g, '')
+                                      .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
+                                      .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
+                                      .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
+                                      .replace('__PROJECTOR_OFF__','')
+                                      .replace(/==+/g, '')
+                                      .replace('__TALK_ON__','').replace('__TALK_OFF__','').trim();
+
+                // During streaming: throttled partial render (markdown + KaTeX every ~250ms)
+                const _now = Date.now();
+                if (!window._lastStreamRender || _now - window._lastStreamRender > 250) {
+                    window._lastStreamRender = _now;
+                    try { typingBubble.innerHTML = renderWithLatex(cleanText); }
+                    catch { typingBubble.textContent = cleanText; }
+                }
+
+                detectMoodFromChunk(cleanText);
+                // Live Director: pick animation from each new chunk as it arrives
+                liveDirectorScan(chunk);
+                scrollToBottom();
+            }
+            if (!full) typingBubble.innerHTML = '<em style="color:var(--text-muted)">No response.</em>';
+            else {
+                // Final render with full markdown + LaTeX once complete
+                const cleanText = full.replace(/__VIBE__\w+/g, '')
+                                     .replace(/__ANIM__\w+/g, '')
+                                     .replace(/__DANCE__/g, '')
+                                     .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                                     .replace(/__YOUTUBE__[\w-]+/g, '')
+                                     .replace(/__STREAM__https?:\/\/[^\s<]+/g, '')
+                                     .replace(/__BROWSER__https?:\/\/[^\s<]+/g, '')
+                                     .replace(/__SEARCH__https?:\/\/[^\s<]+/g, '')
+                                     .replace('__PROJECTOR_OFF__', '')
+                                     .replace(/==+/g, '')
+                                     .replace('__TALK_ON__','')
+                                     .replace('__TALK_OFF__','')
+                                     .trim();
+                try { typingBubble.innerHTML = renderWithLatex(cleanText); }
+                catch { typingBubble.textContent = cleanText; }
+
+                // Run transformer emotion on full response (more accurate than streaming keywords)
+                // Fire and forget — doesn't block TTS or UI updates
+                if (typeof _classifyAndApplyEmotion === 'function') {
+                    _classifyAndApplyEmotion(cleanText).catch(() => {});
+                }
+
+                if (shouldSpeak) {
+                    playVoiceAudio(cleanText);
+                } else {
+                    // Text-only mode: build a syllable-timed schedule from the full text
+                    // so the mouth mimics word rhythm for the duration of the response read time
+                    const readDuration = Math.max(1.5, cleanText.split(/\s+/).length / 2.5); // ~2.5 words/sec
+                    window._textLipSyncSchedule = buildLipSyncSchedule(cleanText, readDuration);
+                    window._textLipSyncStart    = performance.now() / 1000;
+                    // Auto-clear schedule and stop talking after estimated read time
+                    setTimeout(() => {
+                        window._textLipSyncSchedule = null;
+                        window._textLipSyncStart    = undefined;
+                        toggleTalking(false);
+                    }, readDuration * 1000 + 200);
+                }
+            }
+        } catch(e) {
+            if (e.name === 'AbortError') {
+                typingBubble.innerHTML += '<em style="color:var(--text-muted)"> [Stopped]</em>';
+            } else {
+                typingBubble.textContent = 'Connection error. Try again.';
+            }
+        }
+
+        isStreaming = false;
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('stop-speech-btn').style.display = 'none';
+        toggleThinking(false);
+        // Only stop talking if voice is not about to take over
+        if (!shouldSpeak) toggleTalking(false);
+        while (pendingProactive.length > 0) deliverProactive(pendingProactive.shift());
+    }
+
+    function buildMessageWithMode(msg) {
+        return msg;
+    }
+
+    async function stopSpeech() {
+        // Stop audio playback if active
+        if (audioSource) {
+            try { audioSource.stop(); } catch(e) {}
+            try { audioSource.disconnect(); } catch(e) {}
+        }
+        
+        // Stop text stream if active
+        if (window.streamAbortController) {
+            window.streamAbortController.abort();
+        }
+
+        // Clear lipsync schedules
+        window._lipSyncSchedule      = null;
+        window._lipSyncStartTime     = undefined;
+        window._textLipSyncSchedule  = null;
+        window._textLipSyncStart     = undefined;
+        window._prevMouthOpen        = 0;
+        
+        toggleTalking(false);
+        document.getElementById('stop-speech-btn').style.display = 'none';
+    }
+
+    // ── TIMER ──────────────────────────────────────────────────────────────
+    function openTimerDialog() {
+        document.getElementById('timer-dialog').style.display = 'flex';
+        document.getElementById('timer-task-input').focus();
+    }
+    function closeTimerDialog() { document.getElementById('timer-dialog').style.display = 'none'; }
+
+    async function startTimer() {
+        const task = document.getElementById('timer-task-input').value.trim() || 'Focus';
+        closeTimerDialog();
+        const fd = new FormData(); fd.append('command','start'); fd.append('task',task);
+        try { await fetch('/timer/command', {method:'POST',body:fd}); } catch(e){}
+        sessionStart = Date.now(); sessionTask = task;
+        document.getElementById('session-task').textContent = task;
+        const btn = document.getElementById('timer-toggle');
+        btn.textContent = '◼ stop'; btn.className = 'timer-btn stop'; btn.onclick = stopTimer;
+        timerInterval = setInterval(updateSessionTime, 1000);
+    }
+
+    async function stopTimer() {
+        const fd = new FormData(); fd.append('command','stop'); fd.append('task','');
+        try { await fetch('/timer/command', {method:'POST',body:fd}); } catch(e){}
+        clearInterval(timerInterval); sessionStart = null; sessionTask = null;
+        document.getElementById('session-time').textContent = '--:--';
+        document.getElementById('session-task').textContent = 'idle';
+        const btn = document.getElementById('timer-toggle');
+        btn.textContent = '▶ start'; btn.className = 'timer-btn start'; btn.onclick = openTimerDialog;
+    }
+
+    function updateSessionTime() {
+        if (!sessionStart) return;
+        const s = Math.floor((Date.now()-sessionStart)/1000);
+        const m = Math.floor(s/60), ss = s%60;
+        document.getElementById('session-time').textContent = `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+    }
+
+    async function fetchTodayTotal() {
+        try {
+            const r = await fetch('/timer/stats');
+            const d = await r.json();
+            const mins = Math.round((d.today_seconds||0)/60);
+            document.getElementById('today-total').textContent = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}m` : `${mins}m`;
+        } catch(e){}
+    }
+
+    // ── VOICE ──────────────────────────────────────────────────────────────
+    let _ttsAvailable = false;
+
+    async function loadVoice() {
+        try {
+            // Check TTS engine availability first
+            const ttsR = await fetch('/api/tts/status');
+            const ttsD = await ttsR.json();
+            _ttsAvailable = ttsD.available;
+
+            const r = await fetch('/settings/voice');
+            const d = await r.json();
+            voiceOn = d.voice_enabled;
+            updateVoiceLabel();
+        } catch(e){ updateVoiceLabel(); }
+    }
+    function updateVoiceLabel() {
+        const btn = document.getElementById('voice-btn');
+        const lbl = document.getElementById('voice-label');
+        if (!_ttsAvailable) {
+            lbl.textContent = 'voice: n/a';
+            btn.style.color = 'var(--text-muted)';
+            btn.style.borderColor = 'var(--border)';
+            btn.title = 'TTS unavailable — Piper not found';
+            btn.style.opacity = '0.5';
+            return;
+        }
+        btn.style.opacity = '';
+        btn.title = 'Toggle TTS voice output (Piper · Amy)';
+        lbl.textContent = voiceOn ? 'voice: on' : 'voice: off';
+        btn.style.color = voiceOn ? 'var(--teal)' : '';
+        btn.style.borderColor = voiceOn ? 'var(--teal-dim)' : '';
+    }
+    async function setTTSEngine(engine) {
+        try {
+            await fetch('/settings/tts-engine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ engine: engine })
+            });
+            console.log("TTS Engine set to", engine);
+        } catch (e) {
+            console.error("Failed to set TTS engine", e);
+        }
+    }
+
+    async function toggleVoice() {
+        if (!_ttsAvailable) return;  // disabled if TTS not available
+        voiceOn = !voiceOn;
+        const lbl = document.getElementById('voice-label');
+        lbl.textContent = 'voice: ...';
+        try {
+            const fd = new FormData(); fd.append('enabled', voiceOn?'1':'0');
+            const r = await fetch('/settings/voice', {method:'POST',body:fd});
+            const d = await r.json();
+            voiceOn = d.voice_enabled;
+            updateVoiceLabel();
+        } catch(e){ updateVoiceLabel(); }
+    }
+
+    // ── RAG ────────────────────────────────────────────────────────────────
+    // RAG is OFF by default to save RAM. Clicking toggles the rag_server process.
+    let _ragPolling = null;
+
+    async function loadRag() {
+        try {
+            const r = await fetch('/api/rag/status');
+            const d = await r.json();
+            updateRagLabel(d);
+        } catch(e){ updateRagLabel({running: false}); }
+    }
+
+    function updateRagLabel(d) {
+        const btn = document.getElementById('rag-btn');
+        const lbl = document.getElementById('rag-label');
+        if (d.running) {
+            const pct = d.ram_pct > 0 ? ` ${d.ram_pct}%` : '';
+            lbl.textContent = `rag: on${pct}`;
+            btn.style.color = 'var(--success)';
+            btn.style.borderColor = 'var(--success)';
+        } else {
+            lbl.textContent = 'rag: off';
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }
+    }
+
+    async function toggleRag() {
+        const lbl = document.getElementById('rag-label');
+        const current = lbl.textContent.startsWith('rag: on');
+        lbl.textContent = current ? 'rag: stopping…' : 'rag: starting…';
+        try {
+            const endpoint = current ? '/api/rag/stop' : '/api/rag/start';
+            const r = await fetch(endpoint, { method: 'POST' });
+            const d = await r.json();
+            updateRagLabel(d);
+            // Poll for a few seconds so the RAM% updates as it loads
+            if (!current) {
+                let polls = 0;
+                _ragPolling = setInterval(async () => {
+                    const s = await fetch('/api/rag/status');
+                    const sd = await s.json();
+                    updateRagLabel(sd);
+                    if (++polls >= 8) { clearInterval(_ragPolling); _ragPolling = null; }
+                }, 1500);
+            }
+        } catch(e) { loadRag(); }
+    }
+
+    // ── WORD LIMIT ─────────────────────────────────────────────────────────
+    async function loadWordLimit() {
+        try {
+            const r = await fetch('/settings/wordlimit');
+            const d = await r.json();
+            currentWordLimit = d.word_limit || 0;
+            updateWLLabel();
+        } catch(e){}
+    }
+    function updateWLLabel() {
+        const lbl = document.getElementById('wl-label');
+        lbl.textContent = currentWordLimit > 0 ? `limit: ${currentWordLimit}w` : 'limit: free';
+        const btn = document.getElementById('word-limit-btn');
+        btn.style.color = currentWordLimit > 0 ? 'var(--gold)' : '';
+        btn.style.borderColor = currentWordLimit > 0 ? 'var(--gold)' : '';
+    }
+    function toggleWordLimit() {
+        document.getElementById('wl-input').value = currentWordLimit;
+        document.getElementById('wl-modal').style.display = 'flex';
+    }
+    async function applyWordLimit() {
+        const val = parseInt(document.getElementById('wl-input').value) || 0;
+        try {
+            const fd = new FormData(); fd.append('limit', val);
+            await fetch('/settings/wordlimit', {method:'POST',body:fd});
+            currentWordLimit = val; updateWLLabel();
+        } catch(e){}
+        document.getElementById('wl-modal').style.display = 'none';
+    }
+
+    // ── TERMINAL ───────────────────────────────────────────────────────────
+    function toggleTermPanel() {
+        termVisible = !termVisible;
+        document.getElementById('term-panel').style.display = termVisible ? 'block' : 'none';
+        document.getElementById('term-label').textContent = termVisible ? 'log ▾' : 'log';
+        if (termVisible) loadTermLog();
+    }
+    async function loadTermLog() {
+        try {
+            const r = await fetch('/api/logs?limit=20');
+            const d = await r.json();
+            const el = document.getElementById('term-entries');
+            const ct = document.getElementById('term-count');
+            if (!d.logs?.length) { el.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:12px">No commands yet</div>'; ct.textContent = '0'; return; }
+            ct.textContent = `${d.logs.length} cmds`;
+            el.innerHTML = d.logs.map(e => {
+                const cmd = (e.cmd||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const out = (e.output||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const statusColor = e.status === 'running' ? 'var(--accent)' : e.status === 'done' ? 'var(--success)' : 'var(--danger)';
+                const statusIcon = e.status === 'running' ? '⏳' : e.status === 'done' ? '✓' : '✗';
+                return `<div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <span style="color:var(--text-muted)">${e.ts||''}</span>
+                        <span style="color:${statusColor}">${statusIcon}</span>
+                        <span style="color:var(--text)">${cmd}</span>
+                        <span style="color:var(--text-muted);font-size:.6rem;margin-left:auto">${e.status}</span>
+                    </div>
+                    ${out ? `<div style="color:var(--text-dim);padding-left:16px;font-size:.6rem;white-space:pre-wrap;word-break:break-all;max-height:80px;overflow:hidden">${out}</div>` : ''}
+                </div>`;
+            }).join('');
+        } catch(e){}
+    }
+    setInterval(() => { if (termVisible) loadTermLog(); }, 3000);
+
+    // ── HISTORY ────────────────────────────────────────────────────────────
+    async function loadRecentHistory() {
+        try {
+            const res  = await fetch(`/api/history?agent=${currentAgent}&session_id=${currentSessionId}&limit=50`);
+            const data = await res.json();
+            const msgs = document.getElementById('messages');
+
+            const messages = (data.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
+            const firstUser = messages.findIndex(m => m.role === 'user');
+            const clean    = firstUser > 0 ? messages.slice(firstUser) : messages;
+
+            if (clean.length === 0) {
+                msgs.innerHTML = `<div class="msg ai">
+                    <div class="avatar ai"><img src="/static/images/profile.png" alt="M"></div>
+                    <div class="bubble"><strong>Marin is online.</strong><br>No prior session found. Ready when you are. 🐸</div>
+                </div>`;
+                return;
+            }
+
+            msgs.innerHTML = '';
+            clean.forEach(msg => {
+                let content = msg.content || '';
+                if (msg.role === 'user') {
+                    const marker = "USER'S MESSAGE:";
+                    const idx = content.lastIndexOf(marker);
+                    if (idx !== -1) content = content.substring(idx + marker.length).trim();
+                } else {
+                    content = content
+                        .replace(/__VIBE__\w+/g, '')
+                        .replace(/__DIRECTOR__[A-Za-z0-9+\/=]*__END__/g, '')
+                        .replace(/__ANIM__\w+/g, '')
+                        .replace(/__DANCE__/g, '')
+                        .replace(/__YOUTUBE__[\w-]+/g, '')
+                        .replace(/__TALK_ON__|__TALK_OFF__/g, '')
+                        .replace(/__STRUCTURED__[\s\S]*/g, '')
+                        .trim();
+                }
+                if (content) appendMessage(msg.role === 'assistant' ? 'ai' : 'user', content);
+            });
+        } catch(e) { console.error('[history]', e); }
+    }
+
+    async function memory_clear() {
+        if (!confirm('Clear all conversation history?')) return;
+        await fetch(`/memory/clear?agent=${currentAgent}&session_id=${currentSessionId}`, {method:'POST'});
+        document.getElementById('messages').innerHTML = '';
+    }
+
+    // ── PROACTIVE SSE ──────────────────────────────────────────────────────
+    let proactiveSource = null;
+    function startProactiveListener() {
+        if (proactiveSource) proactiveSource.close();
+        proactiveSource = new EventSource(`/proactive/stream?agent=${currentAgent}`);
+        proactiveSource.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.type !== 'proactive' || !data.text) return;
+                const inp = document.getElementById('msg-input');
+                if (isStreaming || inp.value.trim().length > 0) { pendingProactive.push(data.text); return; }
+                deliverProactive(data.text);
+            } catch(e){}
+        };
+        proactiveSource.onerror = () => { proactiveSource.close(); setTimeout(startProactiveListener, 30000); };
+    }
+    function deliverProactive(text) { appendMessage('ai', text); scrollToBottom(); }
+
+    // ── INTEL FEED ─────────────────────────────────────────────────────────
+    async function fetchIntelligence() {
+        try {
+            const res  = await fetch('/api/news/latest');
+            const news = await res.json();
+            const el   = document.getElementById('news-content');
+            if (news?.length > 0) {
+                el.innerHTML = news.map(item => `[ ${item.title} ] — ${(item.analysis||'').split('\n')[0]}`).join(' &nbsp;·&nbsp; ');
+            } else { el.textContent = 'No alerts at this time.'; }
+        } catch(e) { document.getElementById('news-content').textContent = 'Feed offline.'; }
+    }
+
+    // ── TEXTAREA AUTO RESIZE ───────────────────────────────────────────────
+    document.getElementById('msg-input').addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 130) + 'px';
+    });
+    document.getElementById('msg-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    document.getElementById('timer-task-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') startTimer();
+        if (e.key === 'Escape') closeTimerDialog();
+    });
+
+    // ── BACKGROUND POLLING ───────────────────────────────────────────────
+    let pollInterval = null;
+
+    function startPolling() {
+        if (pollInterval) return;
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/pending');
+                const data = await res.json();
+                if (data.has_pending && data.message) {
+                    let msg = data.message;
+                    // Process projector/animation tags from background tool results
+                    const isPySide = navigator.userAgent.includes('QtWebEngine');
+                    
+                    const youtubeMatch = msg.match(/__YOUTUBE__([\w-]+)/);
+                    const streamMatch = msg.match(/__STREAM__(https?:\/\/[^\s<]+)/);
+                    const browserMatch = msg.match(/__BROWSER__(https?:\/\/[^\s<]+)/);
+                    
+                    if (isPySide && youtubeMatch) {
+                        showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
+                    } else if (isPySide && streamMatch) {
+                        showProjector('/proxy/stream?url=' + encodeURIComponent(streamMatch[1]), 'stream');
+                    } else if (!isPySide && streamMatch) {
+                        showProjector(streamMatch[1], 'stream');
+                    } else if (youtubeMatch) {
+                        showProjector(`https://www.youtube-nocookie.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0&origin=${window.location.origin}`, 'youtube');
+                    } else if (streamMatch) {
+                        showProjector(streamMatch[1], 'stream');
+                    } else if (browserMatch) {
+                        showProjector(browserMatch[1], 'youtube');
+                    }
+                    
+                    if (streamMatch) msg = msg.replace(streamMatch[0], '');
+                    if (youtubeMatch) msg = msg.replace(youtubeMatch[0], '');
+                    if (browserMatch) msg = msg.replace(browserMatch[0], '');
+
+                    // ── __DANCE__ — start dance loop for music/hype moods ──
+                    if (msg.includes('__DANCE__')) {
+                        startDanceMode();
+                        msg = msg.replace(/__DANCE__/g, '');
+                    }
+
+                    // ── __DIRECTOR__ — play timed animation script ──────────
+                    const dirMatch = msg.match(/__DIRECTOR__([A-Za-z0-9+\/=]+)__END__/);
+                    if (dirMatch) {
+                        try {
+                            const decoded = atob(dirMatch[1]);
+                            const script = JSON.parse(decoded);
+                            playDirectorScript(script);
+                        } catch(e) { console.warn('[Director] Pending parse error:', e); }
+                        msg = msg.replace(/__DIRECTOR__[A-Za-z0-9+\/=]+__END__/, '');
+                    }
+
+                    // ── __VIBE__ — set mood avatar ──────────────────────────
+                    const vibeMatch = msg.match(/__VIBE__(\w+)/);
+                    if (vibeMatch) {
+                        setMoodAvatar(vibeMatch[1]);
+                        msg = msg.replace(/__VIBE__\w+/, '');
+                    }
+
+                    const animMatch = msg.match(/__ANIM__(\w+)/);
+                    if (animMatch) {
+                        playAnimation(animMatch[1]);
+                        msg = msg.replace(animMatch[0], '');
+                    }
+                    if (msg.includes('__PROJECTOR_OFF__')) {
+                        hideProjector();
+                        msg = msg.replace('__PROJECTOR_OFF__', '');
+                    }
+                    msg = msg.trim();
+                    if (msg) appendMessage('ai', msg);
+                    // If VRM was talking, ensure it stays/restarts for the tool result
+                    toggleTalking(true);
+                    setTimeout(() => toggleTalking(false), 3000); 
+                }
+            } catch (e) {
+                console.warn('Polling error:', e);
+            }
+        }, 3000);
+    }
+
+    function initLayout() {
+        updateSidebarOffset();
+    }
+
+    // ── INIT ───────────────────────────────────────────────────────────────
+    // ── COLOR THEMES ─────────────────────────────────────────────────────────
+        // Each theme overrides ALL the CSS variables that :root defines.
+        // Structure: { name, accent, backgrounds[ink,ink2,ink3,surface], border, text[text,dim,muted], derived }
+        const COLOR_THEMES = [
+          {
+            name: 'Marin Default',
+            vars: {
+              '--ink':'#13100e','--ink2':'#1c1814','--ink3':'#221e19','--surface':'#2a2520',
+              '--border':'#3a342c','--border-hi':'#52473c',
+              '--teal':'#4db8a4','--teal-dim':'#2d8a78','--teal-glow':'rgba(77,184,164,.18)','--teal-soft':'rgba(77,184,164,.08)',
+              '--coral':'#e07b6a','--coral-dim':'#a85244',
+              '--text':'#e8ddd0','--text-dim':'#8a7d72','--text-muted':'#4a4038',
+              '--gold':'#c9965a','--gold-soft':'rgba(201,150,90,.12)',
+              '--success':'#5db882','--danger':'#e07b6a',
+            }
+          },
+          {
+            name: 'Night Mode',
+            vars: {
+              '--ink':'#000000','--ink2':'#080808','--ink3':'#111111','--surface':'#161616',
+              '--border':'#222222','--border-hi':'#333333',
+              '--teal':'#3aa692','--teal-dim':'#257a69','--teal-glow':'rgba(58,166,146,.18)','--teal-soft':'rgba(58,166,146,.08)',
+              '--coral':'#e07b6a','--coral-dim':'#a85244',
+              '--text':'#e0e0e0','--text-dim':'#a0a0a0','--text-muted':'#666666',
+              '--gold':'#c9965a','--gold-soft':'rgba(201,150,90,.12)',
+              '--success':'#5db882','--danger':'#e55',
+            }
+          },
+          {
+            name: 'Cyberpunk',
+            vars: {
+              '--ink':'#060008','--ink2':'#0d000f','--ink3':'#130016','--surface':'#1a0020',
+              '--border':'#3a1050','--border-hi':'#5a1a70',
+              '--teal':'#ff00ff','--teal-dim':'#aa00aa','--teal-glow':'rgba(255,0,255,.2)','--teal-soft':'rgba(255,0,255,.08)',
+              '--coral':'#00ffff','--coral-dim':'#009999',
+              '--text':'#f0d0ff','--text-dim':'#a060c0','--text-muted':'#503060',
+              '--gold':'#ffdd00','--gold-soft':'rgba(255,221,0,.12)',
+              '--success':'#00ff88','--danger':'#ff3366',
+            }
+          },
+          {
+            name: 'Solar Amber',
+            vars: {
+              '--ink':'#0e0900','--ink2':'#150d00','--ink3':'#1c1200','--surface':'#241800',
+              '--border':'#3d2a00','--border-hi':'#5c3f00',
+              '--teal':'#f0b429','--teal-dim':'#c08a10','--teal-glow':'rgba(240,180,41,.2)','--teal-soft':'rgba(240,180,41,.08)',
+              '--coral':'#ff6b35','--coral-dim':'#cc4510',
+              '--text':'#fff0c0','--text-dim':'#a07830','--text-muted':'#604518',
+              '--gold':'#ffdd44','--gold-soft':'rgba(255,221,68,.12)',
+              '--success':'#88cc44','--danger':'#ff4422',
+            }
+          },
+          {
+            name: 'Crimson',
+            vars: {
+              '--ink':'#0e0505','--ink2':'#160808','--ink3':'#1e0b0b','--surface':'#280f0f',
+              '--border':'#4a1515','--border-hi':'#6a2020',
+              '--teal':'#ff4444','--teal-dim':'#cc2222','--teal-glow':'rgba(255,68,68,.2)','--teal-soft':'rgba(255,68,68,.08)',
+              '--coral':'#ff8866','--coral-dim':'#cc5533',
+              '--text':'#ffe0e0','--text-dim':'#aa6666','--text-muted':'#663333',
+              '--gold':'#ffaa44','--gold-soft':'rgba(255,170,68,.12)',
+              '--success':'#66cc66','--danger':'#ff2222',
+            }
+          },
+          {
+            name: 'Ice Blue',
+            vars: {
+              '--ink':'#050810','--ink2':'#080d18','--ink3':'#0c1220','--surface':'#101828',
+              '--border':'#1a2a40','--border-hi':'#2a3a55',
+              '--teal':'#4fc3f7','--teal-dim':'#2a9acc','--teal-glow':'rgba(79,195,247,.2)','--teal-soft':'rgba(79,195,247,.08)',
+              '--coral':'#80cbc4','--coral-dim':'#4a9990',
+              '--text':'#d0f0ff','--text-dim':'#7aaabb','--text-muted':'#3a5566',
+              '--gold':'#80d8ff','--gold-soft':'rgba(128,216,255,.12)',
+              '--success':'#4caf88','--danger':'#ef5350',
+            }
+          },
+          {
+            name: 'Emerald',
+            vars: {
+              '--ink':'#050e07','--ink2':'#08150b','--ink3':'#0c1c0f','--surface':'#102514',
+              '--border':'#1a3d20','--border-hi':'#2a5530',
+              '--teal':'#2ecc71','--teal-dim':'#1a9950','--teal-glow':'rgba(46,204,113,.2)','--teal-soft':'rgba(46,204,113,.08)',
+              '--coral':'#f39c12','--coral-dim':'#c07d00',
+              '--text':'#d0ffdf','--text-dim':'#70aa80','--text-muted':'#355540',
+              '--gold':'#f1c40f','--gold-soft':'rgba(241,196,15,.12)',
+              '--success':'#2ecc71','--danger':'#e74c3c',
+            }
+          },
+          {
+            name: 'Violet',
+            vars: {
+              '--ink':'#08050e','--ink2':'#0e0818','--ink3':'#140c22','--surface':'#1a1030',
+              '--border':'#2e1a50','--border-hi':'#4a2a70',
+              '--teal':'#a855f7','--teal-dim':'#7a30cc','--teal-glow':'rgba(168,85,247,.2)','--teal-soft':'rgba(168,85,247,.08)',
+              '--coral':'#f472b6','--coral-dim':'#c03080',
+              '--text':'#f0e0ff','--text-dim':'#9070bb','--text-muted':'#503870',
+              '--gold':'#fbbf24','--gold-soft':'rgba(251,191,36,.12)',
+              '--success':'#34d399','--danger':'#f87171',
+            }
+          },
+          {
+            name: 'Rose Gold',
+            vars: {
+              '--ink':'#0e0608','--ink2':'#180a0e','--ink3':'#200e14','--surface':'#28121a',
+              '--border':'#4a1e2a','--border-hi':'#6a2c3e',
+              '--teal':'#f43f5e','--teal-dim':'#cc1a38','--teal-glow':'rgba(244,63,94,.2)','--teal-soft':'rgba(244,63,94,.08)',
+              '--coral':'#fb923c','--coral-dim':'#d06020',
+              '--text':'#ffe0ea','--text-dim':'#bb7080','--text-muted':'#663344',
+              '--gold':'#fcd34d','--gold-soft':'rgba(252,211,77,.12)',
+              '--success':'#34d399','--danger':'#ff1744',
+            }
+          },
+          {
+            name: 'Mono',
+            vars: {
+              '--ink':'#080808','--ink2':'#101010','--ink3':'#181818','--surface':'#222222',
+              '--border':'#333333','--border-hi':'#444444',
+              '--teal':'#c8d8e8','--teal-dim':'#8899aa','--teal-glow':'rgba(200,216,232,.15)','--teal-soft':'rgba(200,216,232,.06)',
+              '--coral':'#aabbcc','--coral-dim':'#778899',
+              '--text':'#eeeeee','--text-dim':'#999999','--text-muted':'#555555',
+              '--gold':'#bbbbbb','--gold-soft':'rgba(187,187,187,.12)',
+              '--success':'#aaccaa','--danger':'#cc8888',
+            }
+          },
+        ];
+
+    function initThemeGrid() {
+        const grid = document.getElementById('theme-grid');
+        if (!grid) return;
+        const saved = localStorage.getItem('marinTheme') || 'Marin Default';
+        grid.innerHTML = COLOR_THEMES.map(t => `
+            <div onclick="applyTheme('${t.name}')" id="theme-card-${t.name.replace(/\s/g,'_')}" style="
+                cursor:pointer;
+                border:2px solid ${saved===t.name ? t.vars['--teal'] : t.vars['--border']};
+                border-radius:var(--radius-sm);padding:8px;text-align:center;
+                background:${t.vars['--ink2']};transition:border-color .2s,transform .15s;">
+              <div style="width:100%;height:16px;border-radius:3px;margin-bottom:4px;
+                background:linear-gradient(90deg,${t.vars['--teal']},${t.vars['--teal-dim']});"></div>
+              <div style="width:100%;height:6px;border-radius:2px;margin-bottom:5px;
+                background:${t.vars['--surface']};border:1px solid ${t.vars['--border']};"></div>
+              <span style="font-size:.58rem;color:${saved===t.name ? t.vars['--teal'] : t.vars['--text-dim']};
+                font-family:var(--font-mono);letter-spacing:.04em;">${t.name}</span>
+            </div>`).join('');
+    }
+
+    function applyTheme(name) {
+        const theme = COLOR_THEMES.find(t => t.name === name);
+        if (!theme) return;
+        const root = document.documentElement;
+        // Apply every variable in the theme
+        Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+        localStorage.setItem('marinTheme', name);
+        // Refresh card borders so selected card is highlighted
+        COLOR_THEMES.forEach(t => {
+            const card = document.getElementById('theme-card-' + t.name.replace(/\s/g,'_'));
+            if (card) {
+                card.style.borderColor = t.name === name ? theme.vars['--teal'] : t.vars['--border'];
+                card.querySelector('span').style.color = t.name === name ? theme.vars['--teal'] : t.vars['--text-dim'];
+            }
+        });
+    }
+
+    function restoreSavedTheme() {
+        const saved = localStorage.getItem('marinTheme');
+        if (saved && saved !== 'Marin Default') applyTheme(saved);
+    }
+
+    // ── MEMORY TAB ───────────────────────────────────────────────────────────
+    let _allMemories = [];
+
+    async function loadMemoryTab() {
+        const list = document.getElementById('memory-list');
+        if (!list) return;
+        list.innerHTML = '<div style="font-size:.68rem;color:var(--text-muted);padding:8px;">Loading…</div>';
+        try {
+            const r = await fetch('/api/memory');
+            const d = await r.json();
+            _allMemories = d.memories || [];
+            renderMemoryList(_allMemories);
+        } catch(e) {
+            list.innerHTML = '<div style="font-size:.68rem;color:var(--danger);padding:8px;">Failed to load memories.</div>';
+        }
+    }
+
+    function renderMemoryList(rows) {
+        const list = document.getElementById('memory-list');
+        if (!list) return;
+        if (!rows.length) {
+            list.innerHTML = '<div style="font-size:.68rem;color:var(--text-muted);padding:8px;">No memories yet. Chat with Marin and she\'ll remember things automatically.</div>';
+            return;
+        }
+        // Group by category
+        const groups = {};
+        rows.forEach(r => { (groups[r.category] = groups[r.category]||[]).push(r); });
+        list.innerHTML = Object.entries(groups).map(([cat, items]) => `
+            <div style="margin-bottom:6px;">
+              <div style="font-size:.6rem;color:var(--text-muted);letter-spacing:.06em;padding:3px 6px;background:var(--ink3);border-radius:3px;margin-bottom:3px;">${cat.toUpperCase()}</div>
+              ${items.map(m => `
+                <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 6px;border-bottom:1px solid var(--border);">
+                  <div style="flex:1;min-width:0;">
+                    <span style="font-size:.68rem;color:var(--teal);font-family:var(--font-mono);">${m.key}</span>
+                    <span style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">${m.value}</span>
+                  </div>
+                  <button onclick="deleteMemoryEntry('${m.key.replace(/'/g,"\\'")}',this)" title="forget" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.75rem;flex-shrink:0;padding:0 3px;">✕</button>
+                </div>`).join('')}
+            </div>`).join('');
+    }
+
+    function filterMemory() {
+        const q = (document.getElementById('mem-search')||{}).value||'';
+        if (!q.trim()) { renderMemoryList(_allMemories); return; }
+        const low = q.toLowerCase();
+        renderMemoryList(_allMemories.filter(m =>
+            m.key.toLowerCase().includes(low) || m.value.toLowerCase().includes(low) || m.category.toLowerCase().includes(low)
+        ));
+    }
+
+    function addMemoryEntry() {
+        const form = document.getElementById('mem-add-form');
+        if (form) form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    async function saveNewMemory() {
+        const key = (document.getElementById('mem-new-key')||{}).value||'';
+        const val = (document.getElementById('mem-new-val')||{}).value||'';
+        const cat = (document.getElementById('mem-new-cat')||{}).value||'general';
+        if (!key || !val) return;
+        await fetch('/api/memory', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({key,value:val,category:cat}) });
+        document.getElementById('mem-add-form').style.display = 'none';
+        document.getElementById('mem-new-key').value = '';
+        document.getElementById('mem-new-val').value = '';
+        loadMemoryTab();
+    }
+
+    async function deleteMemoryEntry(key, btn) {
+        btn.textContent = '…';
+        await fetch(`/api/memory?key=${encodeURIComponent(key)}`, {method:'DELETE'});
+        loadMemoryTab();
+    }
+
+    // ── TOOLS PANEL ─────────────────────────────────────────────────────────
+    let _toolsPanelOpen = false;
+    let _toolsData = [];
+
+    async function loadTools() {
+        try {
+            const r = await fetch('/api/tools');
+            const d = await r.json();
+            _toolsData = d.tools || [];
+            const btn = document.getElementById('tools-btn');
+            const lbl = document.getElementById('tools-label');
+            if (lbl) lbl.textContent = `tools: ${d.count || _toolsData.length}`;
+            renderToolsList();
+        } catch(e) {}
+    }
+
+    function renderToolsList() {
+        const list = document.getElementById('tools-panel-list');
+        const count = document.getElementById('tools-panel-count');
+        if (!list) return;
+        if (count) count.textContent = `${_toolsData.length} TOOLS`;
+
+        // Group tools by domain
+        const domainMap = {
+            'timer_tool': 'Productivity', 'alarm_tool': 'Productivity',
+            'weather_tool': 'Productivity', 'map_tool': 'Productivity',
+            'habit_tool': 'Productivity',
+            'terminal_tool': 'System', 'file_tool': 'System',
+            'batch_convert_tool': 'System',
+            'rag_search': 'Research', 'resource_tool': 'Research',
+            'pdf_analyze_tool': 'Research',
+            'crypto_tool': 'Finance', 'stock_tool': 'Finance',
+            'binance_tool': 'Finance', 'business_analysis_tool': 'Finance',
+            'youtube_search_tool': 'Media', 'youtube_transcript_tool': 'Media',
+            'news_tool': 'Media',
+            'telegram_tool': 'Communication', 'email_tool': 'Communication',
+            'memory_tool': 'Memory',
+            'learn_topic_tool': 'Study', 'book_download_tool': 'Study',
+            'math_plot_tool': 'Maths',
+            'playground_tool': 'Creative', 'opencode_tool': 'Creative',
+        };
+        const grouped = {};
+        _toolsData.forEach(t => {
+            const cat = domainMap[t.name] || 'Other';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(t);
+        });
+
+        const catOrder = ['Productivity','System','Research','Finance','Media','Communication','Memory','Study','Maths','Creative','Other'];
+        let html = '';
+        catOrder.forEach(cat => {
+            if (!grouped[cat]) return;
+            html += `<div style="padding:5px 12px 3px;font-size:.58rem;color:var(--teal);letter-spacing:.1em;font-family:var(--font-mono);opacity:.7;text-transform:uppercase;">${cat}</div>`;
+            grouped[cat].forEach(t => {
+                html += `<div style="padding:4px 12px 4px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:1px;">
+                  <span style="font-size:.66rem;color:var(--text);font-family:var(--font-mono);">${t.name.replace('_tool','').replace(/_/g,' ')}</span>
+                  <span style="font-size:.6rem;color:var(--text-muted);line-height:1.3;">${(t.description||'').split('.')[0]}</span>
+                </div>`;
+            });
+        });
+        list.innerHTML = html;
+    }
+
+    function toggleToolsPanel() {
+        _toolsPanelOpen = !_toolsPanelOpen;
+        const panel = document.getElementById('tools-panel');
+        const btn   = document.getElementById('tools-btn');
+        if (panel) panel.style.display = _toolsPanelOpen ? 'block' : 'none';
+        if (btn)   btn.style.borderColor = _toolsPanelOpen ? 'var(--teal)' : '';
+    }
+
+    // Close tools panel when clicking outside
+    document.addEventListener('click', e => {
+        const panel = document.getElementById('tools-panel');
+        const btn   = document.getElementById('tools-btn');
+        if (_toolsPanelOpen && panel && !panel.contains(e.target) && btn && !btn.contains(e.target)) {
+            _toolsPanelOpen = false;
+            panel.style.display = 'none';
+            btn.style.borderColor = '';
+        }
+    });
+
+    window.onload = () => {
+        try {
+            fetchTodayTotal();
+            setInterval(fetchTodayTotal, 60000);
+            loadVoice();
+            loadWordLimit();
+            loadRag();
+            loadTools();
+            restoreSavedTheme();
+            fetchIntelligence();
+            setInterval(fetchIntelligence, 300000);
+            initAgent();
+            startPolling();
+            initLayout();
+
+            // ── BVH preload: warm the cache for the most-used animations ──
+            // Runs after a short delay so the VRM model finishes loading first.
+            // Using requestIdleCallback keeps this from blocking the initial render.
+            const _PRELOAD_ANIMS = [
+                'neutral_idle', 'sit_idle', 'curiosity', 'joy',
+                'neutral_idle2', 'sit_idle2', 'approval', 'excitement',
+            ];
+            const _schedulePreload = () => {
+                let i = 0;
+                function _preloadNext() {
+                    if (i >= _PRELOAD_ANIMS.length || !vrmModel) return;
+                    const name = _PRELOAD_ANIMS[i++];
+                    if (!_bvhCache.has(name)) {
+                        _loadBVHClip(name)
+                            .then(() => console.log(`[VRM] Preloaded: ${name}`))
+                            .catch(() => {});  // silent — preload is best-effort
+                    }
+                    setTimeout(_preloadNext, 400);  // stagger to avoid I/O burst
+                }
+                _preloadNext();
+            };
+            // Wait for VRM to initialise (it loads asynchronously)
+            setTimeout(_schedulePreload, 3000);
+        } catch(e) { console.error('Init error:', e); }
+    };
+
+    // ── BROWSER ACTIVITY LOG (SSE stream from /api/browser/stream) ────────────
+    // Color-coded live feed of Marin's web searches and fetches.
+    // When a FETCH event fires, the TV projector automatically shows the live
+    // browser page (/api/browser/live) if it is currently idle.
+    let _browserLogES = null;
+
+    function _initBrowserLog() {
+        if (_browserLogES) return;
+        const panel = document.getElementById('browser-log-panel');
+        if (!panel) return;
+        panel.innerHTML = '';   // clear placeholder text
+
+        _browserLogES = new EventSource('/api/browser/stream');
+
+        _browserLogES.onmessage = (ev) => {
+            try {
+                const d    = JSON.parse(ev.data);
+                const line = (d.line || '').trim();
+                if (!line) return;
+
+                // Remove leading timestamp for readability
+                const clean = line.replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ /, '');
+
+                // Color by event type
+                let color = '#64748b';
+                if (line.includes('SEARCH:'))  color = '#7dd3fc';
+                else if (line.includes('FETCH:'))  color = '#86efac';
+                else if (line.includes('RESULT:')) color = '#c4b5fd';
+                else if (line.includes('ERROR'))   color = '#fca5a5';
+
+                const el = document.createElement('div');
+                el.style.cssText = `color:${color};margin:1px 0;word-break:break-all`;
+                el.textContent   = clean;
+                panel.appendChild(el);
+                panel.scrollTop  = panel.scrollHeight;
+
+                // Keep DOM lean
+                while (panel.children.length > 200) panel.removeChild(panel.firstChild);
+
+                // ── Auto-show live browser in TV projector on SEARCH ────────────
+                if (line.includes('SEARCH:') || line.includes('FETCH:')) {
+                    try {
+                        if (typeof projectorObject !== 'undefined' && projectorObject) {
+                            showProjector('/api/browser/live', 'stream');
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+        };
+
+        _browserLogES.onerror = () => {
+            if (_browserLogES) { _browserLogES.close(); _browserLogES = null; }
+            setTimeout(_initBrowserLog, 3000);
+        };
+    }
+
+    // Open browser live view in the TV projector (sidebar button)
+    window.openBrowserInTV = function() {
+        showProjector('/api/browser/live', 'stream');
+    };
+
+    // Start browser log SSE connection after page fully loads
+    setTimeout(_initBrowserLog, 1500);
+
+
+    // ── TRANSFORMER EMOTION (/api/emotion/classify after each full response) ───
+    // liveDirectorScan() runs fast keyword rules during streaming.
+    // _classifyAndApplyEmotion() runs the distilroberta transformer once the full
+    // response arrives — more accurate, combines with keyword boost layer.
+    let _lastEmotionCall = 0;
+    const _MIN_EMOTION_GAP = 3000;   // limit calls to once per 3s
+
+    async function _classifyAndApplyEmotion(text) {
+        if (!text || text.length < 10) return;
+        const now = Date.now();
+        if (now - _lastEmotionCall < _MIN_EMOTION_GAP) return;
+        _lastEmotionCall = now;
+
+        try {
+            const r = await fetch('/api/emotion/classify', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ text: text.slice(0, 500) }),
+            });
+            if (!r.ok) return;
+            const d = await r.json();
+
+            if (!d || d.emotion === 'neutral' || (d.confidence || 0) < 0.38) return;
+
+            const strength = Math.min(0.95, (d.confidence || 0.5) * 0.9);
+
+            // Blend VRM facial expression
+            if (typeof setVRMExpression === 'function' && d.expr) {
+                setVRMExpression(d.expr, strength);
+                setTimeout(() => {
+                    try { 
+                        setVRMExpression('neutral', 1.0); 
+                        if (typeof _applyPhysEmotion === 'function') _applyPhysEmotion('neutral');
+                    } catch(_) {}
+                }, 3500);
+            }
+
+            // Drive soft-body physics emotion
+            if (typeof _applyPhysEmotion === 'function' && d.phys) {
+                _applyPhysEmotion(d.phys);
+            }
+
+            // Trigger matching animation if nothing scripted is running
+            if (typeof playAnimation === 'function' && d.anim
+                    && !_danceMode && !_directorScriptActive) {
+                playAnimation(d.anim);
+            }
+
+            console.log(`[EmotionCLF] ${d.emotion} (${(d.confidence*100).toFixed(0)}%) expr:${d.expr}`);
+        } catch(e) { /* silently ignore — enhancement only */ }
+    }
+
+
+    // ── ROOM WALL PHOTO PICKER ────────────────────────────────────────────────
+    // Loads photos from /api/room/wall-photos (static/images/user/ + built-ins),
+    // renders a clickable 2-col thumbnail grid in the sidebar.
+    // Clicking a thumb calls _swapWallPhoto(url) to update the 3D wall frame.
+
+    let _roomPhotos  = [];
+    let _activeWallUrl = '';
+
+    async function _loadRoomPhotoGrid() {
+        const grid   = document.getElementById('room-photo-grid');
+        const status = document.getElementById('room-photo-status');
+        if (!grid) return;
+        grid.innerHTML = '<div style="color:var(--text-dim);font-size:.6rem">Loading…</div>';
+        try {
+            const r = await fetch('/api/room/wall-photos');
+            const d = await r.json();
+            _roomPhotos = d.photos || [];
+
+            if (!_roomPhotos.length) {
+                grid.innerHTML = '<div style="color:var(--text-dim);font-size:.6rem">No photos yet — add one below!</div>';
+                return;
+            }
+
+            grid.innerHTML = '';
+            _roomPhotos.forEach(p => {
+                const thumb = document.createElement('div');
+                const isActive = p.url === _activeWallUrl;
+                thumb.style.cssText = [
+                    'cursor:pointer', 'border-radius:4px', 'overflow:hidden',
+                    'aspect-ratio:4/3', 'background:var(--ink3)', 'position:relative',
+                    `border:2px solid ${isActive ? 'var(--teal)' : 'transparent'}`,
+                    'transition:border-color .2s',
+                ].join(';');
+                const img   = document.createElement('img');
+                img.src     = p.url;
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+                img.title   = p.name;
+                thumb.appendChild(img);
+                if (p.user) {
+                    const badge = document.createElement('div');
+                    badge.style.cssText = 'position:absolute;top:2px;right:2px;background:#0d9488;color:#fff;border-radius:2px;font-size:8px;padding:1px 3px;line-height:1.2';
+                    badge.textContent = 'yours';
+                    thumb.appendChild(badge);
+                }
+                thumb.addEventListener('click', () => {
+                    _activeWallUrl = p.url;
+                    if (typeof window._swapWallPhoto === 'function') window._swapWallPhoto(p.url);
+                    grid.querySelectorAll('[data-thumb]').forEach(t => t.style.borderColor = 'transparent');
+                    thumb.style.borderColor = 'var(--teal)';
+                    if (status) status.textContent = `✓ Showing: ${p.name}`;
+                });
+                thumb.setAttribute('data-thumb', p.url);
+                grid.appendChild(thumb);
+            });
+        } catch(e) {
+            grid.innerHTML = `<div style="color:var(--danger);font-size:.6rem">Error loading photos</div>`;
+        }
+    }
+
+    window._uploadWallPhoto = async function(input) {
+        const status = document.getElementById('room-photo-status');
+        if (!input.files || !input.files[0]) return;
+        const file = input.files[0];
+        if (status) status.textContent = `⏳ Uploading ${file.name}…`;
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const r = await fetch('/api/room/wall-photo/upload', { method: 'POST', body: fd });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const d = await r.json();
+            if (d.error) throw new Error(d.error);
+            _activeWallUrl = d.url;
+            if (typeof window._swapWallPhoto === 'function') window._swapWallPhoto(d.url);
+            if (status) status.textContent = `✓ Added & showing: ${d.name}`;
+            await _loadRoomPhotoGrid();
+        } catch(e) {
+            if (status) status.textContent = `✗ Upload failed: ${e.message}`;
+        }
+        input.value = '';
+    };
+

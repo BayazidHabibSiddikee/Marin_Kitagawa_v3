@@ -94,12 +94,8 @@ def strip_tool_schemas(text: str) -> str:
 
 def get_llm(model_name: str, bind_tools: list | None = None):
     """Factory to create the right LLM instance based on model name."""
-    import inspect
-
     from sentinel_engine import get_langchain_model
-    _frame = inspect.currentframe()
-    caller_line = _frame.f_back.f_lineno if _frame and _frame.f_back else 0
-    log_agent(f"Creating LLM: {model_name} @ Native Sentinel (Line: {caller_line})")
+    log_agent(f"Creating LLM: {model_name} @ Native Sentinel")
 
     return get_langchain_model(model_name, bind_tools=bind_tools)
 

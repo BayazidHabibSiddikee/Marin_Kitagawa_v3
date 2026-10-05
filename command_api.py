@@ -222,16 +222,17 @@ def write_file(op: FileOp, _auth: None = Depends(require_token)):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), _auth: None = Depends(require_token)):
-    if not file.filename:
+    filename = file.filename
+    if filename is None:
         raise HTTPException(400, "Filename is required")
     dest_dir = MARIN_HOME / "Documents"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file.filename
+    dest = dest_dir / filename
     content = await file.read()
     dest.write_bytes(content)
     with open(LOG_DIR / "uploads.log", "a") as f:
-        f.write(f"[{datetime.now().isoformat()}] Uploaded: {file.filename} ({len(content)} bytes)\n")
-    return {"filename": file.filename, "size": len(content), "path": str(dest)}
+        f.write(f"[{datetime.now().isoformat()}] Uploaded: {filename} ({len(content)} bytes)\n")
+    return {"filename": filename, "size": len(content), "path": str(dest)}
 
 
 # ── Telegram ───────────────────────────────────────────

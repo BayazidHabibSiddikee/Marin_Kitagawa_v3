@@ -678,47 +678,50 @@ async def context(req: SearchRequest):
 @app.post("/upload/doc")
 async def upload_doc(file: UploadFile = File(...)):
     """Upload PDF, DOCX, TXT, or MD into doc/ and index immediately."""
-    if not file.filename:
+    filename = file.filename
+    if filename is None:
         raise HTTPException(400, "Filename is required")
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(filename).suffix.lower()
     if ext not in DOC_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {DOC_EXTENSIONS}")
-    dest = DOC_DIR / file.filename
+    dest = DOC_DIR / filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     result = await asyncio.to_thread(kb.add_file, dest)
-    return {"filename": file.filename, **result}
+    return {"filename": filename, **result}
 
 
 @app.post("/upload/code")
 async def upload_code(file: UploadFile = File(...)):
     """Upload PY, C, CPP, H, or MD into code/ and index immediately."""
-    if not file.filename:
+    filename = file.filename
+    if filename is None:
         raise HTTPException(400, "Filename is required")
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(filename).suffix.lower()
     if ext not in CODE_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {CODE_EXTENSIONS}")
-    dest = CODE_DIR / file.filename
+    dest = CODE_DIR / filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     result = await asyncio.to_thread(kb.add_file, dest)
-    return {"filename": file.filename, **result}
+    return {"filename": filename, **result}
 
 
 @app.post("/upload/image")
 async def upload_image(file: UploadFile = File(...)):
     """Upload image into static/uploads/ for vision tasks. Not RAG-indexed."""
-    if not file.filename:
+    filename = file.filename
+    if filename is None:
         raise HTTPException(400, "Filename is required")
-    ext = Path(file.filename).suffix.lower()
+    ext = Path(filename).suffix.lower()
     if ext not in IMAGE_EXTENSIONS:
         raise HTTPException(400, f"Unsupported type '{ext}'. Allowed: {IMAGE_EXTENSIONS}")
     upload_dir = Path(BASE_DIR) / "static" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-    dest = upload_dir / file.filename
+    dest = upload_dir / filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    return {"ok": True, "filename": file.filename, "url": f"/static/uploads/{file.filename}"}
+    return {"ok": True, "filename": filename, "url": f"/static/uploads/{filename}"}
 
 
 # ── Info ──────────────────────────────────────────────────────────────────────

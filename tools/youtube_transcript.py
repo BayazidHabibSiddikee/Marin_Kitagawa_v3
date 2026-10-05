@@ -1,12 +1,13 @@
 import re
+from typing import Optional
 
-def extract_youtube_url(text: str):
+def extract_youtube_url(text: str) -> Optional[str]:
     """Pull YouTube URL from user message if present."""
     pattern = r'(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[\w\-]+)'
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
-def get_youtube_transcript(url: str, return_raw: bool = False) -> str | list:
+def get_youtube_transcript(url: str, return_raw: bool = False) -> Optional[str | list]:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
